@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Linux user-runner (${{ matrix.cc }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build static and dynamic with strict warnings, then run regression suite
+        run: |
+          make clean
+          make CC=${{ matrix.cc }} CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
+          make clean
+          make callbox-dynamic CC=${{ matrix.cc }} CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
+          make test CC=${{ matrix.cc }} CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
+
+  privilege-delegation-test:
+    name: Linux privilege-delegation lane (non-root, elevates per-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run the suite as a non-root user that sudo-elevates per test (skips are failures)
+        run: bash scripts/test_root.sh
+
+  root-runner:
+    name: Linux root-runner lane (suite run as root)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the TUIs the screen tests drive
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux whiptail vim-tiny
+      - name: Build and run the suite as root (it acts as a throwaway user per test)
+        run: sudo env -u SUDO_USER -u SUDO_UID -u SUDO_GID -u SUDO_COMMAND PATH="$PATH" make test CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
+
+  fifo-console:
+    name: Linux FIFO console lanes (forced, and with Unix sockets denied)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the TUIs the screen tests drive
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux whiptail vim-tiny
+      - name: Suite with every console forced onto FIFOs
+        run: CALLBOX_CONSOLE_TRANSPORT=fifo make test CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
+      - name: Suite with Unix sockets denied, as some sandboxes do (the fallback runs for real)
+        run: |
+          cc -shared -fPIC -o socket-ban.so tests/socket_ban_shim.c -ldl
+          LD_PRELOAD="$PWD/socket-ban.so" HOLD_TEST_SOCKETS_DENIED=1 bash tests/test_callbox.sh
+
+  macos-runtime:
+    name: macOS runtime test (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            uname_m: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+            uname_m: x86_64
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate runner architecture
+        run: test "$(uname -m)" = "${{ matrix.uname_m }}"
+      - name: Run macOS-specific build and runtime checks
+        env:
+          HOLD_EXPECT_UNAME_M: ${{ matrix.uname_m }}
+        run: bash ./.github/scripts/test_macos_ci.sh
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run tests with ASan/UBSan to catch memory and UB regressions
+        run: |
+          make clean
+          # Background brokers/waiters discard stderr: halt on the first
+          # report and keep every report in a log that fails the job.
+          logs="$RUNNER_TEMP/sanitizer-logs"
+          mkdir -p "$logs"
+          # The step runs under bash -e: keep make's status rather than stop
+          # on it, so the reports below are printed even when a test failed.
+          rc=0
+          UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1:log_path=$logs/ubsan" ASAN_OPTIONS="log_path=$logs/asan" \
+            make test CC=gcc CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=address,undefined" STATIC_LDFLAGS='' LDFLAGS='-fsanitize=address,undefined' TEST_LDFLAGS='-fsanitize=address,undefined' || rc=$?
+          if ls "$logs"/* >/dev/null 2>&1; then cat "$logs"/*; rc=1; fi
+          exit "$rc"
+
+  static-analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - name: Static analysis for suspicious patterns before release
+        run: cppcheck --enable=warning,performance,portability --error-exitcode=1 --max-configs=1 --suppress=missingIncludeSystem --suppress=normalCheckLevelMaxBranches --std=c11 -Iinclude src/
+
+  layer-dependencies:
+    name: Enforce layer dependency direction
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: No lower layer may include a higher-layer header
+        run: bash scripts/lint_layers.sh

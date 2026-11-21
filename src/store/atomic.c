@@ -1,0 +1,80 @@
+#include "callbox/config.h"
+#include "callbox/types.h"
+#include "callbox/store.h"
+#include "callbox/core.h"
+#include "store_internal.h"
+
+/* The store's only commit tail: unique temp in the SAME dir -> emit ->
+ * fflush -> fsync(fd) -> close -> rename -> fsync(dir). Everything before
+ * the dir fsync is fatal; the dir fsync itself only warns. The temp file
+ * is unlinked on every failure path, and fchmod defends against umask. */
+int hold_atomic_write_json(const char *dir, const char *final_name, mode_t mode,
+                           bool chown_root, hold_json_emit_fn emit, void *ctx,
+                           char *out_path, size_t out_n) {
+    char tmp[HOLD_PATH_MAX], fin[HOLD_PATH_MAX];
+    if (hold_checked_snprintf(fin, sizeof(fin), "%s/%s", dir, final_name) != 0) return -1;
+    if (out_path && hold_checked_snprintf(out_path, out_n, "%s", fin) != 0) return -1;
+    int rc = -1;
+    FILE *f = NULL;
+    int fd = hold_open_unique_temp(dir, final_name, mode, tmp, sizeof(tmp));
+    if (fd < 0) return -1;
+    if (fchmod(fd, mode) != 0) goto out;
+    if (chown_root && geteuid() == 0 && fchown(fd, 0, 0) != 0) goto out;
+    if (!chown_root && geteuid() == 0) {
+        /* Root writing into a user's store (sudo): the file keeps the owner
+         * of the one it replaces, or takes the directory's for a new one,
+         * set before the rename so it is never root's 0600 even briefly. */
+        struct stat st;
+        if (lstat(fin, &st) == 0 || stat(dir, &st) == 0) {
+            if (st.st_uid != 0 && fchown(fd, st.st_uid, st.st_gid) != 0) goto out;
+        }
+    }
+    f = fdopen(fd, "w");
+    if (!f) {
+        close(fd);
+        fd = -1;
+        goto out;
+    }
+    if (emit(f, ctx) != 0 || ferror(f) || fflush(f) != 0 || fsync(fd) != 0) goto out;
+    if (fclose(f) != 0) {
+        f = NULL;
+        goto out;
+    }
+    f = NULL;
+    fd = -1;
+    if (rename(tmp, fin) != 0) goto out;
+    int dfd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (dfd >= 0) {
+        if (fsync(dfd) != 0)
+            fprintf(stderr, "callbox: warning: failed to fsync storage dir: %s\n", strerror(errno));
+        close(dfd);
+    }
+    rc = 0;
+out:
+    if (f) fclose(f);
+    else if (fd >= 0) close(fd);
+    if (rc != 0) unlink(tmp);
+    return rc;
+}
+
+/* Store-wide advisory lock: flock on the record directory. It serializes the
+ * exit stamp's exists-check-to-rename against purge's unlink, so a purged
+ * record stays gone (a re-check alone leaves the whole fsync'd write as a
+ * window). Held only around short critical sections; never nested. Returns an
+ * fd to pass to hold_store_unlock, or -1 when locking is unavailable (callers
+ * proceed unlocked: best effort, as before). */
+int hold_store_lock(const char *record_dir) {
+    int fd = open(record_dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    while (flock(fd, LOCK_EX) != 0) {
+        if (errno != EINTR) {
+            close(fd);
+            return -1;
+        }
+    }
+    return fd;
+}
+
+void hold_store_unlock(int fd) {
+    if (fd >= 0) close(fd); /* close releases the flock */
+}

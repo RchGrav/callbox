@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+make_fake_release() {
+  local root="$1" artifact="$2" mode="${3:-good}" release_dir stage
+  release_dir="$root/RchGrav/callbox/releases/download/v1.2.3"
+  stage="$root/stage-$mode"
+  mkdir -p "$release_dir" "$stage"
+  case "$mode" in
+    good)
+      cat >"$stage/callbox" <<'SH'
+#!/bin/sh
+if [ "${1:-}" = "--version" ]; then
+  printf '%s\n' 'v1.2.3'
+  exit 0
+fi
+exit 0
+SH
+      chmod 0755 "$stage/callbox"
+      ;;
+    missing-root-binary)
+      mkdir -p "$stage/bin"
+      cat >"$stage/bin/callbox" <<'SH'
+#!/bin/sh
+printf '%s\n' 'wrong layout'
+SH
+      chmod 0755 "$stage/bin/callbox"
+      ;;
+  esac
+  tar -C "$stage" -czf "$release_dir/$artifact" .
+}
+
+run_installer() {
+  local root="$1" install_dir="$2" extra_env="${3:-}"
+  env \
+    CALLBOX_GITHUB_BASE="file://$root" \
+    CALLBOX_REPO_NAME=callbox \
+    CALLBOX_INSTALL_TEST_OS=linux \
+    CALLBOX_INSTALL_TEST_ARCH=amd64 \
+    CALLBOX_INSTALL_TEST_LIBC=gnu \
+    CALLBOX_INSTALL_DIR="$install_dir" \
+    CALLBOX_UPDATE_PROFILE=0 \
+    $extra_env \
+    sh ./install.sh 1.2.3
+}
+
+expect_fail() {
+  local desc="$1"; shift
+  if "$@" >"$tmp/$desc.out" 2>"$tmp/$desc.err"; then
+    printf 'expected installer failure for %s\n' "$desc" >&2
+    cat "$tmp/$desc.out" "$tmp/$desc.err" >&2
+    exit 1
+  fi
+}
+
+test_installer_fail_closed() {
+  local root release_dir artifact sum install_dir
+  artifact="callbox-1.2.3-linux-amd64-gnu-static.tar.gz"
+
+  root="$tmp/missing-sums"
+  install_dir="$tmp/install-missing"
+  make_fake_release "$root" "$artifact" good
+  expect_fail missing-sums run_installer "$root" "$install_dir"
+  grep -q 'missing SHA256SUMS' "$tmp/missing-sums.err"
+
+  root="$tmp/malformed-sums"
+  install_dir="$tmp/install-malformed"
+  make_fake_release "$root" "$artifact" good
+  release_dir="$root/RchGrav/callbox/releases/download/v1.2.3"
+  printf 'not-a-sha  %s\n' "$artifact" >"$release_dir/SHA256SUMS"
+  expect_fail malformed-sums run_installer "$root" "$install_dir"
+  grep -q 'malformed SHA256SUMS' "$tmp/malformed-sums.err"
+
+  root="$tmp/mismatch-sums"
+  install_dir="$tmp/install-mismatch"
+  make_fake_release "$root" "$artifact" good
+  release_dir="$root/RchGrav/callbox/releases/download/v1.2.3"
+  printf '%064d  %s\n' 0 "$artifact" >"$release_dir/SHA256SUMS"
+  expect_fail mismatch-sums run_installer "$root" "$install_dir"
+  grep -q 'checksum mismatch' "$tmp/mismatch-sums.err"
+
+  root="$tmp/bad-layout"
+  install_dir="$tmp/install-layout"
+  make_fake_release "$root" "$artifact" missing-root-binary
+  release_dir="$root/RchGrav/callbox/releases/download/v1.2.3"
+  sum="$(sha256_file "$release_dir/$artifact")"
+  printf '%s  %s\n' "$sum" "$artifact" >"$release_dir/SHA256SUMS"
+  expect_fail bad-layout run_installer "$root" "$install_dir"
+  grep -q 'archive layout is invalid' "$tmp/bad-layout.err"
+
+  expect_fail unsupported-platform env CALLBOX_INSTALL_TEST_OS=SunOS CALLBOX_INSTALL_DRY_RUN=1 sh ./install.sh 1.2.3
+  grep -q 'unsupported operating system' "$tmp/unsupported-platform.err"
+
+  root="$tmp/good"
+  install_dir="$tmp/install-good"
+  make_fake_release "$root" "$artifact" good
+  release_dir="$root/RchGrav/callbox/releases/download/v1.2.3"
+  sum="$(sha256_file "$release_dir/$artifact")"
+  printf '%s  %s\n' "$sum" "$artifact" >"$release_dir/SHA256SUMS"
+  run_installer "$root" "$install_dir" >"$tmp/good.out" 2>"$tmp/good.err"
+  [ "$("$install_dir/callbox" --version)" = "v1.2.3" ]
+}
+
+test_package_tarball_deterministic_when_gnu_tar() {
+  if ! tar --version 2>/dev/null | grep -qi 'gnu tar'; then
+    return 0
+  fi
+  local bin out1 out2 a1 a2 s1 s2
+  bin="$tmp/fake-callbox"
+  cat >"$bin" <<'SH'
+#!/bin/sh
+exit 0
+SH
+  chmod 0755 "$bin"
+  out1="$tmp/pkg1"
+  out2="$tmp/pkg2"
+  a1="$(.github/scripts/package_tarball.sh linux-amd64-gnu-static 1.2.3 "$bin" "$out1")"
+  tar -tzf "$a1" | sed 's#^./##' | sort >"$tmp/pkg-files.txt"
+  grep -qx 'callbox' "$tmp/pkg-files.txt"
+  sleep 1
+  a2="$(.github/scripts/package_tarball.sh linux-amd64-gnu-static 1.2.3 "$bin" "$out2")"
+  s1="$(sha256_file "$a1")"
+  s2="$(sha256_file "$a2")"
+  [ "$s1" = "$s2" ] || {
+    printf 'package_tarball is not deterministic: %s != %s\n' "$s1" "$s2" >&2
+    exit 1
+  }
+}
+
+
+test_release_notes_fallback() {
+  local notes script fixture
+  # A fixture changelog: the test is about the script, not this project's history.
+  script="$PWD/.github/scripts/release_notes_from_changelog.sh"
+  fixture="$tmp/notes-fixture"
+  mkdir -p "$fixture"
+  printf '# Changelog\n\n## 0.4.0 - Example\n\n- an entry\n\n## 0.3.0\n\n- older\n' >"$fixture/CHANGELOG.md"
+  notes="$tmp/release-notes-existing.md"
+  (cd "$fixture" && "$script" v0.4.0 "$notes")
+  grep -q '^## 0[.]4[.]0' "$notes"
+  ! grep -q 'older' "$notes"
+
+  notes="$tmp/release-notes-generated.md"
+  (cd "$fixture" && "$script" v9.8.7 "$notes")
+  grep -q '^## 9[.]8[.]7' "$notes"
+  grep -q 'Automated release for `v9.8.7`' "$notes"
+}
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+test_installer_uninstall_round_trip() {
+  local root artifact release_dir sum install_dir fake_home
+  artifact="callbox-1.2.3-linux-amd64-gnu-static.tar.gz"
+  root="$tmp/uninstall"
+  install_dir="$tmp/uninstall-bin"
+  fake_home="$tmp/uninstall-home"
+  mkdir -p "$fake_home"
+  make_fake_release "$root" "$artifact" good
+  release_dir="$root/RchGrav/callbox/releases/download/v1.2.3"
+  sum="$(sha256_file "$release_dir/$artifact")"
+  printf '%s  %s\n' "$sum" "$artifact" >"$release_dir/SHA256SUMS"
+
+  # Install with profile updates on so the PATH block exists to reverse (as a
+  # normal user: run as root, the installer never edits shell profiles).
+  env CALLBOX_GITHUB_BASE="file://$root" CALLBOX_REPO_NAME=callbox \
+    CALLBOX_INSTALL_TEST_OS=linux CALLBOX_INSTALL_TEST_ARCH=amd64 CALLBOX_INSTALL_TEST_LIBC=gnu \
+    CALLBOX_INSTALL_DIR="$install_dir" HOME="$fake_home" SHELL=/bin/bash CALLBOX_INSTALL_TEST_UID=1000 \
+    sh ./install.sh 1.2.3 >"$tmp/uninstall-install.out" 2>"$tmp/uninstall-install.err"
+  [ -x "$install_dir/callbox" ]
+  grep -q '# callbox installer' "$fake_home/.bashrc"
+  # The send-off prints the exact matching uninstall command.
+  grep -q -- '--uninstall' "$tmp/uninstall-install.err"
+
+  env CALLBOX_INSTALL_DIR="$install_dir" HOME="$fake_home" SHELL=/bin/bash CALLBOX_INSTALL_TEST_UID=1000 \
+    sh ./install.sh --uninstall >"$tmp/uninstall-run.out" 2>"$tmp/uninstall-run.err"
+  [ ! -e "$install_dir/callbox" ]
+  ! grep -q '# callbox installer' "$fake_home/.bashrc"
+  grep -q 'kept callbox state' "$tmp/uninstall-run.err"
+
+  # Idempotent: a second uninstall reports and exits 0.
+  env CALLBOX_INSTALL_DIR="$install_dir" HOME="$fake_home" SHELL=/bin/bash CALLBOX_INSTALL_TEST_UID=1000 \
+    sh ./install.sh -u >"$tmp/uninstall-again.out" 2>"$tmp/uninstall-again.err"
+  grep -q 'nothing to remove' "$tmp/uninstall-again.err"
+}
+
+test_installer_fail_closed
+test_package_tarball_deterministic_when_gnu_tar
+test_release_notes_fallback
+test_installer_uninstall_round_trip

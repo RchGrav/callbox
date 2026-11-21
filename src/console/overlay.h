@@ -1,0 +1,114 @@
+#pragma once
+#ifndef HOLD_CONSOLE_OVERLAY_H
+#define HOLD_CONSOLE_OVERLAY_H
+
+/* A callbox shell's display, private to the console layer.
+ *
+ * The broker keeps the one authoritative screen of the shell (the screen
+ * layer, fed by the PTY). For a callbox shell, whoever attaches is not sent the
+ * PTY's raw bytes: each frame is composed from that screen as the base layer
+ * with the chat window drawn over it as a second pass, and only the
+ * difference from what the terminal already shows is written (compose.c).
+ * The chat window, its conversations, and the input from the attached
+ * terminal are chat.c. Nothing drawn here ever reaches the screen, the log,
+ * or the program. */
+
+#include "callbox/config.h"
+#include "callbox/types.h"
+#include "callbox/screen.h"
+
+/* ---- compose.c: frames ---------------------------------------------------- */
+
+struct compositor;
+
+/* A cell's look in the overlay: 256-color palette indexes, -1 = the
+ * terminal's default. */
+struct comp_style {
+    uint8_t attrs; /* HOLD_ATTR_* */
+    int fg, bg;
+};
+
+/* What the attached terminal should be told besides its cells. */
+struct comp_want {
+    bool app_cursor_keys, app_keypad, bracketed_paste, focus_report;
+    uint8_t mouse; /* enum hold_mouse_mode; reports are always asked for in SGR form */
+    bool cursor_visible;
+    int cursor_row, cursor_col;
+    int cursor_style; /* DECSCUSR number, 0 = the terminal's own */
+    const char *title; /* NULL or "" = leave it */
+    bool bell;
+};
+
+struct compositor *comp_new(void);
+void comp_free(struct compositor *c);
+/* The attached terminal's size; a change repaints everything. */
+int comp_set_size(struct compositor *c, int rows, int cols);
+void comp_size(const struct compositor *c, int *rows, int *cols);
+/* Forget what the terminal shows and how it is set: the next frame clears
+ * and repaints it and sends every mode (a terminal just attached). */
+void comp_invalidate(struct compositor *c);
+/* Start a frame with the shell's screen as the base layer, clipped or padded
+ * to the terminal. */
+void comp_begin(struct compositor *c, const struct hold_snapshot *base);
+/* Draw over the base. Cells outside the terminal are dropped; a wide
+ * character cut in half by what is drawn over it becomes a blank. */
+void comp_put(struct compositor *c, int row, int col, uint32_t cp, const struct comp_style *st);
+void comp_fill(struct compositor *c, int row, int col, int n, const struct comp_style *st);
+/* UTF-8 text clipped to max_cols; returns the columns it took. */
+int comp_text(struct compositor *c, int row, int col, int max_cols, const char *text, size_t len,
+              const struct comp_style *st);
+/* One codepoint of UTF-8 (malformed bytes read as U+FFFD, one at a time);
+ * returns the bytes it took. len must be at least 1. */
+size_t comp_utf8_next(const char *s, size_t len, uint32_t *cp);
+/* End the frame: append to *buf the bytes that take the terminal from what
+ * it shows to this frame. -1 on allocation failure. */
+int comp_flush(struct compositor *c, const struct comp_want *want, char **buf, size_t *len, size_t *cap);
+
+/* ---- chat.c: the chat window, its conversations, the terminal's input ----- */
+
+struct chat;
+
+/* What chat needs of the broker it lives in. */
+struct chat_host {
+    struct hold_screen *screen;     /* the shell's screen */
+    int master;                     /* the PTY: where the shell's input goes */
+    const struct hold_store *store; /* where this call and its peers are recorded */
+    const char *run_id;             /* this call */
+    /* The keys chat reads for itself, out of what the terminal sends: the
+     * lead key, then the detach key or the chat key (0 = the defaults). */
+    unsigned char lead, detach_key, key;
+};
+
+#define CHAT_MAX_OUTBOUND 8
+
+struct chat *chat_new(const struct chat_host *host);
+void chat_free(struct chat *c);
+/* A terminal attached (rows x cols as far as known) or went away. */
+void chat_attached(struct chat *c, int rows, int cols, int64_t now);
+void chat_detached(struct chat *c);
+/* The attached terminal's window changed size. */
+void chat_terminal_resized(struct chat *c, int rows, int cols);
+/* Bytes typed (or reported) by the attached terminal: to the shell, or to
+ * chat, by who has the keyboard and where the pointer is. */
+void chat_input(struct chat *c, const unsigned char *buf, size_t n, int64_t now);
+/* Did that input ask to detach (the lead key, then the detach key)? Reported
+ * once: the broker lets go of the attach client, or of one nested in it. */
+bool chat_take_detach(struct chat *c);
+/* A message callbox msg delivered to this call. verdict as verify_sender:
+ * 1 = from the call sender_id (label its name), 0 = an unproven claim to be
+ * label, has_claim false = sent from outside any call. */
+void chat_inbound(struct chat *c, bool has_claim, int verdict, const char *sender_id, const char *label,
+                  const char *text, size_t len);
+/* Timers (a lone Esc, the corner hint, a send in flight) and the descriptors
+ * of sends in flight. */
+int64_t chat_due_in(const struct chat *c, int64_t now);
+void chat_tick(struct chat *c, int64_t now);
+int chat_poll_fds(const struct chat *c, struct pollfd *pfds, int max);
+void chat_poll_done(struct chat *c, const struct pollfd *pfds, int n, int64_t now);
+/* The shell's screen changed (output, or a resize of its PTY). */
+void chat_screen_changed(struct chat *c);
+bool chat_wants_frame(const struct chat *c);
+/* Compose a frame for the attached terminal; bytes are appended to *buf. */
+int chat_render(struct chat *c, int64_t now, char **buf, size_t *len, size_t *cap);
+
+#endif /* HOLD_CONSOLE_OVERLAY_H */
