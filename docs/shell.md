@@ -112,7 +112,8 @@ Everything the attached terminal sends passes through one router
 
 - **The lead key** (`Ctrl-P`, the first of the detach keys) is the only key
   callbox takes, and it only waits: the next key says what it meant, with no
-  time limit, and the corner (or the window, when it is up) shows what it
+  time limit (not everyone types fast, and Docker's lead key is untimed
+  too; `Ctrl-P Ctrl-P` is the quick way to send one through), and the corner (or the window, when it is up) shows what it
   offers meanwhile. `Ctrl-Q` detaches. `Ctrl-T` (`--chat-key ctrl-g` picks
   another) opens chat, or moves the keyboard between chat and the shell
   while the window stays up. While the shell has the keyboard, `Ctrl-P`

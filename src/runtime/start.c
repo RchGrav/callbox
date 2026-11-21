@@ -383,7 +383,10 @@ static void spawn_auto_remove_watcher(const struct hold_store *store, const stru
     }
 }
 
-/* ---- sudo-home store routing ---- */
+/* ---- sudo-home store routing ----
+ * A root or sudo start of something under the invoking user's home goes into
+ * that user's store: the user started it, and people keep track of what they
+ * start in their own store. */
 
 bool hold_start_target_is_within_invoking_home(const struct hold_invocation *inv,
                                                  bool owned,

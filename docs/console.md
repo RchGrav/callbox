@@ -33,8 +33,9 @@ listener cannot impersonate the broker. The broker:
 
 `Ctrl-P Ctrl-Q` is read by the attach client, which sends a detach frame;
 the broker answers by closing the connection. `Ctrl-P` is a lead key: it is
-held until the next key arrives, with no timer. `Ctrl-Q` then detaches,
-`Ctrl-P` again sends one `Ctrl-P` to the program, and any other key sends
+held until the next key arrives, with no timer: not everyone types fast, and Docker
+and similar tools leave the lead key untimed too. `Ctrl-Q` then detaches,
+`Ctrl-P` again sends one `Ctrl-P` to the program (the quick way through), and any other key sends
 both through. (A `callbox shell`'s broker reads these keys itself, so it can
 show what the lead key offers while it waits; see [shell.md](shell.md).)
 Two cases need more than that.

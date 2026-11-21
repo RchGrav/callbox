@@ -51,6 +51,9 @@ int hold_term_detach_flush(struct hold_term_detach *d, hold_term_detach_sink sin
     return sink(ctx, d->pending, n) != 0 ? -1 : 0;
 }
 
+/* The detach keys as a lead key plus the next key, held with no timer: not
+ * everyone types fast, and Docker leaves its lead key untimed too. The lead
+ * key twice is the quick way to send one through. */
 int hold_term_detach_feed(struct hold_term_detach *d, unsigned char c,
                           hold_term_detach_sink sink, void *ctx, int *completed) {
     *completed = 0;

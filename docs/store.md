@@ -13,7 +13,7 @@ There are two stores:
 - The user store, for normal starts.
 - The system store, for starts as root, under sudo, or with `--system`. `--system` needs root; a normal user who asks for it is refused (exit 3).
 
-One exception: when a root or sudo start names a program, or an existing path argument, under the invoking user's home, the call goes into that user's own store and is owned by that user.
+One exception: when a root or sudo start names a program, or an existing path argument, under the invoking user's home, the call goes into that user's own store and is owned by that user, because that user started it: people keep track of the programs they start in their own store, and look for them there.
 
 ## Layouts
 
