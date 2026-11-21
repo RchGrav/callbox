@@ -48,21 +48,6 @@ static bool parse_refusal(const char *text, size_t n, pid_t *by) {
     return true;
 }
 
-static volatile sig_atomic_t g_resized = 0;
-
-static void handle_sigwinch(int signo) {
-    (void)signo;
-    g_resized = 1;
-}
-
-/* SIGTERM or SIGHUP: leave the loop, give the terminal back as it was, then
- * die of the signal as the default action would have. */
-static volatile sig_atomic_t g_stop_sig = 0;
-
-static void handle_stop(int signo) {
-    g_stop_sig = signo;
-}
-
 int hold_console_set_detach_keys(const unsigned char *keys, size_t len) {
     if (!keys || len == 0 || len > HOLD_TERM_DETACH_MAX_KEYS) {
         errno = EINVAL;
@@ -137,28 +122,75 @@ static int send_resize(int fd, const struct winsize *ws) {
     return write_frame(fd, CONSOLE_FRAME_RESIZE, payload, sizeof(payload));
 }
 
-static int terminal_size(struct winsize *ws) {
-    memset(ws, 0, sizeof(*ws));
-    if (ioctl(STDIN_FILENO, TIOCGWINSZ, ws) == 0 && ws->ws_row > 0 && ws->ws_col > 0) {
-        return 0;
+/* One attach, as the client loop sees it. */
+struct attach_state {
+    int sock, writer;
+    bool heard;              /* anything from the broker yet */
+    int64_t detach_sent_ms;  /* when the detach keys were last sent on */
+    char held[160];          /* text that may be the broker turning us away */
+    size_t held_len;
+    bool holding;
+    bool resize_failed;
+};
+
+/* Bytes the keys release go to the broker as DATA frames. */
+static int attach_on_input(void *ctx, const unsigned char *bytes, size_t n) {
+    struct attach_state *a = ctx;
+    return write_frame(a->writer, CONSOLE_FRAME_DATA, bytes, (uint16_t)n) == 0 ? 0 : -1;
+}
+
+/* The detach keys: the broker answers by closing the connection - or, when
+ * an attach nested in this terminal is what the person is looking at, by
+ * handing the keys to that one and keeping us. */
+static int attach_on_detach(void *ctx) {
+    struct attach_state *a = ctx;
+    if (write_frame(a->writer, CONSOLE_FRAME_DETACH, NULL, 0) != 0) return -1;
+    a->detach_sent_ms = attach_now_ms();
+    return 0;
+}
+
+static int attach_on_input_end(void *ctx) {
+    struct attach_state *a = ctx;
+    if (a->writer == a->sock) {
+        shutdown(a->sock, SHUT_WR);
+    } else {
+        close(a->writer);
+        a->writer = -1;
     }
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, ws) == 0 && ws->ws_row > 0 && ws->ws_col > 0) {
-        return 0;
-    }
+    return 0;
+}
+
+static int attach_on_resize(void *ctx, const struct winsize *ws) {
+    struct attach_state *a = ctx;
+    if (a->writer < 0 || send_resize(a->writer, ws) == 0) return 0;
+    if (!a->heard && (errno == EPIPE || errno == ECONNRESET)) a->resize_failed = true;
     return -1;
 }
 
-static bool install_handler(int sig, void (*fn)(int), struct sigaction *old) {
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = fn;
-    sigemptyset(&sa.sa_mask);
-    return sigaction(sig, &sa, old) == 0;
-}
-
-/* Bytes the detach FSM releases go to the broker as DATA frames. */
-static int attach_data_sink(void *ctx, const unsigned char *bytes, size_t n) {
-    return write_frame(*(const int *)ctx, CONSOLE_FRAME_DATA, bytes, (uint16_t)n);
+/* A broker that turns us away says so in a line of text and hangs up. Text
+ * that starts like that line is held back until it is clear which it is:
+ * written to the terminal it would be wiped with the alternate screen, and
+ * the person would see an attach that silently returns. */
+static int attach_on_output(void *ctx, const char *buf, size_t n) {
+    struct attach_state *a = ctx;
+    a->heard = true;
+    const char *out = buf;
+    size_t out_len = n;
+    if (a->holding) {
+        static const char lead[] = "callbox: ";
+        size_t room = sizeof(a->held) - a->held_len, take = out_len < room ? out_len : room;
+        memcpy(a->held + a->held_len, out, take);
+        a->held_len += take;
+        size_t cmp = a->held_len < sizeof(lead) - 1 ? a->held_len : sizeof(lead) - 1;
+        if (take == out_len && memcmp(a->held, lead, cmp) == 0) return 0; /* may be a refusal: wait */
+        /* a screen after all: what was held, then the rest */
+        a->holding = false;
+        if (hold_write_all(STDOUT_FILENO, a->held, a->held_len) != 0) return -1;
+        out += take;
+        out_len -= take;
+    }
+    if (out_len > 0 && hold_write_all(STDOUT_FILENO, out, out_len) != 0) return -1;
+    return 0;
 }
 
 int hold_run_native_console(const char *sock_path) {
@@ -185,206 +217,63 @@ int hold_run_native_console(const char *sock_path) {
     }
 
     bool interactive = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
-    bool terminal_saved = false;
+    struct hold_term_saved saved;
     bool alt_screen = false;
-    struct termios old_termios;
-    if (interactive && tcgetattr(STDIN_FILENO, &old_termios) == 0) {
-        struct termios raw = old_termios;
-        cfmakeraw(&raw);
-        if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == 0) {
-            terminal_saved = true;
-            if (hold_write_all(STDOUT_FILENO, "\033[?1049h\033[H\033[2J", 15) == 0) {
-                alt_screen = true;
-            }
-        }
+    if (interactive && hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_RAW, &saved) == 0 && saved.saved &&
+        hold_write_all(STDOUT_FILENO, "\033[?1049h\033[H\033[2J", 15) == 0) {
+        alt_screen = true;
+    } else if (!interactive) {
+        memset(&saved, 0, sizeof(saved));
     }
 
-    struct sigaction old_winch, old_pipe;
-    bool have_old_winch = install_handler(SIGWINCH, handle_sigwinch, &old_winch);
-    bool have_old_pipe = install_handler(SIGPIPE, SIG_IGN, &old_pipe);
-    struct sigaction old_term, old_hup;
-    g_stop_sig = 0;
-    bool have_old_term = install_handler(SIGTERM, handle_stop, &old_term);
-    bool have_old_hup = install_handler(SIGHUP, handle_stop, &old_hup);
-    /* A signal the caller ignores (nohup) stays ignored. */
-    if (have_old_term && old_term.sa_handler == SIG_IGN) sigaction(SIGTERM, &old_term, NULL);
-    if (have_old_hup && old_hup.sa_handler == SIG_IGN) sigaction(SIGHUP, &old_hup, NULL);
-    g_resized = 1;
-
+    struct attach_state a = {.sock = sock, .writer = writer, .holding = true};
     int rc = 0;
-    bool stdin_open = true;
-    /* When the detach keys were last sent on. The broker answers by closing
-     * the connection - or, when an attach nested in this terminal is what the
-     * person is looking at, by handing the keys to that one and keeping us. */
-    int64_t detach_sent_ms = 0;
-    /* A broker that turns us away says so in a line of text and hangs up.
-     * Text that starts like that line is held back until it is clear which
-     * it is: written to the terminal it would be wiped with the alternate
-     * screen, and the person would see an attach that silently returns. */
-    char held[160];
-    size_t held_len = 0;
-    bool holding = true;
     int nest_writer = -1;
     int nest = interactive ? register_nested(sock_path, &nest_writer) : -1;
-    /* macOS poll() never reports end-of-file on a FIFO, so over the FIFO
-     * console (a separate write fd) a quiet pass probes with a non-blocking
-     * read: 0 means the broker has gone. */
-#if defined(__APPLE__)
-    bool probe_fifo = writer != sock;
-#else
-    bool probe_fifo = false;
-#endif
     struct hold_term_detach detach;
     hold_term_detach_init(&detach, g_detach_keys, g_composited ? 0 : g_detach_key_count);
+    enum hold_client_end end = HOLD_CLIENT_OUTPUT_ENDED;
     if (hold_write_all(writer, CONSOLE_ATTACH_MAGIC, CONSOLE_ATTACH_MAGIC_LEN) != 0) {
         if (errno == EPIPE || errno == ECONNRESET) g_gone = true; /* ended as we arrived */
         rc = 3;
-        goto out;
-    }
-    bool heard = false; /* anything from the broker yet */
-
-    while (1) {
-        if (g_stop_sig) {
-            rc = 128 + g_stop_sig;
-            break;
-        }
-        if (g_resized) {
-            struct winsize ws;
-            g_resized = 0;
-            if (writer >= 0 && terminal_size(&ws) == 0 && send_resize(writer, &ws) != 0) {
-                if (!heard && (errno == EPIPE || errno == ECONNRESET)) g_gone = true;
-                rc = 3;
-                break;
-            }
-        }
-
-        struct pollfd pfds[2];
-        nfds_t nfds = 0;
-        pfds[nfds++] = (struct pollfd){.fd = sock, .events = POLLIN};
-        int stdin_idx = -1;
-        if (stdin_open) {
-            stdin_idx = (int)nfds;
-            pfds[nfds++] = (struct pollfd){.fd = STDIN_FILENO, .events = POLLIN};
-        }
-
-        int sr = poll(pfds, nfds, probe_fifo ? 250 : -1);
-        if (sr < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            rc = 3;
-            break;
-        }
-
-        /* POLLNVAL too: macOS poll() rejects character devices such as
-         * /dev/null; reading one then reports its end, instead of spinning. */
-        if (stdin_idx >= 0 && (pfds[stdin_idx].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL))) {
-            unsigned char buf[4096];
-            ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
-            if (n > 0) {
-                if (interactive) {
-                    for (ssize_t i = 0; i < n; i++) {
-                        int completed = 0;
-                        if (hold_term_detach_feed(&detach, buf[i], attach_data_sink, &writer, &completed) != 0) {
-                            rc = 3;
-                            break;
-                        }
-                        if (completed == 1) {
-                            if (write_frame(writer, CONSOLE_FRAME_DETACH, NULL, 0) != 0) {
-                                rc = 3;
-                                break;
-                            }
-                            detach_sent_ms = attach_now_ms();
-                        }
-                    }
-                    if (rc != 0) {
-                        break;
-                    }
-                } else if (write_frame(writer, CONSOLE_FRAME_DATA, buf, (uint16_t)n) != 0) {
-                    rc = 3;
-                    break;
-                }
-            } else if (n == 0 || errno == EBADF) { /* end of input, or none at all (stdin closed) */
-                if (hold_term_detach_flush(&detach, attach_data_sink, &writer) != 0) {
-                    rc = 3;
-                    break;
-                }
-                stdin_open = false;
-                if (writer == sock) shutdown(sock, SHUT_WR);
-                else {
-                    close(writer);
-                    writer = -1;
-                }
-            } else if (errno != EINTR) {
-                rc = 3;
-                break;
-            }
-        }
-
-        bool probe = probe_fifo && !(pfds[0].revents & (POLLIN | POLLHUP | POLLERR));
-        if ((pfds[0].revents & (POLLIN | POLLHUP | POLLERR)) || probe) {
-            char buf[4096];
-            int flags = probe ? fcntl(sock, F_GETFL) : -1;
-            if (flags >= 0) (void)fcntl(sock, F_SETFL, flags | O_NONBLOCK);
-            ssize_t n = read(sock, buf, sizeof(buf));
-            int read_errno = errno;
-            if (flags >= 0) (void)fcntl(sock, F_SETFL, flags);
-            errno = read_errno;
-            if (n > 0) {
-                heard = true;
-                const char *out = buf;
-                size_t out_len = (size_t)n;
-                if (holding) {
-                    static const char lead[] = "callbox: ";
-                    size_t room = sizeof(held) - held_len, take = out_len < room ? out_len : room;
-                    memcpy(held + held_len, out, take);
-                    held_len += take;
-                    size_t cmp = held_len < sizeof(lead) - 1 ? held_len : sizeof(lead) - 1;
-                    if (take == out_len && memcmp(held, lead, cmp) == 0) continue; /* may be a refusal: wait */
-                    /* a screen after all: what was held, then the rest */
-                    holding = false;
-                    if (hold_write_all(STDOUT_FILENO, held, held_len) != 0) {
-                        rc = 3;
-                        break;
-                    }
-                    out += take;
-                    out_len -= take;
-                }
-                if (out_len > 0 && hold_write_all(STDOUT_FILENO, out, out_len) != 0) {
-                    rc = 3;
-                    break;
-                }
-            } else if (n == 0) {
-                break;
-            } else if (errno != EINTR && errno != EAGAIN) {
-                rc = 3;
-                break;
-            }
-        }
+    } else {
+        struct hold_client c = {
+            .out_fd = sock,
+            .on_output = attach_on_output,
+            /* macOS poll() never reports end-of-file on a FIFO, so over the
+             * FIFO console (a separate write fd) a quiet pass probes. */
+#if defined(__APPLE__)
+            .probe_fifo = writer != sock,
+#endif
+            .in_fd = STDIN_FILENO,
+            .keys = interactive ? &detach : NULL,
+            .on_input = attach_on_input,
+            .on_detach = attach_on_detach,
+            .on_input_end = attach_on_input_end,
+            .on_resize = attach_on_resize,
+            .ctx = &a,
+        };
+        end = hold_client_run(&c);
+        if (end == HOLD_CLIENT_SIGNALED) rc = 128 + hold_term_stop_signal();
+        else if (end == HOLD_CLIENT_ERROR) rc = 3;
+        if (a.resize_failed) g_gone = true;
     }
 
-out:
     /* The connection closing just after the detach keys is the detach. */
-    if (detach_sent_ms && attach_now_ms() - detach_sent_ms < 2000) rc = 0;
-    if (holding && held_len > 0) {
-        if (parse_refusal(held, held_len, &g_refused_by)) {
+    if (a.detach_sent_ms && attach_now_ms() - a.detach_sent_ms < 2000) rc = 0;
+    if (a.holding && a.held_len > 0) {
+        if (parse_refusal(a.held, a.held_len, &g_refused_by)) {
             g_refused = true;
             rc = 3;
         } else {
-            (void)hold_write_all(STDOUT_FILENO, held, held_len); /* a program's own (short) output */
+            (void)hold_write_all(STDOUT_FILENO, a.held, a.held_len); /* a program's own (short) output */
         }
     }
     if (nest >= 0) {
         if (nest_writer != nest) close(nest_writer);
         close(nest);
     }
-    if (have_old_winch) {
-        sigaction(SIGWINCH, &old_winch, NULL);
-    }
-    if (have_old_pipe) {
-        sigaction(SIGPIPE, &old_pipe, NULL);
-    }
-    if (terminal_saved) {
+    if (saved.saved) {
         /* A program run inside the console may have left terminal-global modes
          * enabled — mouse reporting, bracketed paste, focus reports, application
          * keypad/cursor keys, a cursor style, a hidden cursor — and a callbox
@@ -401,19 +290,12 @@ out:
     if (alt_screen) {
         (void)hold_write_all(STDOUT_FILENO, "\033[?1049l", 8);
     }
-    if (terminal_saved) {
+    if (saved.saved) {
         (void)hold_write_all(STDOUT_FILENO, "\033[?25h", 6);
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_termios);
+        hold_term_input_restore(&saved);
     }
-    if (writer >= 0 && writer != sock) close(writer);
+    if (a.writer >= 0 && a.writer != sock) close(a.writer);
     close(sock);
-    if (have_old_term) sigaction(SIGTERM, &old_term, NULL);
-    if (have_old_hup) sigaction(SIGHUP, &old_hup, NULL);
-    if (g_stop_sig) {
-        /* The terminal is restored; now end as the signal meant us to. */
-        int sig = g_stop_sig;
-        signal(sig, SIG_DFL);
-        raise(sig);
-    }
+    if (end == HOLD_CLIENT_SIGNALED) hold_term_reraise_stop();
     return rc;
 }

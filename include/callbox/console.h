@@ -77,6 +77,40 @@ bool hold_console_fallback_selected(void);
  * clients that died mid-handshake. */
 void hold_remove_fifo_exchanges(const char *endpoint_path);
 
+/* THE client loop (console/client.c): attaching to a console and following a
+ * log both run here. The output source is a console connection, or a log
+ * file read as it grows (out_is_file; file_done says when no more can come,
+ * NULL = stop at its end). Keys from in_fd go through *keys (the detach
+ * chord and, when set, the interrupt byte); with keys NULL they go straight
+ * to on_input. Hooks return <0 error, >0 stop, 0 go on; a missing on_detach
+ * or on_interrupt stops. want_sigint makes SIGINT an interrupt instead of
+ * killing the client. The caller owns the terminal's mode and, after a
+ * SIGNALED end, restores it and calls hold_term_reraise_stop(). */
+struct hold_term_detach;
+enum hold_client_end {
+    HOLD_CLIENT_OUTPUT_ENDED, /* the source closed (or the followed call ended) */
+    HOLD_CLIENT_STOPPED,      /* a hook asked to stop */
+    HOLD_CLIENT_SIGNALED,     /* SIGTERM or SIGHUP */
+    HOLD_CLIENT_ERROR,
+};
+struct hold_client {
+    int out_fd;
+    bool out_is_file;
+    int (*file_done)(void *ctx);
+    int (*on_output)(void *ctx, const char *buf, size_t n); /* NULL: to stdout */
+    bool probe_fifo;
+    int in_fd; /* -1: read no input */
+    struct hold_term_detach *keys;
+    int (*on_input)(void *ctx, const unsigned char *bytes, size_t n);
+    int (*on_detach)(void *ctx);
+    int (*on_interrupt)(void *ctx);
+    int (*on_input_end)(void *ctx);
+    int (*on_resize)(void *ctx, const struct winsize *ws);
+    bool want_sigint;
+    void *ctx;
+};
+enum hold_client_end hold_client_run(const struct hold_client *c);
+
 /* The attach client: connect to a call's console socket and bridge the
  * terminal until the detach chord (Ctrl-P Ctrl-Q by default) or the call ends. */
 int hold_run_native_console(const char *sock_path);

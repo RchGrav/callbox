@@ -6,13 +6,7 @@
 #include "callbox/platform.h"
 #include "callbox/store.h"
 #include "callbox/console.h"
-
-static volatile sig_atomic_t g_tail_interrupted = 0;
-
-static void handle_tail_sigint(int signo) {
-    (void)signo;
-    g_tail_interrupted = 1;
-}
+#include "callbox/term.h"
 
 /* ---- signal-target safety chain -------------------------------------- */
 
@@ -359,51 +353,45 @@ int hold_load_target_record(const struct hold_resolved_target *target,
 
 /* ---- raw tail ---------------------------------------------------------- */
 
+struct tail_state {
+    const struct hold_run_record *r;
+    const char *boot_id;
+};
+
+static int tail_call_ended(void *ctx) {
+    const struct tail_state *t = ctx;
+    return hold_eval_state(t->r, t->boot_id) != STATE_RUNNING;
+}
+
 int hold_tail_log_until_exit(const struct hold_run_record *r, bool from_end, bool follow_until_exit) {
     int fd = open(r->log_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) hold_die_errno("callbox: failed to open log for tail");
-
     char boot[128] = {0};
-    const char *boot_id = r->has_boot ? hold_boot_id_or_null(boot) : NULL;
+    struct tail_state t = {.r = r, .boot_id = r->has_boot ? hold_boot_id_or_null(boot) : NULL};
     if (from_end) lseek(fd, 0, SEEK_END);
-
-    struct sigaction sa = {0}, old_sa = {0};
-    sa.sa_handler = handle_tail_sigint;
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGINT, &sa, &old_sa);
-    g_tail_interrupted = 0;
-
-    /* Logs are the raw bytes the program wrote; tailing is a straight copy
-     * to stdout. */
-    char buf[4096];
-    int sleep_polls = 0;
-    ssize_t n;
-    while (!g_tail_interrupted) {
-        n = read(fd, buf, sizeof(buf));
-        if (n > 0) {
-            if (hold_write_all(STDOUT_FILENO, buf, (size_t)n) != 0)
-                hold_die_errno("callbox: failed writing tailed output");
-            continue;
-        }
-        if (n < 0) {
-            if (errno == EINTR) continue;
-            hold_die_errno("callbox: failed while tailing log");
-        }
-        if (!follow_until_exit) break;
-        struct timespec sl = {.tv_sec = 0, .tv_nsec = 100 * 1000000L};
-        nanosleep(&sl, NULL);
-        sleep_polls++;
-        if (sleep_polls % 10 == 0 && hold_eval_state(r, boot_id) != STATE_RUNNING) {
-            /* One final drain: output written between the last read and the
-             * exit still lands. */
-            while ((n = read(fd, buf, sizeof(buf))) > 0)
-                if (hold_write_all(STDOUT_FILENO, buf, (size_t)n) != 0) break;
-            break;
-        }
-    }
-
+    /* Logs are the raw bytes the program wrote; following is a straight copy
+     * to stdout, through the one client loop. Ctrl-C (SIGINT) stops following,
+     * never the call: a follower is watching a log, not on the call. */
+    struct hold_client c = {
+        .out_fd = fd,
+        .out_is_file = true,
+        .file_done = follow_until_exit ? tail_call_ended : NULL,
+        .in_fd = -1,
+        .want_sigint = true,
+        .ctx = &t,
+    };
+    enum hold_client_end end = hold_client_run(&c);
+    int run_errno = errno;
     close(fd);
-    sigaction(SIGINT, &old_sa, NULL);
+    if (end == HOLD_CLIENT_ERROR && run_errno == EPIPE) {
+        /* The reader went away (`callbox logs x | head`): end quietly, as a
+         * writer to a closed pipe does. */
+        signal(SIGPIPE, SIG_DFL);
+        raise(SIGPIPE);
+    }
+    errno = run_errno;
+    if (end == HOLD_CLIENT_ERROR) hold_die_errno("callbox: failed while tailing log");
+    if (end == HOLD_CLIENT_SIGNALED) hold_term_reraise_stop();
     return 0;
 }
 

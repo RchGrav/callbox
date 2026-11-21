@@ -75,7 +75,13 @@ struct broker {
     int parent_pipe;
     int listener;
     int fifo_writer;
-    int master;
+    /* Where the program is: on a PTY, in and out are the master; a program on
+     * pipes has its stdin's write end and its output's read end. */
+    struct program_endpoint {
+        int in_fd;  /* the program's input; -1 once closed (end of input) */
+        int out_fd; /* its output, pumped to the log, the screen, and the client */
+        bool pty;
+    } ep;
     int logfd;
     pid_t target; /* >0: our held child (waited, SIGKILLed on cleanup) */
     uid_t owner_uid;
@@ -124,7 +130,8 @@ static void broker_cleanup_and_exit(struct broker *b, int exit_code) {
     if (b->parent_pipe >= 0) close(b->parent_pipe);
     if (b->fifo_writer >= 0) close(b->fifo_writer);
     if (b->listener >= 0) close(b->listener);
-    if (b->master >= 0) close(b->master);
+    if (b->ep.in_fd >= 0) close(b->ep.in_fd);
+    if (b->ep.out_fd >= 0 && b->ep.out_fd != b->ep.in_fd) close(b->ep.out_fd);
     if (b->logfd >= 0) close(b->logfd);
     if (b->sock_path && *b->sock_path) {
         unlink(b->sock_path);
@@ -204,7 +211,7 @@ static void flush_screen_output(struct broker *b) {
     char buf[4096];
     size_t n;
     while ((n = hold_screen_take_output(b->screen, buf, sizeof(buf))) > 0) {
-        (void)hold_write_all(b->master, buf, n);
+        if (b->ep.in_fd >= 0) (void)hold_write_all(b->ep.in_fd, buf, n);
     }
 }
 
@@ -214,8 +221,9 @@ static void apply_size(struct broker *b, int rows, int cols, bool by_agent) {
     memset(&ws, 0, sizeof(ws));
     ws.ws_row = (unsigned short)rows;
     ws.ws_col = (unsigned short)cols;
-    /* The kernel delivers SIGWINCH to the PTY's foreground group itself. */
-    (void)ioctl(b->master, TIOCSWINSZ, &ws);
+    /* The kernel delivers SIGWINCH to the PTY's foreground group itself. A
+     * program on pipes has no window: only the headless screen changes. */
+    if (b->ep.pty) (void)ioctl(b->ep.in_fd, TIOCSWINSZ, &ws);
     hold_screen_resize(b->screen, rows, cols);
     b->size_by_agent = by_agent;
     if (b->chat) {
@@ -289,7 +297,7 @@ static int attach_input(struct broker *b, const void *buf, size_t n) {
          * that reads its own keys - the innermost attach lets go first. */
         return chat_take_detach(b->chat) && !forward_detach(b) ? 1 : 0;
     }
-    return hold_write_all(b->master, buf, n);
+    return b->ep.in_fd >= 0 ? hold_write_all(b->ep.in_fd, buf, n) : 0;
 }
 
 static int process_framed(struct broker *b, struct attach_client *c) {
@@ -517,8 +525,9 @@ static void handle_nested(struct broker *b, struct control_client *c, const char
  * its detach keys, and it detaches from the call it is attached to. False
  * when there is none. */
 static bool forward_detach(struct broker *b) {
-    if (!b->ctl || b->target_done || b->master < 0) return false;
-    pid_t front = tcgetpgrp(b->master);
+    /* Nesting needs a terminal to be nested in: only a PTY has a front. */
+    if (!b->ctl || b->target_done || !b->ep.pty || b->ep.in_fd < 0) return false;
+    pid_t front = tcgetpgrp(b->ep.in_fd);
     struct control_client *pick = NULL;
     for (int i = 0; i < BROKER_MAX_CONTROL; i++) {
         struct control_client *c = &b->ctl[i];
@@ -527,7 +536,7 @@ static bool forward_detach(struct broker *b) {
         if (front > 0 ? getpgid(c->peer_pid) == front : (!pick || c->gen > pick->gen)) pick = c;
     }
     if (!pick) return false;
-    (void)hold_write_all(b->master, pick->nest_keys, pick->nest_nkeys);
+    (void)hold_write_all(b->ep.in_fd, pick->nest_keys, pick->nest_nkeys);
     return true;
 }
 
@@ -579,8 +588,8 @@ static void handle_send(struct broker *b, struct control_client *c, char *ops) {
             if (line[0] == 'p') {
                 hold_screen_send_paste(b->screen, arg, (size_t)n);
                 flush_screen_output(b);
-            } else if (n > 0) {
-                (void)hold_write_all(b->master, arg, (size_t)n);
+            } else if (n > 0 && b->ep.in_fd >= 0) {
+                (void)hold_write_all(b->ep.in_fd, arg, (size_t)n);
             }
         } else if (!strcmp(line, "key")) {
             if (!arg || hold_screen_send_key(b->screen, arg) != 0) {
@@ -1002,10 +1011,10 @@ static void deliver_msg(struct broker *b, struct pending_msg *m, int verdict, co
     } else {
         for (size_t i = 0; i < flen; i++)
             if (full[i] == '\n' || full[i] == '\r') full[i] = ' ';
-        (void)hold_write_all(b->master, full, flen);
+        if (b->ep.in_fd >= 0) (void)hold_write_all(b->ep.in_fd, full, flen);
     }
     free(full);
-    if (m->submit) (void)hold_write_all(b->master, "\r", 1);
+    if (m->submit && b->ep.in_fd >= 0) (void)hold_write_all(b->ep.in_fd, "\r", 1);
     msg_done(m, id);
 }
 
@@ -1304,7 +1313,7 @@ static void broker_serve(struct broker *b) {
         struct pollfd pfds[3 + BROKER_MAX_CONTROL + CHAT_MAX_OUTBOUND];
         int ctl_idx[BROKER_MAX_CONTROL];
         nfds_t nfds = 0;
-        pfds[nfds++] = (struct pollfd){.fd = b->master, .events = POLLIN};
+        pfds[nfds++] = (struct pollfd){.fd = b->ep.out_fd, .events = POLLIN};
         nfds_t listener_idx = nfds;
         pfds[nfds++] = (struct pollfd){.fd = b->listener, .events = POLLIN};
         int client_idx = -1;
@@ -1492,7 +1501,7 @@ static void broker_serve(struct broker *b) {
 
         if (pr > 0 && (pfds[0].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL))) {
             char buf[4096];
-            ssize_t n = hold_term_pump_master(b->master, b->logfd, buf, sizeof(buf));
+            ssize_t n = hold_term_pump_master(b->ep.out_fd, b->logfd, buf, sizeof(buf));
             if (n > 0) {
                 b->output_seq += (uint64_t)n;
                 b->last_output_ms = now_ms();
@@ -1618,7 +1627,7 @@ void hold_run_console_broker(int parent_pipe,
         .parent_pipe = parent_pipe,
         .listener = -1,
         .fifo_writer = -1,
-        .master = -1,
+        .ep = {.in_fd = -1, .out_fd = -1},
         .logfd = -1,
         .target = -1,
         .owner_uid = owner_uid,
@@ -1655,13 +1664,15 @@ void hold_run_console_broker(int parent_pipe,
         .rows = init_rows,
         .cols = init_cols,
     };
-    if (hold_term_pty_spawn(&spawn, &b.master, &b.target) != 0) {
+    int master = -1;
+    if (hold_term_pty_spawn(&spawn, &master, &b.target) != 0) {
         broker_fail_errno(&b, errno);
     }
+    b.ep = (struct program_endpoint){.in_fd = master, .out_fd = master, .pty = true};
     if (options && options->chat) {
         struct chat_host host = {
             .screen = b.screen,
-            .master = b.master,
+            .master = b.ep.in_fd,
             .store = store,
             .run_id = run_id,
             .lead = options->lead_key,

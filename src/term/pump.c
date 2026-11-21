@@ -44,6 +44,10 @@ static bool chord_prefix(const unsigned char *keys, size_t nkeys,
     return true;
 }
 
+void hold_term_detach_set_interrupt(struct hold_term_detach *d, unsigned char intr) {
+    d->intr = intr;
+}
+
 int hold_term_detach_flush(struct hold_term_detach *d, hold_term_detach_sink sink, void *ctx) {
     if (d->pending_len == 0) return 0;
     size_t n = d->pending_len;
@@ -57,8 +61,12 @@ int hold_term_detach_flush(struct hold_term_detach *d, hold_term_detach_sink sin
 int hold_term_detach_feed(struct hold_term_detach *d, unsigned char c,
                           hold_term_detach_sink sink, void *ctx, int *completed) {
     *completed = 0;
-    if (d->nkeys == 0) return sink(ctx, &c, 1) != 0 ? -1 : 0;
     for (;;) {
+        if (d->pending_len == 0 && d->intr && c == d->intr) {
+            *completed = 2;
+            return 0;
+        }
+        if (d->nkeys == 0) return sink(ctx, &c, 1) != 0 ? -1 : 0;
         if (d->pending_len == 0 && c != d->keys[0]) {
             return sink(ctx, &c, 1) != 0 ? -1 : 0;
         }

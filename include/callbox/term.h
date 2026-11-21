@@ -51,6 +51,7 @@ struct hold_term_detach {
     size_t nkeys;
     unsigned char pending[HOLD_TERM_DETACH_MAX_KEYS];
     size_t pending_len;
+    unsigned char intr; /* 0 = none; else this byte reports *completed = 2 */
 };
 
 /* Sink for bytes the FSM releases; nonzero aborts the feed/flush with -1. */
@@ -61,5 +62,44 @@ int hold_term_detach_feed(struct hold_term_detach *d, unsigned char c,
                           hold_term_detach_sink sink, void *ctx, int *completed);
 /* Send through whatever is held (the input has ended: no key will follow). */
 int hold_term_detach_flush(struct hold_term_detach *d, hold_term_detach_sink sink, void *ctx);
+/* Also report this byte (Ctrl-C, 0x03) as an interrupt: *completed = 2, the
+ * byte not forwarded. For a client whose program is not on a PTY, where a
+ * typed Ctrl-C would otherwise be lost: the client turns it into a signal. A
+ * held lead key is sent through first. 0 turns it off (the default). */
+void hold_term_detach_set_interrupt(struct hold_term_detach *d, unsigned char intr);
+
+/* ---- the person's terminal (term/tty.c) ----------------------------------- */
+
+enum hold_term_input_mode {
+    HOLD_TERM_INPUT_AS_IS, /* leave it alone */
+    HOLD_TERM_INPUT_RAW,   /* cfmakeraw: every byte through, the program's PTY does the rest */
+    HOLD_TERM_INPUT_KEYS,  /* key by key, no echo, no key signals; output processing kept */
+};
+
+struct hold_term_saved {
+    struct termios t;
+    int fd;
+    bool saved;
+};
+
+/* Put fd (a terminal; anything else is left alone, returning 0) in mode,
+ * remembering how it was. -1 when the terminal refused the change. */
+int hold_term_input_enter(int fd, enum hold_term_input_mode mode, struct hold_term_saved *saved);
+void hold_term_input_restore(struct hold_term_saved *saved);
+
+/* SIGWINCH (resized), SIGTERM/SIGHUP (stop: restore the terminal, then die of
+ * the signal), SIGPIPE ignored, and optionally SIGINT (interrupt) - so no
+ * client can leave the terminal raw. A signal the caller ignores stays so. */
+struct hold_term_signals {
+    struct sigaction old_winch, old_pipe, old_term, old_hup, old_int;
+    bool have_winch, have_pipe, have_term, have_hup, have_int;
+};
+void hold_term_signals_install(struct hold_term_signals *s, bool want_interrupt);
+void hold_term_signals_restore(struct hold_term_signals *s);
+bool hold_term_take_resized(void);   /* since the last call (true once at install) */
+int hold_term_stop_signal(void);     /* SIGTERM/SIGHUP received, or 0 */
+bool hold_term_take_interrupt(void); /* SIGINT received since the last call */
+void hold_term_reraise_stop(void);   /* after restoring: die of the stop signal */
+int hold_term_size(struct winsize *ws); /* stdin's (else stdout's) window, -1 if none */
 
 #endif /* HOLD_TERM_H */
