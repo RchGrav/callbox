@@ -427,6 +427,14 @@ int hold_cmd_tail_action(const struct hold_invocation *inv,
     return rc;
 }
 
+int hold_cmd_tail_if_call(const struct hold_invocation *inv,
+                          const struct hold_store *user_store,
+                          const struct hold_store *system_store,
+                          const char *word) {
+    if (!word || strchr(word, '/') || !hold_token_resolves(inv, user_store, system_store, "tail", word)) return -1;
+    return hold_cmd_tail_action(inv, user_store, system_store, word);
+}
+
 /* ---- inspect ------------------------------------------------------------ */
 
 /* Build the neutral fd-target object for a live call's leader: where fds 0/1/2

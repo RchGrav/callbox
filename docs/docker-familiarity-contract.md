@@ -67,6 +67,8 @@ Callbox-native launch flags:
                         with a policy other than no
     --size COLS ROWS    the PTY's size (with -t)
     --quiet             no status notes on stderr
+    -f, --tail CALL     follow a call's log (no PTY, no redial); a word that
+                        names no call is a command to launch
 ```
 
 A plain `-d` call leaves nothing behind: one fork, a new session, output

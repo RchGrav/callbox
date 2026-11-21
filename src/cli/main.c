@@ -13,6 +13,7 @@
 #include "callbox/core.h"
 
 struct cli_run_options {
+    bool tail_flag; /* --tail/-f given: follow a named call's log, never redial it */
     bool detach;
     bool wait;
     bool interactive;
@@ -408,6 +409,7 @@ static int parse_run_options(int argc,
     }
     if (!strcmp(arg, "--tail") || !strcmp(arg, "-f")) {
         *tail = true;
+        run->tail_flag = true;
         (*index)++;
         return 0;
     }
@@ -726,6 +728,16 @@ int hold_cli_main(int argc, char **argv) {
                 hold_die_errno("callbox: failed to init invoking-user storage");
             }
             hold_die_errno("callbox: failed to init start storage");
+        }
+        /* --tail <call>: follow that call's log, as `callbox tail` does - no
+         * PTY, no redial (Ctrl-C stops following; the call keeps running).
+         * A word that names no call is still a command to launch. */
+        if (run.tail_flag && !force_raw && !shell_mode && !run.name && cmd_argc == 1) {
+            int rc = hold_cmd_tail_if_call(&inv, &user_store, &system_store, cmd_argv[0]);
+            if (rc >= 0) {
+                free_run_options(&run);
+                return rc;
+            }
         }
         /* Redial: a lone token that resolves to a retained call (id then name)
          * restarts it from its recipe. `--`, --name, and multi-token argv all

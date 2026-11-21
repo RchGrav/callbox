@@ -3749,6 +3749,23 @@ test_dt_redial_stays_detached() {
   printf '%s\n' "$out" | grep -qE '^[0-9a-f]{64}$' || { echo "-dt redial did not detach: [$out]" >&2; return 1; }
 }
 
+# --tail CALL follows that call's log - no PTY and no redial, so a running
+# call is followed (not refused) and its recipe keeps its mode. A word that
+# names no call is still a command to launch.
+test_tail_flag_follows_a_calls_log() {
+  "$HOLD_BIN" -dt --name ticker -- /bin/sh -c 'i=0; while [ $i -lt 6 ]; do echo "tick $i"; i=$((i+1)); sleep 0.3; done' >/dev/null || return 1
+  "$HOLD_BIN" wait ticker --match 'tick 1' --timeout 5000 >/dev/null || return 1
+  local rc=0
+  "$HOLD_BIN" --tail ticker </dev/null >"$TEST_ROOT/tail.out" 2>"$TEST_ROOT/tail.err" || rc=$?
+  [ "$rc" -eq 0 ] || { echo "--tail on a running call: rc=$rc" >&2; cat "$TEST_ROOT/tail.err" >&2; return 1; }
+  grep -q 'tick 5' "$TEST_ROOT/tail.out" || { cat "$TEST_ROOT/tail.out" >&2; return 1; }
+  out_has '"tty": true' "$HOLD_BIN" inspect ticker || { echo "--tail rewrote the recipe" >&2; return 1; }
+  "$HOLD_BIN" wait ticker --exit --timeout 5000 >/dev/null || return 1
+  "$HOLD_BIN" -f ticker </dev/null >"$TEST_ROOT/tail-ended.out" 2>&1 || true
+  grep -q 'tick 5' "$TEST_ROOT/tail-ended.out" || { echo "-f on an ended call did not print its log" >&2; cat "$TEST_ROOT/tail-ended.out" >&2; return 1; }
+  [ "$("$HOLD_BIN" --tail echo tail-launch </dev/null)" = "tail-launch" ] || { echo "--tail with a command did not launch it" >&2; return 1; }
+}
+
 # A TTY call's environment describes callbox's terminal, not the launcher's: TERM
 # is xterm-256color whatever the launcher had (none under cron/CI, or its own
 # terminal's), and tmux/screen variables are dropped - a program seeing TMUX
@@ -5600,6 +5617,7 @@ run_test "send/wait/msg keep literal --x=y text" test_screen_verbs_keep_literal_
 run_test "msg strips terminal control characters" test_msg_strips_control_characters
 run_test "argv and env over 4 KiB survive exit and redial" test_long_argv_and_env_survive
 run_test "redialing a -dt call stays detached" test_dt_redial_stays_detached
+run_test "--tail CALL follows its log, never redials" test_tail_flag_follows_a_calls_log
 run_test "--quiet prints bare id and silences stderr" test_quiet_suppresses_banner_keeps_id
 run_test "run id prefix resolves to the full run" test_run_id_prefix_resolution
 run_test "action/help/list argument guards" test_misc_action_guards

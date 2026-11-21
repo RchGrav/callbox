@@ -490,6 +490,8 @@ static int help_launch(void) {
         "  -e KEY=VALUE     an environment variable (--env; may be repeated)\n"
         "  --env-file FILE  ...a file of KEY=VALUE lines\n"
         "  --rm             remove the call's record and log when it ends\n"
+        "  -f, --tail CALL  follow a call's log here instead (no PTY, no redial;\n"
+        "                   Ctrl-C stops following, the call keeps running)\n"
         "  --restart POLICY start it again when it exits: no, always, unless-stopped,\n"
         "                   on-failure[:N] (not with -t)\n"
         "  --restart-delay SECONDS\n"

@@ -73,6 +73,12 @@ int hold_cmd_tail_action(const struct hold_invocation *inv,
                            const struct hold_store *user_store,
                            const struct hold_store *system_store,
                            const char *id_token);
+/* --tail <word>: when the word names a call, follow its log as tail does and
+ * return the exit status; otherwise return -1 (the word is a command). */
+int hold_cmd_tail_if_call(const struct hold_invocation *inv,
+                          const struct hold_store *user_store,
+                          const struct hold_store *system_store,
+                          const char *word);
 int hold_cmd_inspect_action(const struct hold_invocation *inv,
                               const struct hold_store *user_store,
                               const struct hold_store *system_store,
