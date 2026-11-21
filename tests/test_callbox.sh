@@ -1054,7 +1054,7 @@ test_console_does_not_require_external_attach_tool() {
   local fake_path out id store record sock
   fake_path="$TEST_ROOT/no-tools"
   mkdir -p "$fake_path" || return 1
-  out=$(as_user /usr/bin/env PATH="$fake_path" "$HOLD_REAL_BIN" -dt /bin/sh -c 'read line; echo "native:$line"' 2>&1) || {
+  out=$(as_user /usr/bin/env PATH="$fake_path" "$HOLD_REAL_BIN" --console /bin/sh -c 'read line; echo "native:$line"' 2>&1) || {
     printf '%s\n' "$out" >&2
     return 1
   }
@@ -1090,7 +1090,7 @@ test_console_reports_non_console_run() {
 
 test_console_round_trip_and_log_tee() {
   local out id store record sock
-  out=$("$HOLD_BIN" -dt /bin/sh -c 'read line; echo "got:$line"' 2>&1) || {
+  out=$("$HOLD_BIN" --console /bin/sh -c 'read line; echo "got:$line"' 2>&1) || {
     printf '%s\n' "$out" >&2
     return 1
   }
@@ -1123,7 +1123,7 @@ test_console_round_trip_and_log_tee() {
 
 test_console_exit_code_is_recorded() {
   local out id store record rc
-  out=$("$HOLD_BIN" -dt /bin/sh -c 'read line; echo "console-exit:$line"; exit 7' 2>&1) || {
+  out=$("$HOLD_BIN" --console /bin/sh -c 'read line; echo "console-exit:$line"; exit 7' 2>&1) || {
     printf '%s\n' "$out" >&2
     return 1
   }
@@ -1162,7 +1162,7 @@ test_end_console_call_signals_target() {
   # because the best-effort 'stop' cleanups elsewhere (2015-2037, 2068) silently
   # leaked the target; this test is the pin.
   local out id store record pgid sock got ok _
-  out=$("$HOLD_BIN" -dt /bin/sh -c 'trap "" HUP; sleep 45' 2>&1) || {
+  out=$("$HOLD_BIN" --console /bin/sh -c 'trap "" HUP; sleep 45' 2>&1) || {
     printf '%s\n' "$out" >&2
     return 1
   }
@@ -1209,7 +1209,7 @@ test_end_console_call_escalates_to_kill() {
   # and HUP and keeps a child alive across TERM, so only the KILL escalation can
   # bring the group down; the record must reach exit_code 137 (128+SIGKILL).
   local out id store record pgid ok _
-  out=$("$HOLD_BIN" -dt /bin/sh -c 'trap "" TERM HUP; while :; do sleep 30; done' 2>&1) || {
+  out=$("$HOLD_BIN" --console /bin/sh -c 'trap "" TERM HUP; while :; do sleep 30; done' 2>&1) || {
     printf '%s\n' "$out" >&2
     return 1
   }
@@ -1236,7 +1236,7 @@ test_console_broker_term_forwards_to_target() {
   # forward to the held group and clean up the socket. The record no longer names
   # the broker, so without the forwarder a bare kill would orphan the target.
   local out id store record pgid sock broker ok _
-  out=$("$HOLD_BIN" -dt /bin/sh -c 'trap "" HUP; sleep 45' 2>&1) || {
+  out=$("$HOLD_BIN" --console /bin/sh -c 'trap "" HUP; sleep 45' 2>&1) || {
     printf '%s\n' "$out" >&2
     return 1
   }
@@ -1270,7 +1270,7 @@ test_console_socket_lives_in_store_dir() {
   # /tmp, even though the harness's store path is longer than the AF_UNIX
   # sun_path limit (~104). This exercises the relative-bind path.
   local out id store record sock
-  out=$("$HOLD_BIN" -dt /bin/sh -c 'while read line; do [ "$line" = noop ] && exit 0; done' 2>&1) || {
+  out=$("$HOLD_BIN" --console /bin/sh -c 'while read line; do [ "$line" = noop ] && exit 0; done' 2>&1) || {
     printf '%s\n' "$out" >&2
     return 1
   }
@@ -1322,7 +1322,7 @@ test_console_target_runs_in_caller_cwd() {
     chown -R "$TEST_UID:$TEST_GID" "$workdir" || return 1
   fi
 
-  out=$( cd "$workdir" && "$HOLD_BIN" -dt /bin/sh -c \
+  out=$( cd "$workdir" && "$HOLD_BIN" --console /bin/sh -c \
     'if [ -e sentinel-file ]; then echo CWD_OK; else echo CWD_BAD; fi; sleep 30' 2>&1 ) || {
     printf '%s\n' "$out" >&2
     return 1
@@ -1465,7 +1465,7 @@ test_console_rejects_unrelated_peer_uid_before_replay() {
   "$SUDO_BIN" -n -u nobody true >/dev/null 2>&1 || skip "cannot run as nobody"
 
   local out id record sock helper rc log
-  out=$("$HOLD_BIN" -dt /bin/sh -c 'echo replay-secret; while read line; do echo "got:$line"; [ "$line" = done ] && exit 0; done' 2>&1) || {
+  out=$("$HOLD_BIN" --console /bin/sh -c 'echo replay-secret; while read line; do echo "got:$line"; [ "$line" = done ] && exit 0; done' 2>&1) || {
     printf '%s\n' "$out" >&2
     return 1
   }
@@ -1508,7 +1508,7 @@ test_console_rejects_unrelated_peer_uid_before_replay() {
 test_console_can_reattach_after_detach() {
   socket_console_only || return $?
   local out id store record sock helper
-  out=$("$HOLD_BIN" -dt /bin/sh -c 'while read line; do echo "seen:$line"; [ "$line" = done ] && exit 0; done' 2>&1) || {
+  out=$("$HOLD_BIN" --console /bin/sh -c 'while read line; do echo "seen:$line"; [ "$line" = done ] && exit 0; done' 2>&1) || {
     printf '%s\n' "$out" >&2
     return 1
   }
@@ -3299,9 +3299,9 @@ test_run_id_prefix_resolution() {
 
 test_misc_action_guards() {
   local rc
-  set +e; "$HOLD_BIN" -dt end deadbeef >/dev/null 2>"$TEST_ROOT/c.err"; rc=$?; set -e
-  [ "$rc" -eq 1 ] || { echo "-dt end: rc=$rc (want 1)" >&2; return 1; }
-  grep -q -- "-dt is for placing a call; it does not apply to 'callbox end'" "$TEST_ROOT/c.err" || { cat "$TEST_ROOT/c.err" >&2; return 1; }
+  set +e; "$HOLD_BIN" --console end deadbeef >/dev/null 2>"$TEST_ROOT/c.err"; rc=$?; set -e
+  [ "$rc" -eq 1 ] || { echo "--console end: rc=$rc (want 1)" >&2; return 1; }
+  grep -q -- "--console is for placing a call; it does not apply to 'callbox end'" "$TEST_ROOT/c.err" || { cat "$TEST_ROOT/c.err" >&2; return 1; }
   set +e; "$HOLD_BIN" help bogustopic >/dev/null 2>"$TEST_ROOT/h.err"; rc=$?; set -e
   [ "$rc" -eq 1 ] || { echo "help bogustopic: rc=$rc (want 1)" >&2; return 1; }
   grep -q 'unknown help topic' "$TEST_ROOT/h.err" || { cat "$TEST_ROOT/h.err" >&2; return 1; }
@@ -3443,7 +3443,7 @@ test_attach_verb_matches_console() {
   local out id store logf out2 id2
   "$HOLD_BIN" help attach >"$TEST_ROOT/attach-help.out" || return 1
   grep -q 'usage: callbox attach <target>' "$TEST_ROOT/attach-help.out" || { cat "$TEST_ROOT/attach-help.out" >&2; return 1; }
-  out=$("$HOLD_BIN" -dt /bin/sh -c 'read line; echo "attach:$line"' 2>&1) || { printf '%s\n' "$out" >&2; return 1; }
+  out=$("$HOLD_BIN" --console /bin/sh -c 'read line; echo "attach:$line"' 2>&1) || { printf '%s\n' "$out" >&2; return 1; }
   id=$(printf '%s\n' "$out" | extract_id)
   [ -n "$id" ] || { printf '%s\n' "$out" >&2; return 1; }
   store="$HOME/.local/state/callbox"

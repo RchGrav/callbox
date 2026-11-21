@@ -411,6 +411,11 @@ static int parse_run_options(int argc,
         (*index)++;
         return 0;
     }
+    if (!strcmp(arg, "--console")) {
+        *console_mode = true;
+        (*index)++;
+        return 0;
+    }
     *parsed = false;
     return 0;
 }
