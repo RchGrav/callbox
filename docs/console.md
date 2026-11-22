@@ -183,7 +183,13 @@ broker when it exits and by `callbox purge`.
 
 On macOS, `poll()` never reports end-of-file on a FIFO (Linux does), so on
 quiet passes the attach client and the broker probe their FIFOs with
-non-blocking reads to notice a party that has gone.
+non-blocking reads to notice a party that has gone. The client probes every
+250 ms, so on a Mac over FIFOs the end of a call can reach it up to that
+late. This is compiled into the macOS build only; Linux needs no probe and
+has no delay. Kept rather than replaced with kqueue (which does report a
+FIFO's end on macOS): it is the fallback transport, a quarter second at a
+call's end costs nobody anything, and kqueue would add a second waiting
+mechanism to the client loop on one platform.
 
 When the program can produce no more output — it exited, or it closed its
 terminal and runs on — the broker stops listening at once (either transport)
