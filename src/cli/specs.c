@@ -522,7 +522,10 @@ static int help_launch(void) {
         "  --restart POLICY start it again when it exits: no, always, unless-stopped,\n"
         "                   on-failure[:N] (not with -t: it runs without a PTY)\n"
         "  --restart-delay SECONDS\n"
-        "                   wait between restarts\n"
+        "                   wait exactly this long between restarts (0: none).\n"
+        "                   Without it, callbox backs off: 1 s, doubling to 30 s,\n"
+        "                   back to 1 s after a run of 10 s or more - so a program\n"
+        "                   that fails at once does not restart in a tight loop\n"
         "  --detach-keys KEYS\n"
         "                   the keys that let go of an attached PTY call (the default\n"
         "                   is ctrl-p,ctrl-q)\n"
@@ -553,8 +556,16 @@ static int help_scripting(void) {
            "  5  no such call: nothing matches the target, or it is not a valid id or name\n"
            "  6  more than one call (or verb) matches: they are listed; be more exact\n"
            "  7  callbox wait timed out\n"
-           "  8  the call ended before the wait condition held\n"
-           "  9  send --mouse: the program has mouse reporting off (not delivered)\n");
+           "  8  the call ended: before the wait condition held, or (attach) before or\n"
+           "     while you were on it; attach exits 0 when you detach, 3 if refused\n"
+           "  9  send --mouse: the program has mouse reporting off (not delivered)\n"
+           "  10 the call has no terminal screen or console (placed without -t / -i)\n"
+           "  11 the call name asked for is taken\n"
+           "  126 the command was found but cannot be run; 127 command not found\n"
+           "\n"
+           "With several targets (end a b c), each is acted on alone: the ones that\n"
+           "resolve are ended, the rest reported, and the exit code is the worst.\n"
+           "callbox msg prints the delivered message's id on stdout.\n");
     return 0;
 }
 

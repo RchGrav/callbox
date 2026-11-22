@@ -55,7 +55,7 @@ static void close_screen_target(struct screen_target *t) {
 
 static int no_screen(const struct screen_target *t) {
     fprintf(stderr, "callbox: %s has no terminal screen; place TTY calls with -t (e.g. callbox -dt <cmd>)\n", t->label);
-    return 5;
+    return HOLD_EXIT_NO_SCREEN;
 }
 
 /* One control request, retried while the broker answers "error busy" (it
@@ -1128,6 +1128,17 @@ static int msg_action_impl(const struct hold_invocation *inv,
         size_t len = 0;
         rc = bad ? 1 : control(&t, req.p, req.len, &reply, &len);
         if (rc == 0 && strncmp((char *)reply, "ok", 2) != 0) rc = reply_error(&t, reply);
+        if (rc == 0) {
+            /* The delivered message's id, on stdout (machine data): what the
+             * receiver's header names and msg --received looks up, so a
+             * sender can match a later check to what it sent. */
+            const char *idp = strstr((char *)reply, " id=");
+            if (idp) {
+                idp += 4;
+                size_t il = strcspn(idp, " \n");
+                if (il > 0 && il < 16) printf("%.*s\n", (int)il, idp);
+            }
+        }
         free(reply);
         free(req.p);
     }

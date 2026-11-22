@@ -231,6 +231,19 @@ static void sleep_restart_delay(int seconds) {
     }
 }
 
+/* A program that could not be started exits as a shell's would: 127 when
+ * there is no such command, 126 when it is there but cannot be run (not
+ * executable, not a program). Why: scripts, CI runners and docker run
+ * already read those codes that way; 1 told them nothing. */
+static int cannot_start(const char *name, int err) {
+    if (err == ENOENT) {
+        fprintf(stderr, "callbox: cannot start '%s': command not found\n", name);
+        return 127;
+    }
+    fprintf(stderr, "callbox: cannot start '%s': %s\n", name, strerror(err));
+    return (err == EACCES || err == ENOEXEC || err == EISDIR || err == EPERM) ? 126 : 1;
+}
+
 /* Exit persistence: rc 1 (record purged after load) is FINAL — never
  * resurrect a call the user just removed. Only rc -1 retries (covers a
  * fast exit before the parent has written the record). */
@@ -278,7 +291,10 @@ static void run_restart_supervisor(const struct hold_store *store,
     int failures = 0;
     int status = 0;
     bool have_status = false;
+    int backoff = HOLD_RESTART_BACKOFF_FIRST_S;
     while (!g_restart_stop) {
+        struct timespec run_start;
+        clock_gettime(CLOCK_MONOTONIC, &run_start);
         pid_t worker = fork();
         if (worker < 0) {
             fprintf(stderr, "callbox: restart supervisor failed to fork: %s\n", strerror(errno));
@@ -312,7 +328,17 @@ static void run_restart_supervisor(const struct hold_store *store,
         else
             fprintf(stderr, "callbox: restarting %s after exit status %d\n", resolved_exec_path,
                     WIFEXITED(status) ? WEXITSTATUS(status) : status);
-        sleep_restart_delay(restart_delay_seconds);
+        if (restart_delay_seconds != HOLD_RESTART_BACKOFF) {
+            sleep_restart_delay(restart_delay_seconds);
+        } else {
+            /* (see HOLD_RESTART_BACKOFF) a run long enough to count as
+             * working starts the backoff over */
+            struct timespec run_end;
+            clock_gettime(CLOCK_MONOTONIC, &run_end);
+            if (run_end.tv_sec - run_start.tv_sec >= HOLD_RESTART_BACKOFF_RESET_S) backoff = HOLD_RESTART_BACKOFF_FIRST_S;
+            sleep_restart_delay(backoff);
+            backoff = backoff * 2 > HOLD_RESTART_BACKOFF_MAX_S ? HOLD_RESTART_BACKOFF_MAX_S : backoff * 2;
+        }
     }
     if (have_status) mark_finished_with_retry(store, id, status, getpid());
     _exit(0);
@@ -531,7 +557,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     const char *existing_id = opts->existing_id;
     if (argc <= 0 || !argv || !argv[0] ||
         envc < 0 || (envc > 0 && !env) ||
-        opts->restart_delay_seconds < 0) {
+        opts->restart_delay_seconds < HOLD_RESTART_BACKOFF) {
         hold_usage();
         return HOLD_EXIT_USAGE;
     }
@@ -620,12 +646,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     char resolved_exec_path[HOLD_PATH_MAX];
     const char *path_to_resolve = (opts->exec_path && *opts->exec_path) ? opts->exec_path : argv[0];
     if (hold_find_binary_path(path_to_resolve, resolved_exec_path, sizeof(resolved_exec_path)) != 0) {
-        if (errno == ENOENT) {
-            fprintf(stderr, "callbox: cannot start '%s': command not found\n", argv[0]);
-        } else {
-            fprintf(stderr, "callbox: cannot start '%s': %s\n", argv[0], strerror(errno));
-        }
-        return 1;
+        return cannot_start(argv[0], errno);
     }
 
     char id[ID_STR_LEN] = {0}, log_path[HOLD_PATH_MAX] = {0}, console_sock[HOLD_PATH_MAX] = {0};
@@ -855,14 +876,11 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         while (waitpid(pid, &st, 0) < 0 && errno == EINTR) {
             continue;
         }
-        if (child_errno == ENOENT) {
-            fprintf(stderr, "callbox: cannot start '%s': command not found\n", launch_argv[0]);
-        } else {
-            fprintf(stderr, "callbox: cannot start '%s': %s\n", launch_argv[0], strerror(child_errno));
-        }
+        /* (reported before the undo, which frees launch_argv) */
+        int start_rc = cannot_start(launch_argv[0], child_errno);
         u.group = 0; /* the child exited and is reaped — nothing to roll back */
         launch_undo(&u);
-        return 1;
+        return start_rc;
     }
     if (io[TP_R] >= 0) {
         pid_t target_pid = -1;
@@ -952,8 +970,10 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         copy_field(&u, r.recipe.restart_policy, sizeof(r.recipe.restart_policy), restart_policy, "callbox: restart policy too long");
         r.recipe.has_restart_policy = true;
     }
-    r.recipe.restart_delay_seconds = opts->restart_delay_seconds;
-    r.recipe.has_restart_delay = opts->restart_delay_seconds > 0;
+    /* Recorded only when given, so a redial replays an explicit delay (0
+     * too) and otherwise backs off again. */
+    r.recipe.has_restart_delay = opts->restart_delay_seconds >= 0;
+    r.recipe.restart_delay_seconds = r.recipe.has_restart_delay ? opts->restart_delay_seconds : 0;
     r.has_boot = has_boot;
     if (r.has_boot) {
         snprintf(r.boot_id, sizeof(r.boot_id), "%s", boot_id);

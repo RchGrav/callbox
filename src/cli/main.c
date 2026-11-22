@@ -54,7 +54,7 @@ static struct hold_start_options start_options_from_run(const struct cli_run_opt
         .envc = run->envc,
         .env = run->env,
         .restart_policy = run->restart_policy[0] ? run->restart_policy : NULL,
-        .restart_delay_seconds = run->restart_delay_seconds,
+        .restart_delay_seconds = run->restart_delay_seen ? run->restart_delay_seconds : HOLD_RESTART_BACKOFF,
         .size_cols = run->size_cols,
         .size_rows = run->size_rows,
     };
@@ -288,9 +288,22 @@ static const struct run_value_opt {
     {NULL, "--restart-delay", true, OPT_RESTART_DELAY},
 };
 
+/* A call may not be named after a verb: at the top level the verb always
+ * wins, so `callbox list` could never redial a call named list - it would
+ * be reachable only by its id. Refused when the name is given, where the
+ * fix (another name) is obvious, rather than leaving a call half-reachable.
+ * Calls already named so keep their names. */
+static int refuse_verb_name(const char *name) {
+    if (!name || !hold_cli_command_is_parser_owned(name)) return 0;
+    fprintf(stderr, "callbox: error: '%s' is a callbox command; a call named so could not be redialed by name\n",
+            name);
+    return HOLD_EXIT_USAGE;
+}
+
 static int apply_run_value_opt(enum run_opt_id id, const char *value, struct cli_run_options *run) {
     switch (id) {
     case OPT_NAME:
+        if (refuse_verb_name(value) != 0) return HOLD_EXIT_USAGE;
         run->name = value;
         return 0;
     case OPT_ENV:
@@ -763,7 +776,8 @@ int hold_cli_main(int argc, char **argv) {
             int rc = hold_cmd_redial(&inv, &user_store, &system_store, tail, console_mode,
                                      run.auto_remove, run.wait, interactive_stdin, explicit_session_mode,
                                      run.restart_policy[0] ? run.restart_policy : NULL,
-                                     run.restart_delay_seconds, run.size_cols, run.size_rows,
+                                     run.restart_delay_seen ? run.restart_delay_seconds : HOLD_RESTART_BACKOFF,
+                                     run.size_cols, run.size_rows,
                                      cmd_argv[0], &redialed);
             if (redialed) {
                 free_run_options(&run);
@@ -816,7 +830,8 @@ int hold_cli_main(int argc, char **argv) {
     if (!strcmp(canon, "save")) {
         rc = hold_cmd_save_action(&inv, &user_store, &system_store, cmd_argv[0]);
     } else if (!strcmp(canon, "rename")) {
-        rc = hold_cmd_rename_action(&inv, &user_store, &system_store, cmd_argv[0], cmd_argv[1]);
+        rc = refuse_verb_name(cmd_argv[1]);
+        if (rc == 0) rc = hold_cmd_rename_action(&inv, &user_store, &system_store, cmd_argv[0], cmd_argv[1]);
     } else if (!strcmp(canon, "list") || !strcmp(canon, "ps")) {
         const char *name_filter = cmd_argc == 1 ? cmd_argv[0] : NULL;
         if (name_filter && !hold_valid_alias(name_filter)) {

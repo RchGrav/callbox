@@ -441,7 +441,7 @@ int hold_shorten_word(const char *word, bool lone, const char *const *verbs, siz
     if (home && *home) (void)hold_init_user_store_from_home(home, &user_store);
 
     /* What already has a meaning keeps it. */
-    if (lone && hold_valid_alias(word) | hold_valid_id_prefix(word) &&
+    if (lone && (hold_valid_alias(word) || hold_valid_id_prefix(word)) &&
         hold_token_resolves(&inv, &user_store, &system_store, "start-existing", word))
         return 0;
     char found[HOLD_PATH_MAX];

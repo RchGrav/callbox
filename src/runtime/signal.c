@@ -213,6 +213,12 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
     }
     struct hold_resolved_target *targets = NULL;
     int ntargets = 0;
+    /* Each target on its own, as docker stop a b c does: one that cannot be
+     * resolved (or reached) is reported and skipped, the rest are still
+     * ended, and the exit code is the worst of them. Why: `callbox end a b
+     * c` with one mistyped name used to end none, leaving the others running
+     * while it looked like a typo. */
+    int worst = 0;
     for (int i = 0; i < argc; i++) {
         struct hold_resolved_target *one = NULL;
         int none = 0;
@@ -232,8 +238,8 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
                     if (foreign && unknown) not_running_here(&r, false);
                     hold_free_run_record(&r);
                     if (foreign && unknown) {
-                        free(targets);
-                        return 3;
+                        if (3 > worst) worst = 3;
+                        continue;
                     }
                 }
             }
@@ -241,8 +247,8 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
         int rc = hold_resolve_action_token(inv, user_store, system_store, command, argv[i], all, &one, &none);
         if (rc != 0) {
             free(one);
-            free(targets);
-            return rc;
+            if (rc > worst) worst = rc;
+            continue;
         }
         if (none > 0) {
             struct hold_resolved_target *next = realloc(targets, (size_t)(ntargets + none) * sizeof(*targets));
@@ -259,16 +265,21 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
     }
     if (ntargets == 0) {
         free(targets);
-        hold_sig_note(inv, "callbox: nothing to %s\n", command);
-        return 0;
+        if (worst == 0) hold_sig_note(inv, "callbox: nothing to %s\n", command);
+        return worst;
     }
+    /* Root-managed targets a non-root caller cannot signal: reported, and
+     * dropped from the list, the rest still ended. */
+    int kept = 0;
     for (int i = 0; i < ntargets; i++) {
         if (targets[i].requires_root) {
             int rc = hold_report_requires_root(targets[i].id);
-            free(targets);
-            return rc;
+            if (rc > worst) worst = rc;
+            continue;
         }
+        targets[kept++] = targets[i];
     }
+    ntargets = kept;
     /* What each call is known by, read before it is signalled: an --rm call's
      * record is gone by the time there is something to say about it. */
     char (*labels)[ALIAS_MAX_LEN + 1] = calloc(ntargets > 0 ? (size_t)ntargets : 1, sizeof(*labels));
@@ -285,7 +296,6 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
             hold_free_run_record(&r);
         }
     }
-    int worst = 0;
     for (int i = 0; i < ntargets; i++) {
         bool already_done = false;
         int rc = signal_one(&targets[i].store, targets[i].id, sig, graceful, print_cmd, &already_done);

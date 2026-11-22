@@ -64,6 +64,21 @@ AI agents can read and drive, and lets agents message each other.
 - Naming a call that is still running gets you back to it: attached if it
   has a console, its log followed otherwise (`-d`: its id, exit 0). Why:
   there is nothing to start, and getting back is why you typed its name.
+- Exit codes that say what happened: 127 command not found and 126 found
+  but not runnable (what shells, CI and `docker run` use); 10 the call has
+  no terminal screen or console and 11 the name is taken (both were 5, "no
+  such call", which scripts could not tell apart); `attach` exits 0 when you
+  detach, 8 when the call ended, 3 when refused.
+- `callbox msg` prints the delivered message's id. Why: a sender can then
+  match `msg --received` to what it sent.
+- `end`/`kill` with several targets act on each: the ones that resolve are
+  ended, the rest reported, the worst code returned. Why: one mistyped name
+  used to end none of them.
+- `--restart` backs off when no `--restart-delay` is given: 1 s, doubling to
+  30 s, reset after a 10 s run. Why: a program that fails at once would
+  otherwise restart in a tight loop (forever under `always`).
+- Call names that are callbox verbs are refused at `--name` and `rename`.
+  Why: the verb always wins, so the call could never be redialed by name.
 - Every call is a durable record (`~/.local/state/callbox`; root's in
   `/var/lib/callbox`, `/var/db/callbox` on macOS) that survives the shell that
   started it: `list`/`ps`, `logs`, `inspect`, `end`/`stop`/`kill`, `save`,

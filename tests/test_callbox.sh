@@ -194,7 +194,7 @@ as_user() {
     CALLBOX_ID \
     CALLBOX_NAME \
     CALLBOX_PARENT \
-    TERM; do
+    TERM TMUX TMUX_PANE STY TERM_PROGRAM; do
     if [ "${!name+x}" = x ]; then
       env_args+=("$name=${!name}")
     fi
@@ -266,6 +266,9 @@ as_sudo_from_user() {
   fi
 }
 
+# (The terminal variables pass through so the TERM test sees what it set:
+# under the root lane this wrapper goes through sudo -u, which resets the
+# environment to its own short list.)
 write_user_actor_wrapper() {
   cat > "$TEST_ROOT/user-callbox" <<'SH'
 #!/usr/bin/env bash
@@ -287,7 +290,7 @@ for name in \
   CALLBOX_ID \
   CALLBOX_NAME \
   CALLBOX_PARENT \
-  TERM; do
+  TERM TMUX TMUX_PANE STY TERM_PROGRAM; do
   if [ "${!name+x}" = x ]; then
     env_args+=("$name=${!name}")
   fi
@@ -680,7 +683,7 @@ test_exec_failure_no_record() {
   "$HOLD_BIN" nonexistent_binary_xyz >/dev/null 2>&1
   rc=$?
   set -e
-  [ "$rc" -eq 1 ] || return 1
+  [ "$rc" -eq 127 ] || { echo "rc=$rc (want 127, command not found)" >&2; return 1; }
   if [ -d "$HOME/.local/state/callbox" ]; then
     count=$(find "$HOME/.local/state/callbox" -maxdepth 1 -type f -name '*.json' | wc -l)
   else
@@ -1060,7 +1063,8 @@ test_console_does_not_require_external_attach_tool() {
   }
   id=$(printf '%s\n' "$out" | extract_id)
   [ -n "$id" ] || { printf '%s\n' "$out" >&2; return 1; }
-  printf 'ping\n' | as_user /usr/bin/env PATH="$fake_path" "$HOLD_REAL_BIN" console "$id" >"$TEST_ROOT/console-native.out" 2>"$TEST_ROOT/console-native.err" || {
+  # the program ends after the line: attach exits 8 ("the call ended")
+  { printf 'ping\n' | as_user /usr/bin/env PATH="$fake_path" "$HOLD_REAL_BIN" console "$id" >"$TEST_ROOT/console-native.out" 2>"$TEST_ROOT/console-native.err" || [ $? -eq 8 ]; } || {
     cat "$TEST_ROOT/console-native.out" "$TEST_ROOT/console-native.err" >&2
     return 1
   }
@@ -1081,9 +1085,9 @@ test_console_reports_non_console_run() {
   out=$("$HOLD_BIN" -d sleep 30 2>&1) || return 1
   id=$(printf '%s\n' "$out" | extract_id)
   [ -n "$id" ] || return 1
-  "$HOLD_BIN" console "$id" >"$TEST_ROOT/console-none.out" 2>"$TEST_ROOT/console-none.err"
-  rc=$?
-  [ "$rc" -eq 0 ] || return 1
+  rc=0; "$HOLD_BIN" console "$id" >"$TEST_ROOT/console-none.out" 2>"$TEST_ROOT/console-none.err" || rc=$?
+  # 10: the call exists but has no console (the wrong kind of call)
+  [ "$rc" -eq 10 ] || { echo "rc=$rc (want 10)" >&2; return 1; }
   grep -q "has no console" "$TEST_ROOT/console-none.err" || { cat "$TEST_ROOT/console-none.err" >&2; return 1; }
   "$HOLD_BIN" stop "$id" >/dev/null || return 1
 }
@@ -1106,7 +1110,8 @@ test_console_round_trip_and_log_tee() {
     cat "$TEST_ROOT/console-list.out" >&2
     return 1
   }
-  printf 'ping\n' | "$HOLD_BIN" console "$id" >"$TEST_ROOT/console.out" 2>"$TEST_ROOT/console.err" || {
+  # the program ends after the line: attach exits 8 ("the call ended")
+  { printf 'ping\n' | "$HOLD_BIN" console "$id" >"$TEST_ROOT/console.out" 2>"$TEST_ROOT/console.err" || [ $? -eq 8 ]; } || {
     cat "$TEST_ROOT/console.out" "$TEST_ROOT/console.err" >&2
     return 1
   }
@@ -1136,8 +1141,8 @@ test_console_exit_code_is_recorded() {
   printf 'done\n' | "$HOLD_BIN" console "$id" >"$TEST_ROOT/console-exit.out" 2>"$TEST_ROOT/console-exit.err"
   rc=$?
   set -e
-  [ "$rc" -eq 0 ] || [ "$rc" -eq 7 ] || {
-    echo "console attach rc=$rc (want 0 or target exit 7)" >&2
+  [ "$rc" -eq 8 ] || {
+    echo "console attach rc=$rc (want 8: the call ended while attached)" >&2
     cat "$TEST_ROOT/console-exit.out" "$TEST_ROOT/console-exit.err" >&2
     return 1
   }
@@ -1301,7 +1306,8 @@ test_console_socket_lives_in_store_dir() {
     return 1
   fi
   # The relative path must also be connectable when the store path is long.
-  printf 'noop\n' | "$HOLD_BIN" console "$id" >/dev/null 2>"$TEST_ROOT/console-store.err" || {
+  # (8: the program ends after the line, while attached)
+  { printf 'noop\n' | "$HOLD_BIN" console "$id" >/dev/null 2>"$TEST_ROOT/console-store.err" || [ $? -eq 8 ]; } || {
     cat "$TEST_ROOT/console-store.err" >&2
     "$HOLD_BIN" stop "$id" >/dev/null 2>&1 || true
     return 1
@@ -1498,7 +1504,8 @@ test_console_rejects_unrelated_peer_uid_before_replay() {
   sleep 0.2
   ! grep -q 'got:steal' "$log" || { cat "$log" >&2; return 1; }
 
-  printf 'done\n' | "$HOLD_BIN" console "$id" >"$TEST_ROOT/authorized-console.out" 2>"$TEST_ROOT/authorized-console.err" || {
+  # the program ends after the line: attach exits 8 ("the call ended")
+  { printf 'done\n' | "$HOLD_BIN" console "$id" >"$TEST_ROOT/authorized-console.out" 2>"$TEST_ROOT/authorized-console.err" || [ $? -eq 8 ]; } || {
     cat "$TEST_ROOT/authorized-console.out" "$TEST_ROOT/authorized-console.err" >&2
     return 1
   }
@@ -1527,7 +1534,8 @@ test_console_can_reattach_after_detach() {
   }
   grep -q 'seen:first' "$TEST_ROOT/console-first.out" || { cat "$TEST_ROOT/console-first.out" >&2; return 1; }
 
-  printf 'done\n' | "$HOLD_BIN" console "$id" >"$TEST_ROOT/console-second.out" 2>"$TEST_ROOT/console-second.err" || {
+  # the program ends after the line: attach exits 8 ("the call ended")
+  { printf 'done\n' | "$HOLD_BIN" console "$id" >"$TEST_ROOT/console-second.out" 2>"$TEST_ROOT/console-second.err" || [ $? -eq 8 ]; } || {
     cat "$TEST_ROOT/console-second.out" "$TEST_ROOT/console-second.err" >&2
     return 1
   }
@@ -2529,6 +2537,80 @@ test_redial_running_call_goes_back_to_it() {
   id=$("$HOLD_BIN" -d upcon 2>/dev/null) || { echo "-d of a running call failed" >&2; return 1; }
   [ "${#id}" -eq 64 ] || { echo "-d printed [$id]" >&2; return 1; }
   "$HOLD_BIN" end upcon >/dev/null 2>&1 || true
+}
+
+
+# A command that cannot start exits as a shell's would, and leaves nothing.
+test_cannot_start_exits_127_and_126() {
+  local rc
+  rc=0; "$HOLD_BIN" -d no-such-command-xyz >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 127 ] || { echo "not found: rc=$rc (want 127)" >&2; return 1; }
+  rc=0; "$HOLD_BIN" no-such-command-xyz </dev/null >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 127 ] || { echo "foreground not found: rc=$rc (want 127)" >&2; return 1; }
+  printf 'echo hi\n' > "$TEST_ROOT/not-exec"; chmod 644 "$TEST_ROOT/not-exec"
+  rc=0; "$HOLD_BIN" -d "$TEST_ROOT/not-exec" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 126 ] || { echo "not executable: rc=$rc (want 126)" >&2; return 1; }
+  if "$HOLD_BIN" list -a | grep -q 'no-such-command\|not-exec'; then echo "a failed start left a record" >&2; return 1; fi
+}
+
+# Names: a verb is refused, a taken name exits 11.
+test_call_names_verbs_and_taken() {
+  local rc
+  rc=0; "$HOLD_BIN" -d --name list true >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] || { echo "--name list: rc=$rc (want 1)" >&2; return 1; }
+  "$HOLD_BIN" -d --name keeper sleep 30 >/dev/null || return 1
+  rc=0; "$HOLD_BIN" rename keeper logs >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] || { echo "rename to logs: rc=$rc (want 1)" >&2; return 1; }
+  rc=0; "$HOLD_BIN" -d --name keeper true >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 11 ] || { echo "taken name: rc=$rc (want 11)" >&2; return 1; }
+  "$HOLD_BIN" end keeper >/dev/null 2>&1 || true
+}
+
+# attach says how it ended: 8 the call ended, 10 no console, 3 refused.
+test_attach_exit_codes() {
+  local rc
+  "$HOLD_BIN" -dt --name brief -- sh -c 'sleep 1' >/dev/null || return 1
+  rc=0; "$HOLD_BIN" attach brief </dev/null >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 8 ] || { echo "ended while attached: rc=$rc (want 8)" >&2; return 1; }
+  rc=0; "$HOLD_BIN" attach brief </dev/null >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 8 ] || { echo "already ended: rc=$rc (want 8)" >&2; return 1; }
+  "$HOLD_BIN" -d --name plainjob sleep 30 >/dev/null || return 1
+  rc=0; "$HOLD_BIN" attach plainjob </dev/null >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 10 ] || { echo "no console: rc=$rc (want 10)" >&2; return 1; }
+  "$HOLD_BIN" end plainjob >/dev/null 2>&1 || true
+}
+
+# msg prints the delivered message's id, which msg --received knows.
+test_msg_prints_its_id() {
+  local id
+  "$HOLD_BIN" -dt --name inbox -- cat >/dev/null || return 1
+  "$HOLD_BIN" wait inbox --idle 200 --timeout 3000 >/dev/null 2>&1 || true
+  id=$("$HOLD_BIN" msg inbox "hello inbox") || return 1
+  printf '%s' "$id" | grep -Eq '^[0-9a-f]{6}$' || { echo "msg printed [$id]" >&2; return 1; }
+  out_has "id:   $id" "$HOLD_BIN" msg inbox --received "$id" || return 1
+  "$HOLD_BIN" end inbox >/dev/null 2>&1 || true
+}
+
+# end a b c: the ones that resolve are ended; the worst code is returned.
+test_end_acts_on_each_target() {
+  local rc
+  "$HOLD_BIN" -d --name first sleep 30 >/dev/null || return 1
+  "$HOLD_BIN" -d --name third sleep 30 >/dev/null || return 1
+  rc=0; "$HOLD_BIN" end first not-a-call third >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 5 ] || { echo "rc=$rc (want 5)" >&2; return 1; }
+  record_ended_soon "$("$HOLD_BIN" inspect first | grep -o '"id": "[0-9a-f]*"' | head -1 | cut -d'"' -f4)" || { echo "first was not ended" >&2; return 1; }
+  record_ended_soon "$("$HOLD_BIN" inspect third | grep -o '"id": "[0-9a-f]*"' | head -1 | cut -d'"' -f4)" || { echo "third was not ended" >&2; return 1; }
+}
+
+# Without --restart-delay, restarts back off (1 s, then 2 s, ...).
+test_restart_backs_off_by_default() {
+  local n
+  "$HOLD_BIN" -d --name spinner --restart always -- sh -c 'echo spin; exit 1' >/dev/null || return 1
+  sleep 2.5
+  n=$("$HOLD_BIN" logs spinner | grep -c '^spin' || true)
+  "$HOLD_BIN" end spinner >/dev/null 2>&1 || true
+  # runs at 0, 1, 3 s: two or three by 2.5 s - never the hundreds a tight loop makes
+  [ "$n" -ge 2 ] && [ "$n" -le 3 ] || { echo "$n runs in 2.5 s (want 2-3)" >&2; return 1; }
 }
 
 
@@ -3823,14 +3905,15 @@ test_signal_delivers_to_group_after_leader_exit() {
 # G14: identity — `callbox attach <target>` is the primary spelling (console the
 # alias); it round-trips bytes and tees to the log exactly like console.
 test_attach_verb_matches_console() {
-  local out id store logf out2 id2
+  local out id store logf out2 id2 rc
   "$HOLD_BIN" help attach >"$TEST_ROOT/attach-help.out" || return 1
   grep -q 'usage: callbox attach <target>' "$TEST_ROOT/attach-help.out" || { cat "$TEST_ROOT/attach-help.out" >&2; return 1; }
   out=$("$HOLD_BIN" --console /bin/sh -c 'read line; echo "attach:$line"' 2>&1) || { printf '%s\n' "$out" >&2; return 1; }
   id=$(printf '%s\n' "$out" | extract_id)
   [ -n "$id" ] || { printf '%s\n' "$out" >&2; return 1; }
   store="$HOME/.local/state/callbox"
-  printf 'ping\n' | "$HOLD_BIN" attach "$id" >"$TEST_ROOT/attach.out" 2>"$TEST_ROOT/attach.err" || {
+  # the program ends after the line: attach exits 8 ("the call ended")
+  { printf 'ping\n' | "$HOLD_BIN" attach "$id" >"$TEST_ROOT/attach.out" 2>"$TEST_ROOT/attach.err" || [ $? -eq 8 ]; } || {
     cat "$TEST_ROOT/attach.out" "$TEST_ROOT/attach.err" >&2
     return 1
   }
@@ -3842,7 +3925,9 @@ test_attach_verb_matches_console() {
   out2=$("$HOLD_BIN" -d sleep 30 2>&1) || return 1
   id2=$(printf '%s\n' "$out2" | extract_id)
   [ -n "$id2" ] || return 1
-  "$HOLD_BIN" attach "$id2" >/dev/null 2>"$TEST_ROOT/attach-none.err" || return 1
+  # (exit 10: the call exists but has no console - the wrong kind of call)
+  rc=0; "$HOLD_BIN" attach "$id2" >/dev/null 2>"$TEST_ROOT/attach-none.err" || rc=$?
+  [ "$rc" -eq 10 ] || { echo "attach without a console exited $rc (want 10)" >&2; return 1; }
   grep -q 'has no console' "$TEST_ROOT/attach-none.err" || { cat "$TEST_ROOT/attach-none.err" >&2; return 1; }
   "$HOLD_BIN" stop "$id2" >/dev/null || return 1
 }
@@ -5602,7 +5687,9 @@ EOF
   "$HOLD_BIN" wait endterm --match ENDINGS_DONE --timeout 30000 || { "$HOLD_BIN" peek endterm >&2; return 1; }
   "$HOLD_BIN" peek endterm > "$TEST_ROOT/endings.out" || return 1
   grep -q '^bg-last-words$' "$TEST_ROOT/endings.out" || { echo "the last screen of a call that ended while attached was lost" >&2; cat "$TEST_ROOT/endings.out" >&2; return 1; }
-  grep -q '^ATTACH_RC=0$' "$TEST_ROOT/endings.out" || { cat "$TEST_ROOT/endings.out" >&2; return 1; }
+  # it ended while attached: attach exits 8, as wait does for an ended call
+  grep -q '^ATTACH_RC=8$' "$TEST_ROOT/endings.out" || { cat "$TEST_ROOT/endings.out" >&2; return 1; }
+  grep -q '^AGAIN_RC=8$' "$TEST_ROOT/endings.out" || { cat "$TEST_ROOT/endings.out" >&2; return 1; }
   grep -q "^callbox: bgend has ended - see 'callbox logs bgend'" "$TEST_ROOT/endings.out" || { echo "attach to an ended call did not say so" >&2; cat "$TEST_ROOT/endings.out" >&2; return 1; }
   grep -q '^rm-quick$' "$TEST_ROOT/endings.out" && grep -q '^RM_RC=3$' "$TEST_ROOT/endings.out" || { echo "-it --rm lost its output or exit status" >&2; cat "$TEST_ROOT/endings.out" >&2; return 1; }
   if grep -q 'exit status unknown' "$TEST_ROOT/endings.out"; then cat "$TEST_ROOT/endings.out" >&2; return 1; fi
@@ -5842,7 +5929,8 @@ test_attach_messages_say_what_happened() {
   # names, not 64 hex digits
   "$HOLD_BIN" end app 2>"$TEST_ROOT/end.err" || return 1
   grep -qx 'callbox: stopped app' "$TEST_ROOT/end.err" || { cat "$TEST_ROOT/end.err" >&2; return 1; }
-  "$HOLD_BIN" attach app 2>"$TEST_ROOT/ended.err" || return 1
+  rc=0; "$HOLD_BIN" attach app 2>"$TEST_ROOT/ended.err" || rc=$?
+  [ "$rc" -eq 8 ] || { echo "attach to an ended call exited $rc (want 8)" >&2; return 1; }
   grep -qx "callbox: app has ended - see 'callbox logs app'" "$TEST_ROOT/ended.err" || { cat "$TEST_ROOT/ended.err" >&2; return 1; }
   "$HOLD_BIN" kill around 2>"$TEST_ROOT/kill.err" || return 1
   grep -qx 'callbox: killed around' "$TEST_ROOT/kill.err" || { cat "$TEST_ROOT/kill.err" >&2; return 1; }
@@ -5965,7 +6053,7 @@ test_screen_verbs_need_a_tty() {
   set +e
   "$HOLD_BIN" peek notty 2>"$TEST_ROOT/notty.err"; rc=$?
   set -e
-  [ "$rc" -eq 5 ] && grep -q 'no terminal screen' "$TEST_ROOT/notty.err" || { cat "$TEST_ROOT/notty.err" >&2; return 1; }
+  [ "$rc" -eq 10 ] && grep -q 'no terminal screen' "$TEST_ROOT/notty.err" || { echo "rc=$rc (want 10)" >&2; cat "$TEST_ROOT/notty.err" >&2; return 1; }
   "$HOLD_BIN" end notty >/dev/null 2>&1 || true
 }
 
@@ -6151,6 +6239,12 @@ run_test "an ambiguous id prefix lists the calls and exits 6, for every verb" te
 run_test "the start of a name is a target when one call fits" test_name_prefix_targets
 run_test "shortened verbs and call names; PATH still wins" test_shortened_top_level_words
 run_test "redialing a running call attaches or follows, never starts it twice" test_redial_running_call_goes_back_to_it
+run_test "a command that cannot start exits 127 or 126" test_cannot_start_exits_127_and_126
+run_test "call names: verbs refused, a taken name exits 11" test_call_names_verbs_and_taken
+run_test "attach exits 8 when the call ended, 10 without a console" test_attach_exit_codes
+run_test "msg prints the delivered message's id" test_msg_prints_its_id
+run_test "end acts on each target; the worst code is returned" test_end_acts_on_each_target
+run_test "restarts back off without --restart-delay" test_restart_backs_off_by_default
 run_test "build artifacts for static and dynamic coexist" test_build_artifact_coexistence
 run_test "concurrent starts produce unique ids" test_concurrent_unique_ids
 run_test "--env-file populates the recipe env only" test_env_file_populates_recipe_env

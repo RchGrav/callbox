@@ -100,11 +100,16 @@ What the short lines leave out:
 - **`wait`** with no condition waits for the call to end and prints its exit
   code, or `-1` for a plain `-d` call, which records none. It exits 7 on a
   timeout and 8 when the call ends before a screen condition holds.
+- **`attach`** exits 0 when you detach (the call still runs), 8 when the
+  call has ended (before or while you were on it), 3 when refused (attached
+  elsewhere), and 10 when the call has no console - so a script that
+  attached knows what it came back to.
 - **`msg`** reaches a running TTY call. The receiver is told who sent it
   (the sender's `$CALLBOX_ID`, verified by the receiving broker) and how to
   reply. A header is only text, so `msg --received ID` is how an agent tells
-  a delivered message from a forged one. Delivery is capped at 20 messages
-  a minute per receiver.
+  a delivered message from a forged one. `msg` prints the delivered
+  message's id on stdout, so a sender can match a later check to what it
+  sent. Delivery is capped at 20 messages a minute per receiver.
 - **`inspect`** prints the stored record as a one-element JSON array, as
   `docker inspect` does: id, name, state, pids, times, argv, mode, and
   `log_path`. `state` is the evaluated state; a differing stored value is
@@ -114,7 +119,14 @@ What the short lines leave out:
   calls need no root. They work on Linux only; on macOS they report
   nothing. `ports` lists listening TCP and bound UDP sockets.
 - **`end` and `kill`** take several targets, and `--print` prints the
-  equivalent `kill` command instead of sending a signal.
+  equivalent `kill` command instead of sending a signal. Each target is
+  acted on alone, as `docker stop a b c` does: one that does not resolve is
+  reported and the rest are still ended; the exit code is the worst. (A
+  mistyped name among several used to end none of them.)
+- **Names** that are callbox verbs (`list`, `logs`, ...) are refused at
+  `--name` and `rename`: the verb always wins at the top level, so such a
+  call could never be redialed by name. Calls named so before keep their
+  names. A name taken by another call exits 11.
 - **`save`** has no inverse; `callbox purge <target> --force` removes a
   saved call.
 

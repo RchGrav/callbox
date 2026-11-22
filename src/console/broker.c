@@ -1485,7 +1485,11 @@ static void broker_serve(struct broker *b) {
     struct attach_client cl;
     memset(&cl, 0, sizeof(cl));
     cl.fd = -1;
-    struct control_client ctl[BROKER_MAX_CONTROL];
+    /* static: b->ctl keeps its address, and one broker process serves one
+     * call (this function ends in _exit) - a local's address would be just
+     * as live, but static states it without the reader (or cppcheck) having
+     * to know that the function never returns. */
+    static struct control_client ctl[BROKER_MAX_CONTROL];
     memset(ctl, 0, sizeof(ctl));
     for (int i = 0; i < BROKER_MAX_CONTROL; i++) ctl[i].fd = -1;
     b->ctl = ctl;

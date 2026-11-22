@@ -82,6 +82,22 @@
  * such call" keeps its own code, so a script can tell the two apart. */
 #define HOLD_EXIT_USAGE 1
 #define HOLD_EXIT_NO_TARGET 5
+/* The call exists but has no terminal screen (peek/send/wait/resize on a
+ * call placed without -t). Its own code, not 5: a script must be able to
+ * tell "wrong name" from "wrong kind of call". */
+#define HOLD_EXIT_NO_SCREEN 10
+/* The name asked for is taken (--name, rename). Its own code, not 5: the
+ * call it names does exist - "no such call" would be the opposite. */
+#define HOLD_EXIT_NAME_TAKEN 11
+/* No --restart-delay given: the restart supervisor backs off (1 s, doubling
+ * to 30 s; reset after a run of 10 s or more) instead of restarting at once.
+ * Why: a program that fails at once would otherwise restart in a tight loop
+ * - forever under `always` - burning CPU and flooding its log. An explicit
+ * --restart-delay N (0 included) is used exactly as given. */
+#define HOLD_RESTART_BACKOFF (-1)
+#define HOLD_RESTART_BACKOFF_FIRST_S 1
+#define HOLD_RESTART_BACKOFF_MAX_S 30
+#define HOLD_RESTART_BACKOFF_RESET_S 10
 
 #define HOLD_TERM_MAX_DIM 1000
 #define HOLD_TERM_DEFAULT_COLS 80

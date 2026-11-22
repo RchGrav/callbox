@@ -43,6 +43,8 @@ The waiter takes its own session before it forks the program. That way, killing 
 
 The record's `pid`, `pgid`, and `sid` are the program's own, which the waiter or broker reports back. With `--restart` they are the supervisor's; each rerun stays in its process group. `--restart` with `-t` is refused.
 
+Between restarts the supervisor waits `--restart-delay` seconds when it was given (0 included). Without it, it backs off: 1 s, doubling to 30 s, and back to 1 s after a run of 10 s or more. Without a backoff, a program that fails at once restarts in a tight loop (forever under `always`), burning CPU and flooding its log; Docker backs off for the same reason. Only a delay that was given is recorded, so a redial replays it, or backs off again.
+
 ## Launch sequence
 
 ```mermaid
@@ -103,7 +105,7 @@ On success the pipe closes:
 - after the PTY spawn, for a TTY call
 - before the first run, for `--restart`, so a restart's own exec failures appear in the log, not at launch
 
-`hold_read_exec_handshake` returns 0 for success, 1 with the child's errno, or −1 for a broken handshake. Callbox never records a call that did not start.
+`hold_read_exec_handshake` returns 0 for success, 1 with the child's errno, or −1 for a broken handshake. Callbox never records a call that did not start. A command that could not be started exits as a shell's would: 127 when there is no such command, 126 when it is there but cannot be run (not executable, a directory) - the codes scripts, CI runners, and `docker run` already read that way.
 
 ## Rollback
 

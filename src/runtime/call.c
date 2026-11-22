@@ -181,7 +181,10 @@ static int restart_existing_run(const struct hold_invocation *inv,
         .envc = old.recipe.envc,
         .env = old.recipe.env,
         .restart_policy = restart_policy ? restart_policy : (old.recipe.has_restart_policy ? old.recipe.restart_policy : NULL),
-        .restart_delay_seconds = restart_policy ? restart_delay_seconds : old.recipe.restart_delay_seconds,
+        .restart_delay_seconds = restart_delay_seconds != HOLD_RESTART_BACKOFF
+                                     ? restart_delay_seconds
+                                     : (!restart_policy && old.recipe.has_restart_delay ? old.recipe.restart_delay_seconds
+                                                                                        : HOLD_RESTART_BACKOFF),
         /* The recipe's --size replays (on a PTY again) unless this
          * invocation gave its own. */
         .size_cols = size_cols ? size_cols : (console_mode && old.recipe.has_size ? old.recipe.size_cols : 0),
@@ -310,7 +313,7 @@ static int protect_record_action(const struct hold_invocation *inv,
         fprintf(stderr, "callbox: error: call name '%s' already exists\n", new_name);
         hold_store_unlock(lock_fd);
         free(targets);
-        return 5;
+        return HOLD_EXIT_NAME_TAKEN;
     }
     struct hold_run_record r;
     char record_path[HOLD_PATH_MAX];
@@ -397,7 +400,7 @@ static int pick_run_name(const struct hold_store *store, const char *id, const c
         }
         if (run_name_exists_in_store(store, requested, id)) {
             fprintf(stderr, "callbox: error: call name '%s' already exists\n", requested);
-            return 5;
+            return HOLD_EXIT_NAME_TAKEN;
         }
         snprintf(out, ALIAS_MAX_LEN + 1, "%s", requested);
         return 0;

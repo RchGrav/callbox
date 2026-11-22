@@ -23,7 +23,7 @@ struct hold_start_options {
     int envc;
     char **env;
     const char *restart_policy;
-    int restart_delay_seconds;
+    int restart_delay_seconds; /* HOLD_RESTART_BACKOFF: none given, back off */
     int size_cols, size_rows; /* --size, or a redialed recipe's: 0 = resolve (see start.c) */
     bool chat;                /* callbox shell: composited display, messages to the chat inbox */
     bool user_mode;           /* placed in user mode: recorded, so redial at a terminal gets chat

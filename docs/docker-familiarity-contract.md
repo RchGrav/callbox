@@ -79,7 +79,10 @@ Callbox-native launch flags:
 ```text
 -w, --wait              keep a waiter as the call's parent, recording its exit
                         code for list and callbox wait (clusters: -dw)
-    --restart-delay N   seconds between restart attempts; requires --restart
+    --restart-delay N   seconds between restart attempts; requires --restart.
+                        Without it: back off 1 s doubling to 30 s, reset
+                        after a 10 s run (Docker backs off too), so a
+                        program that fails at once never spins
                         with a policy other than no
     --size COLS ROWS    the PTY's size (with -t)
     --quiet             no status notes on stderr

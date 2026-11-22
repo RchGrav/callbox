@@ -131,13 +131,18 @@ static int attach_console_record(const struct hold_invocation *inv,
                                  const struct hold_store *system_store) {
     char label[ALIAS_MAX_LEN + 1];
     call_label(r, label, sizeof(label));
+    /* How an attach ended, as its exit code - so a script that attached can
+     * tell what it came back to: 0 detached, the call still runs; 8 the call
+     * has ended (before or while attached; the same "ended" as wait's 8);
+     * 3 refused (attached elsewhere, or this is that call); 10 the call has
+     * no console to attach to (the same "wrong kind of call" as peek's). */
     if (st != STATE_RUNNING) {
         hold_sig_note(inv, "callbox: %s has ended - see 'callbox logs %s'\n", label, label);
-        return 0;
+        return 8;
     }
     if (!r->has_console) {
         hold_sig_note(inv, "callbox: %s has no console (start with -it)\n", label);
-        return 0;
+        return HOLD_EXIT_NO_SCREEN;
     }
     /* Attaching to the call this very command runs in would show a screen
      * inside itself. */
@@ -157,13 +162,17 @@ static int attach_console_record(const struct hold_invocation *inv,
     bool on_terminal = r->recipe.mode_tty && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
     int rc = hold_run_native_console(r->console_sock);
     pid_t by = 0;
-    if (hold_console_was_refused(&by)) hold_note_attached_elsewhere(label, by, user_store, system_store);
-    else if (hold_console_was_gone()) {
+    if (hold_console_was_refused(&by)) {
+        hold_note_attached_elsewhere(label, by, user_store, system_store);
+        rc = 3;
+    } else if (hold_console_was_gone()) {
         /* Its console closed between the look at its record and the attach. */
-        if (hold_after_attach(inv, store, r, label, on_terminal, true))
-            hold_sig_note(inv, "callbox: %s has ended - see 'callbox logs %s'\n", label, label);
-        rc = 0;
-    } else if (rc == 0) (void)hold_after_attach(inv, store, r, label, on_terminal, false);
+        bool ended = hold_after_attach(inv, store, r, label, on_terminal, true);
+        if (ended) hold_sig_note(inv, "callbox: %s has ended - see 'callbox logs %s'\n", label, label);
+        rc = ended ? 8 : 0;
+    } else if (rc == 0) {
+        rc = hold_after_attach(inv, store, r, label, on_terminal, false) ? 8 : 0;
+    }
     return rc;
 }
 
