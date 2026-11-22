@@ -24,6 +24,13 @@ struct hold_term_spawn {
 int hold_term_pty_spawn(const struct hold_term_spawn *spec,
                         int *master_out, pid_t *pid_out);
 
+/* Spawns argv on pipes instead: its stdin reads from *in_w_out's pipe, its
+ * stdout and stderr write to *out_r_out's, in a session of its own. For a
+ * program whose input is relayed (callbox -i): the relay can be cut and
+ * reconnected, and the program never holds a person's terminal. */
+int hold_term_pipe_spawn(const struct hold_term_spawn *spec,
+                         int *in_w_out, int *out_r_out, pid_t *pid_out);
+
 /* THE CLOEXEC pipe: pipe2(O_CLOEXEC) where available, else pipe() + FD_CLOEXEC
  * (acceptable: callbox is single-threaded at every spawn site). Returns 0 with
  * fds[0]=read, fds[1]=write, or -1 with errno set and nothing left open. */
@@ -35,6 +42,12 @@ int hold_cloexec_pipe(int fds[2]);
  * a failed read after the last slave closed); -1 on a retryable read error
  * (errno preserved). */
 ssize_t hold_term_pump_master(int master, int logfd, char *buf, size_t n);
+/* The same, with what was read passed through filter (bytes in -> bytes out,
+ * at most 4 more than went in) before the log and the caller see it. A read
+ * the filter took entirely returns -1 with EAGAIN: nothing now, not the end. */
+typedef size_t (*hold_term_pump_filter)(void *ctx, const char *in, size_t n, char *out);
+ssize_t hold_term_pump_master_filtered(int master, int logfd, char *buf, size_t n,
+                                       hold_term_pump_filter filter, void *ctx);
 
 /* THE detach-key FSM (Ctrl-P Ctrl-Q by default). The first key is a lead
  * key: it is held back until the next key says what it meant, however long
@@ -67,6 +80,23 @@ int hold_term_detach_flush(struct hold_term_detach *d, hold_term_detach_sink sin
  * typed Ctrl-C would otherwise be lost: the client turns it into a signal. A
  * held lead key is sent through first. 0 turns it off (the default). */
 void hold_term_detach_set_interrupt(struct hold_term_detach *d, unsigned char intr);
+
+/* ---- line editing for a program on pipes (term/line.c) -------------------- */
+
+struct hold_term_line {
+    char buf[4096];
+    size_t len;
+    int echo_fd; /* where typed characters are echoed; -1 = nowhere */
+    int esc;     /* inside an escape sequence (arrow keys): 0 no, 1 ESC, 2 CSI, 3 SS3 */
+    bool after_cr; /* the last byte was a CR: a LF right after it is the same Enter */
+};
+void hold_term_line_init(struct hold_term_line *l, int echo_fd);
+/* One key: printable keys and tab are echoed and kept; Enter sends the line
+ * (with "\n") to sink; backspace and Ctrl-U erase; Ctrl-D sends what is typed,
+ * or on an empty line sets *eof. Other control keys are ignored. */
+int hold_term_line_feed(struct hold_term_line *l, unsigned char c, hold_term_detach_sink sink, void *ctx,
+                        bool *eof);
+void hold_term_line_discard(struct hold_term_line *l); /* forget the typed line (Ctrl-C) */
 
 /* ---- the person's terminal (term/tty.c) ----------------------------------- */
 

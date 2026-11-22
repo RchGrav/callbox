@@ -44,7 +44,8 @@ extract_full64() {
 }
 
 # Bare foreground: stream the process output, print no id and no startup note.
-out=$(callbox -- /bin/sh -c 'echo smoke-out; echo smoke-err >&2' 2>&1)
+# (It runs on a PTY - user mode - so lines end in \r\n and stderr is merged.)
+out=$(callbox -- /bin/sh -c 'echo smoke-out; echo smoke-err >&2' 2>&1 | tr -d '\r')
 printf '%s\n' "$out" | grep -qx 'smoke-out' || fail "foreground stdout missing"
 printf '%s\n' "$out" | grep -qx 'smoke-err' || fail "foreground stderr missing"
 if printf '%s\n' "$out" | grep -q 'callbox  started'; then
@@ -57,10 +58,10 @@ full=$(basename "$(ls "$LOG_DIR/"*.log | head -n1)" .log)
 [ "${#full}" -eq 64 ] || fail "full 64-hex call id missing from store"
 display=${full:0:12}
 log="$LOG_DIR/$full.log"
-grep -qx 'smoke-out' "$log" || fail "stdout raw log line missing"
+tr -d '\r' <"$log" | grep -qx 'smoke-out' || fail "stdout raw log line missing"
 test ! -e "$log.idx" || fail "a log index sidecar was written"
-callbox logs --plain "$display" | grep -qx 'smoke-out' || fail "logs --plain did not print raw log"
-callbox logs -p "$display" | grep -qx 'smoke-out' || fail "logs -p did not print raw log"
+callbox logs --plain "$display" | tr -d '\r' | grep -qx 'smoke-out' || fail "logs --plain did not print raw log"
+callbox logs -p "$display" | tr -d '\r' | grep -qx 'smoke-out' || fail "logs -p did not print raw log"
 
 # Named detached call, then redial by name reuses the same call id and log.
 named=$(callbox -d --name named-smoke -- /bin/sh -c 'echo named; sleep 0.1' 2>&1 | extract_full64 | cut -c1-12)

@@ -84,6 +84,9 @@ struct broker {
     } ep;
     int logfd;
     pid_t target; /* >0: our held child (waited, SIGKILLed on cleanup) */
+    pid_t program_pid; /* the program's pid, kept after it is reaped: whose exit to stamp */
+    bool eof_echo;       /* a typed end of input's echo is still to be taken out */
+    size_t eof_echo_got; /* how much of it the output has matched so far */
     uid_t owner_uid;
     bool have_allowed_peer_uid;
     uid_t allowed_peer_uid;
@@ -115,6 +118,15 @@ struct broker {
     int sent_idx;
     uint32_t msg_count; /* feeds each message's id */
     struct chat *chat;  /* a callbox shell's chat and compositor; NULL for every other call */
+    off_t log_start;    /* where this run's output starts in the log */
+    /* A program on pipes: input waiting for room in its stdin pipe. The
+     * broker never blocks on that pipe - its one loop also drains the
+     * program's output, and a program that prints more than it reads (or
+     * never reads) would otherwise lock both up. */
+    unsigned char *inq;
+    size_t inq_len, inq_cap;
+    bool inq_eof; /* end of input asked for: close stdin once the queue is out */
+    bool replayed;      /* a program on pipes: its first client has had the replay */
     int64_t frame_ms;   /* when its attach client was last sent a frame */
     struct control_client *ctl; /* the control slots (BROKER_MAX_CONTROL of them) */
 };
@@ -132,6 +144,7 @@ static void broker_cleanup_and_exit(struct broker *b, int exit_code) {
     if (b->listener >= 0) close(b->listener);
     if (b->ep.in_fd >= 0) close(b->ep.in_fd);
     if (b->ep.out_fd >= 0 && b->ep.out_fd != b->ep.in_fd) close(b->ep.out_fd);
+    free(b->inq);
     if (b->logfd >= 0) close(b->logfd);
     if (b->sock_path && *b->sock_path) {
         unlink(b->sock_path);
@@ -204,6 +217,108 @@ static bool authorize_client(const struct broker *b, int client) {
     return false;
 }
 
+/* The program's input has ended (EOF asked for, or it closed its stdin):
+ * nothing more goes in. */
+static void close_program_input(struct broker *b) {
+    if (b->ep.pty || b->ep.in_fd < 0) return;
+    close(b->ep.in_fd);
+    b->ep.in_fd = -1;
+    b->inq_len = 0;
+    b->inq_eof = false;
+}
+
+/* Push queued input into a program's stdin pipe, as far as it will take. */
+static void flush_program_input(struct broker *b) {
+    while (b->inq_len > 0 && b->ep.in_fd >= 0) {
+        ssize_t w = write(b->ep.in_fd, b->inq, b->inq_len);
+        if (w > 0) {
+            memmove(b->inq, b->inq + w, b->inq_len - (size_t)w);
+            b->inq_len -= (size_t)w;
+            continue;
+        }
+        if (w < 0 && errno == EINTR) continue;
+        if (w < 0 && errno == EAGAIN) return;
+        /* EPIPE (it closed its stdin, or ended) and anything else: its input
+         * is over - which is the program's business, not the client's. */
+        close_program_input(b);
+        return;
+    }
+    if (b->inq_len == 0 && b->inq_eof) close_program_input(b);
+}
+
+/* THE way input reaches the program. On a PTY, written as it always was. On
+ * pipes, queued and pushed without ever blocking the broker. */
+static int program_write(struct broker *b, const void *buf, size_t n) {
+    if (b->ep.in_fd < 0 || n == 0) return 0;
+    if (b->ep.pty) return hold_write_all(b->ep.in_fd, buf, n);
+    if (b->inq_len + n > b->inq_cap) {
+        size_t cap = b->inq_cap ? b->inq_cap : 16384;
+        while (cap < b->inq_len + n) cap *= 2;
+        unsigned char *p = realloc(b->inq, cap);
+        if (!p) return 0; /* out of memory: this input is lost, the call goes on */
+        b->inq = p;
+        b->inq_cap = cap;
+    }
+    memcpy(b->inq + b->inq_len, buf, n);
+    b->inq_len += n;
+    flush_program_input(b);
+    return 0;
+}
+
+/* End of input for a program on a PTY: the terminal's own end-of-input
+ * character, so a program reading stdin finishes as it would on /dev/null.
+ * macOS echoes it into the program's output as "^D" and two backspaces
+ * (Linux never echoes VEOF); a stream's reader should get the program's
+ * output only, so that echo is taken out of the next output (see
+ * strip_eof_echo). Not by turning ECHO off around the byte: on macOS,
+ * changing the terminal's modes from the master while input waits loses
+ * that input (cat then read only the end). */
+static const char EOF_ECHO[] = "^D\b\b";
+
+static void program_send_eof(struct broker *b) {
+    if (b->ep.in_fd < 0) return;
+    struct termios t;
+    bool have = tcgetattr(b->ep.in_fd, &t) == 0;
+    unsigned char eof = have && t.c_cc[VEOF] != _POSIX_VDISABLE ? t.c_cc[VEOF] : 0x04;
+#ifdef __APPLE__
+    /* BSD echoes as it takes the byte, before the write returns: the echo
+     * is in the output queue, after whatever the program wrote before. */
+    if (have && eof == 0x04 && (t.c_lflag & ICANON) && (t.c_lflag & ECHO) && (t.c_lflag & ECHOCTL)) {
+        b->eof_echo = true;
+        b->eof_echo_got = 0;
+    }
+#endif
+    (void)hold_write_all(b->ep.in_fd, &eof, 1);
+}
+
+/* Take the first "^D\b\b" out of the program's output after an end of input
+ * was typed (it may arrive split across reads); out has room for n + 4. */
+static size_t strip_eof_echo(void *ctx, const char *in, size_t n, char *out) {
+    struct broker *b = ctx;
+    size_t o = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (!b->eof_echo) {
+            out[o++] = in[i];
+            continue;
+        }
+        if (in[i] == EOF_ECHO[b->eof_echo_got]) {
+            if (++b->eof_echo_got == sizeof(EOF_ECHO) - 1) b->eof_echo = false;
+            continue;
+        }
+        /* Not the echo after all: give back what was held, look again here. */
+        memcpy(out + o, EOF_ECHO, b->eof_echo_got);
+        o += b->eof_echo_got;
+        b->eof_echo_got = 0;
+        if (in[i] == EOF_ECHO[0]) b->eof_echo_got = 1;
+        else out[o++] = in[i];
+    }
+    return o;
+}
+
+/* While this much input waits for a program that is not reading, the
+ * attached client is not read either: its sender waits, the broker never. */
+#define BROKER_INQ_HIGH (64 * 1024)
+
 /* Everything the terminal wants sent to the program (query replies, encoded
  * input) goes to the master. While a human terminal is attached it answers
  * the program's queries itself, so the screen's replies are dropped then. */
@@ -211,7 +326,12 @@ static void flush_screen_output(struct broker *b) {
     char buf[4096];
     size_t n;
     while ((n = hold_screen_take_output(b->screen, buf, sizeof(buf))) > 0) {
-        if (b->ep.in_fd >= 0) (void)hold_write_all(b->ep.in_fd, buf, n);
+        /* A key's Enter is a carriage return, which a PTY turns into a
+         * newline; a program on pipes needs the newline itself. */
+        if (!b->ep.pty)
+            for (size_t i = 0; i < n; i++)
+                if (buf[i] == '\r') buf[i] = '\n';
+        (void)program_write(b, buf, n);
     }
 }
 
@@ -268,6 +388,8 @@ struct attach_client {
     bool decided;
     bool framed;
     bool needs_repaint;
+    bool stream;       /* not a terminal: output as a stream, never a repaint */
+    bool no_terminal;  /* nothing on the client's side answers terminal queries */
     unsigned char pending[16384];
     size_t pending_len;
 };
@@ -297,7 +419,7 @@ static int attach_input(struct broker *b, const void *buf, size_t n) {
          * that reads its own keys - the innermost attach lets go first. */
         return chat_take_detach(b->chat) && !forward_detach(b) ? 1 : 0;
     }
-    return b->ep.in_fd >= 0 ? hold_write_all(b->ep.in_fd, buf, n) : 0;
+    return program_write(b, buf, n);
 }
 
 static int process_framed(struct broker *b, struct attach_client *c) {
@@ -315,6 +437,23 @@ static int process_framed(struct broker *b, struct attach_client *c) {
             }
         } else if (type == CONSOLE_FRAME_RESIZE) {
             if (len == 4) apply_size(b, console_load_be16(payload), console_load_be16(payload + 2), false);
+        } else if (type == CONSOLE_FRAME_STREAM) {
+            c->stream = true;
+        } else if (type == CONSOLE_FRAME_NO_TERMINAL) {
+            c->no_terminal = true;
+        } else if (type == CONSOLE_FRAME_EOF) {
+            if (b->ep.pty) {
+                program_send_eof(b);
+            } else if (b->ep.in_fd >= 0) {
+                b->inq_eof = true; /* once what is queued has gone in */
+                flush_program_input(b);
+            }
+        } else if (type == CONSOLE_FRAME_INTERRUPT) {
+            /* Empty: Ctrl-C for a program on pipes. One byte: a signal a
+             * launch passes on (SIGTERM), for either kind of program. */
+            int sig = len == 1 ? payload[0] : SIGINT;
+            bool ok = len == 1 ? (sig == SIGTERM || sig == SIGINT) : !b->ep.pty;
+            if (ok && !b->target_done && b->target > 0) (void)kill(-b->target, sig);
         } else if (type == CONSOLE_FRAME_DETACH) {
             /* The detach keys let go of the innermost attach first: with an
              * attach client at the front of this terminal they are its, and
@@ -386,7 +525,34 @@ static int send_frame(struct broker *b, struct attach_client *c, int64_t now) {
 }
 
 /* A new attach client sees the live screen, not a byte replay. */
+/* A program on pipes has no screen to repaint for a client that keeps its
+ * terminal in line mode: the first client (the launcher, attaching as its
+ * program starts) gets this run's output so far from the log, so nothing
+ * printed before it connected is lost; a client attaching later gets what
+ * comes next, as docker attach does. */
+static int replay_attach(struct broker *b, struct attach_client *c) {
+    if (b->replayed) return 0;
+    b->replayed = true;
+    int fd = open(b->log_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0) return 0;
+    if (lseek(fd, b->log_start, SEEK_SET) < 0) {
+        close(fd);
+        return 0;
+    }
+    char buf[4096];
+    ssize_t n;
+    int rc = 0;
+    while ((n = read(fd, buf, sizeof(buf))) > 0)
+        if (write_all_wait(c->output, buf, (size_t)n) != 0) {
+            rc = -1;
+            break;
+        }
+    close(fd);
+    return rc;
+}
+
 static int repaint_attach(struct broker *b, struct attach_client *c) {
+    if (!b->ep.pty || c->stream) return replay_attach(b, c);
     if (b->chat) {
         int rows = 0, cols = 0;
         int64_t now = now_ms();
@@ -589,7 +755,7 @@ static void handle_send(struct broker *b, struct control_client *c, char *ops) {
                 hold_screen_send_paste(b->screen, arg, (size_t)n);
                 flush_screen_output(b);
             } else if (n > 0 && b->ep.in_fd >= 0) {
-                (void)hold_write_all(b->ep.in_fd, arg, (size_t)n);
+                (void)program_write(b, arg, (size_t)n);
             }
         } else if (!strcmp(line, "key")) {
             if (!arg || hold_screen_send_key(b->screen, arg) != 0) {
@@ -669,7 +835,11 @@ static bool screen_matches(struct broker *b, struct wait_request *w) {
         for (int r = 0; r < snap.rows; r++) {
             hold_snapshot_row_text(&snap, r, text + len, cap - len);
             len += strlen(text + len);
-            if (len + 1 < cap) text[len++] = '\n';
+            /* A row that wrapped into the next is one line, not two: text
+             * cut by the right edge still matches (`wait --match` for a
+             * message whose header pushed it past the edge). */
+            bool wraps = r + 1 < snap.rows && hold_screen_row_continues(b->screen, r + 1);
+            if (!wraps && len + 1 < cap) text[len++] = '\n';
             text[len] = '\0';
         }
         hit = w->match_regex ? (w->re_ok && regexec(&w->re, text, 0, NULL, 0) == 0) : strstr(text, w->match) != NULL;
@@ -1011,10 +1181,12 @@ static void deliver_msg(struct broker *b, struct pending_msg *m, int verdict, co
     } else {
         for (size_t i = 0; i < flen; i++)
             if (full[i] == '\n' || full[i] == '\r') full[i] = ' ';
-        if (b->ep.in_fd >= 0) (void)hold_write_all(b->ep.in_fd, full, flen);
+        (void)program_write(b, full, flen);
     }
     free(full);
-    if (m->submit && b->ep.in_fd >= 0) (void)hold_write_all(b->ep.in_fd, "\r", 1);
+    /* Enter: a carriage return on a PTY (its terminal makes it a newline), the
+     * newline itself for a program on pipes. */
+    if (m->submit) (void)program_write(b, b->ep.pty ? "\r" : "\n", 1);
     msg_done(m, id);
 }
 
@@ -1143,7 +1315,27 @@ static void keep_alt_frame(struct broker *b) {
     b->last_alt_len = len;
 }
 
+static void feed_screen_raw(struct broker *b, const char *buf, size_t n);
+
+/* A program on pipes writes bare "\n": a PTY would have turned it into
+ * "\r\n" (onlcr), so the headless screen gets the same - its lines then read
+ * as they do on a terminal, and peek and wait work for it too. */
 static void feed_screen(struct broker *b, const char *buf, size_t n) {
+    if (b->ep.pty) {
+        feed_screen_raw(b, buf, n);
+        return;
+    }
+    size_t from = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (buf[i] != '\n') continue;
+        if (i > from) feed_screen_raw(b, buf + from, i - from);
+        feed_screen_raw(b, "\r\n", 2);
+        from = i + 1;
+    }
+    if (from < n) feed_screen_raw(b, buf + from, n - from);
+}
+
+static void feed_screen_raw(struct broker *b, const char *buf, size_t n) {
     struct hold_screen_modes modes;
     hold_screen_modes(b->screen, &modes);
     const char *leave = modes.alt_screen ? find_alt_leave(buf, n) : NULL;
@@ -1306,11 +1498,11 @@ static void broker_serve(struct broker *b) {
                 /* Best-effort while serving: an instantly-exiting target
                  * can beat the parent's record write, so a failure here
                  * is retried patiently after the serve loop ends. */
-                target_marked = hold_mark_run_finished(b->store, b->run_id, b->target_status) == 0;
+                target_marked = hold_mark_run_finished(b->store, b->run_id, b->target_status, b->program_pid) == 0;
             }
         }
 
-        struct pollfd pfds[3 + BROKER_MAX_CONTROL + CHAT_MAX_OUTBOUND];
+        struct pollfd pfds[4 + BROKER_MAX_CONTROL + CHAT_MAX_OUTBOUND]; /* program, listener, client, input queue */
         int ctl_idx[BROKER_MAX_CONTROL];
         nfds_t nfds = 0;
         pfds[nfds++] = (struct pollfd){.fd = b->ep.out_fd, .events = POLLIN};
@@ -1325,8 +1517,15 @@ static void broker_serve(struct broker *b) {
              * program next printed something, and with a quiet program,
              * never: the console would stay "already attached". */
             client_idx = (int)nfds;
+            /* (not read while its earlier input still waits for the program) */
+            bool hold_client = b->inq_len >= BROKER_INQ_HIGH;
             pfds[nfds++] = cl.input_closed ? (struct pollfd){.fd = cl.output, .events = 0}
-                                           : (struct pollfd){.fd = cl.fd, .events = POLLIN};
+                                           : (struct pollfd){.fd = cl.fd, .events = hold_client ? 0 : POLLIN};
+        }
+        int inq_idx = -1;
+        if (b->inq_len > 0 && b->ep.in_fd >= 0) {
+            inq_idx = (int)nfds;
+            pfds[nfds++] = (struct pollfd){.fd = b->ep.in_fd, .events = POLLOUT};
         }
         int64_t now = now_ms();
         int64_t timeout = 1000;
@@ -1499,9 +1698,11 @@ static void broker_serve(struct broker *b) {
             if (repaint_attach(b, &cl) != 0) drop_attach(b, &cl);
         }
 
+        if (inq_idx >= 0 && (pfds[inq_idx].revents & (POLLOUT | POLLERR | POLLHUP | POLLNVAL))) flush_program_input(b);
         if (pr > 0 && (pfds[0].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL))) {
             char buf[4096];
-            ssize_t n = hold_term_pump_master(b->ep.out_fd, b->logfd, buf, sizeof(buf));
+            ssize_t n = hold_term_pump_master_filtered(b->ep.out_fd, b->logfd, buf, sizeof(buf),
+                                                       b->eof_echo ? strip_eof_echo : NULL, b);
             if (n > 0) {
                 b->output_seq += (uint64_t)n;
                 b->last_output_ms = now_ms();
@@ -1513,7 +1714,7 @@ static void broker_serve(struct broker *b) {
                     flush_screen_output(b);
                     chat_screen_changed(b->chat);
                 } else {
-                    if (cl.fd >= 0) hold_screen_discard_output(b->screen);
+                    if (cl.fd >= 0 && !cl.no_terminal) hold_screen_discard_output(b->screen);
                     else flush_screen_output(b);
                     /* Before the repaint, the client gets nothing: the repaint
                      * already includes these bytes. */
@@ -1577,7 +1778,7 @@ static void broker_serve(struct broker *b) {
          * parent's record exists. rc 1 means the record was purged while the
          * call was exiting — that removal is final, do not resurrect it. */
         for (int i = 0; i < 50; i++) {
-            int mark_rc = hold_mark_run_finished(b->store, b->run_id, b->target_status);
+            int mark_rc = hold_mark_run_finished(b->store, b->run_id, b->target_status, b->program_pid);
             if (mark_rc == 0 || mark_rc == 1) break;
             struct timespec sl = {.tv_sec = 0, .tv_nsec = 100 * 1000000L};
             while (nanosleep(&sl, &sl) != 0 && errno == EINTR) {
@@ -1594,7 +1795,10 @@ static void broker_serve(struct broker *b) {
     for (int i = 0; i < BROKER_MAX_CONTROL; i++) {
         if (ctl[i].fd < 0) continue;
         if (ctl[i].phase == CTL_WAITING) check_wait(b, &ctl[i], now);
-        else control_replyf(&ctl[i], "error the call has ended\n");
+        /* A connection not yet known to be control may be an attach client
+         * arriving as the call ends: a control reply would be printed as
+         * the program's output. Closing it says the call is over. */
+        else if (ctl[i].phase != CTL_SNIFF) control_replyf(&ctl[i], "error the call has ended\n");
         if (ctl[i].fd >= 0) drop_control(&ctl[i]);
     }
     for (int i = 0; i < BROKER_MAX_MSGS; i++) free(b->msgs[i].text);
@@ -1665,10 +1869,22 @@ void hold_run_console_broker(int parent_pipe,
         .cols = init_cols,
     };
     int master = -1;
-    if (hold_term_pty_spawn(&spawn, &master, &b.target) != 0) {
-        broker_fail_errno(&b, errno);
+    b.log_start = lseek(b.logfd, 0, SEEK_END);
+    if (b.log_start < 0) b.log_start = 0;
+    if (options && options->pipe) {
+        int in_w = -1, out_r = -1;
+        if (hold_term_pipe_spawn(&spawn, &in_w, &out_r, &b.target) != 0) {
+            broker_fail_errno(&b, errno);
+        }
+        int fl = fcntl(in_w, F_GETFL);
+        if (fl >= 0) (void)fcntl(in_w, F_SETFL, fl | O_NONBLOCK);
+        b.ep = (struct program_endpoint){.in_fd = in_w, .out_fd = out_r, .pty = false};
+    } else {
+        if (hold_term_pty_spawn(&spawn, &master, &b.target) != 0) {
+            broker_fail_errno(&b, errno);
+        }
+        b.ep = (struct program_endpoint){.in_fd = master, .out_fd = master, .pty = true};
     }
-    b.ep = (struct program_endpoint){.in_fd = master, .out_fd = master, .pty = true};
     if (options && options->chat) {
         struct chat_host host = {
             .screen = b.screen,
@@ -1678,6 +1894,7 @@ void hold_run_console_broker(int parent_pipe,
             .lead = options->lead_key,
             .detach_key = options->detach_key,
             .key = options->chat_key,
+            .program = options->program,
         };
         b.chat = chat_new(&host);
         if (!b.chat) broker_fail_errno(&b, ENOMEM);
@@ -1685,6 +1902,7 @@ void hold_run_console_broker(int parent_pipe,
     /* Report the real held group to the parent before releasing the handshake:
      * a failed write must still ride the handshake pipe as an errno, and the
      * write-before-close ordering keeps the parent's pid read deadlock-free. */
+    b.program_pid = b.target;
     if (target_pid_fd >= 0) {
         if (hold_write_all(target_pid_fd, &b.target, sizeof(b.target)) != 0) {
             broker_fail_errno(&b, errno);

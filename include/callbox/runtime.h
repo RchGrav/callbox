@@ -26,6 +26,9 @@ struct hold_start_options {
     int restart_delay_seconds;
     int size_cols, size_rows; /* --size, or a redialed recipe's: 0 = resolve (see start.c) */
     bool chat;                /* callbox shell: composited display, messages to the chat inbox */
+    bool user_mode;           /* placed in user mode: recorded, so redial at a terminal gets chat
+                                 even when this launch (from a script) could not draw it */
+    bool shell;               /* placed with callbox shell */
     unsigned char chat_key;   /* the key that opens chat; 0 = the default */
     const char *existing_id;
     const char *existing_log_path;

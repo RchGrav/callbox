@@ -9,6 +9,28 @@
  * End-of-target: a PTY master reports the last slave closing either as EOF
  * or as read() failing with EIO (Linux). EIO is checked only when the read
  * actually failed — never against a stale errno from a successful read. */
+ssize_t hold_term_pump_master_filtered(int master, int logfd, char *buf, size_t n,
+                                       hold_term_pump_filter filter, void *ctx) {
+    if (!filter) return hold_term_pump_master(master, logfd, buf, n);
+    char raw[4096];
+    size_t want = n > 4 ? n - 4 : 0;
+    if (want > sizeof(raw)) want = sizeof(raw);
+    ssize_t r = read(master, raw, want);
+    if (r > 0) {
+        size_t out = filter(ctx, raw, (size_t)r, buf);
+        if (out == 0) {
+            errno = EAGAIN;
+            return -1;
+        }
+        (void)hold_write_all(logfd, buf, out);
+        return (ssize_t)out;
+    }
+    if (r == 0 || (r < 0 && errno == EIO)) {
+        return 0;
+    }
+    return -1;
+}
+
 ssize_t hold_term_pump_master(int master, int logfd, char *buf, size_t n) {
     ssize_t r = read(master, buf, n);
     if (r > 0) {

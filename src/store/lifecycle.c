@@ -127,7 +127,23 @@ static int wait_status_exit_code(int status) {
     return 255;
 }
 
-int hold_mark_run_finished(const struct hold_store *store, const char *id, int status) {
+/* The fields an exit stamp owns: state, exit code or signal, end time. */
+static void apply_exit(struct hold_run_record *r, int status) {
+    snprintf(r->state, sizeof(r->state), "%s", "exited");
+    r->has_state = true;
+    r->exit_code = wait_status_exit_code(status);
+    r->has_exit_code = true;
+    r->has_term_signal = WIFSIGNALED(status);
+    r->term_signal = r->has_term_signal ? WTERMSIG(status) : 0;
+    struct timespec ts;
+    if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
+        int64_t ended_ns = (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+        hold_format_rfc3339_utc_from_ns(ended_ns, r->ended_at, sizeof(r->ended_at));
+        r->has_ended_at = true;
+    }
+}
+
+int hold_mark_run_finished(const struct hold_store *store, const char *id, int status, pid_t pid) {
     if (!store || !hold_valid_id(id)) {
         errno = EINVAL;
         return -1;
@@ -135,25 +151,6 @@ int hold_mark_run_finished(const struct hold_store *store, const char *id, int s
     char path[HOLD_PATH_MAX];
     struct hold_run_record r;
     if (hold_load_record_by_id(store->record_dir, id, &r, path, sizeof(path)) != 0) return -1;
-    snprintf(r.state, sizeof(r.state), "%s", "exited");
-    r.has_state = true;
-    r.exit_code = wait_status_exit_code(status);
-    r.has_exit_code = true;
-    r.has_term_signal = WIFSIGNALED(status);
-    r.term_signal = r.has_term_signal ? WTERMSIG(status) : 0;
-    struct timespec ts;
-    if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
-        int64_t ended_ns = (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
-        hold_format_rfc3339_utc_from_ns(ended_ns, r.ended_at, sizeof(r.ended_at));
-        r.has_ended_at = true;
-    }
-
-    int argc = r.recipe.argc;
-    char **argv = r.recipe.argv;
-    if (argc <= 0 || !argv) {
-        argc = r.observed_argc;
-        argv = r.observed_argv;
-    }
     /* A purge may have removed the record between our load and this write
      * (force-purging a live call races the reaper's exit stamp); recreating
      * it here would resurrect a call the user just removed. Purge unlinks
@@ -168,19 +165,33 @@ int hold_mark_run_finished(const struct hold_store *store, const char *id, int s
         hold_free_run_record(&r);
         return 1;
     }
-    /* A concurrent `callbox save`/rename may have set the saved flag or renamed
-     * the call after our load above. The exit stamp owns only state/exit code;
-     * re-read the user-owned fields from the current record so this write does
-     * not clobber that update (lost update). Best-effort: on a transient read
-     * failure keep our loaded values. save/rename hold the same store lock
-     * across their read-modify-write, so neither update can be lost. */
+    /* The exit stamp owns only state, exit code, and end time. Everything
+     * else comes from the record as it is now, under the lock: a concurrent
+     * save/rename may have changed it, and a program that exits at once can
+     * be stamped before its launcher has written this run's record over the
+     * previous run's (a redial) - stamping our earlier copy would put the old
+     * run's fields back (its log start, its times). Best-effort: on a
+     * transient read failure keep our loaded copy. */
     struct hold_run_record cur;
     char cur_path[HOLD_PATH_MAX];
     if (hold_load_record_by_id(store->record_dir, id, &cur, cur_path, sizeof(cur_path)) == 0) {
-        r.saved = cur.saved;
-        r.has_name = cur.has_name;
-        if (cur.has_name) snprintf(r.name, sizeof(r.name), "%s", cur.name);
-        hold_free_run_record(&cur);
+        hold_free_run_record(&r);
+        r = cur;
+    }
+    /* Not this run's record (the previous run's, before this launcher writes
+     * its own): stamping it would put that run back over this one. */
+    if (pid > 0 && r.pid != pid) {
+        hold_store_unlock(lock_fd);
+        hold_free_run_record(&r);
+        errno = EAGAIN;
+        return -1;
+    }
+    apply_exit(&r, status);
+    int argc = r.recipe.argc;
+    char **argv = r.recipe.argv;
+    if (argc <= 0 || !argv) {
+        argc = r.observed_argc;
+        argv = r.observed_argv;
     }
     char rewritten_path[HOLD_PATH_MAX] = {0};
     int rc = hold_write_record_atomic(store->record_dir, &r, argc, argv, rewritten_path, sizeof(rewritten_path));

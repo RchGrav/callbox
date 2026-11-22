@@ -26,6 +26,11 @@ int hold_console_set_detach_keys(const unsigned char *keys, size_t len);
 struct hold_console_options {
     unsigned short rows, cols;
     bool chat;
+    /* The program on pipes, not a PTY (callbox -i): its input is relayed by
+     * the broker, so it can be cut and reconnected and the program never
+     * holds a person's terminal. */
+    bool pipe;
+    bool program; /* user mode for a program (not callbox shell): chat's hints say so */
     /* A callbox shell's keys, read by its broker (which can then show what the
      * lead key offers while it waits): the lead key, and what follows it to
      * detach or to open chat. 0 = the default. */
@@ -37,6 +42,18 @@ size_t hold_console_get_detach_keys(unsigned char *out, size_t cap);
 /* The call about to be attached reads the lead key itself (a callbox shell):
  * the attach client passes every key through and leaves them to its broker. */
 void hold_console_set_composited(bool on);
+/* The call about to be attached runs on pipes (callbox -i): the attach keeps
+ * the terminal's lines (no alternate screen), edits each line itself, and
+ * turns Ctrl-C into an interrupt and Ctrl-D into end of input. */
+void hold_console_set_line_mode(bool on);
+/* A launch attaching to the program it just started, from a script (not a
+ * terminal): ask for the run's output as a stream rather than a screen
+ * repaint. callbox attach keeps its repaint of the live screen. */
+void hold_console_set_stream(bool on);
+/* A launch's own attach: SIGTERM to callbox is passed on to the program. */
+void hold_console_set_forward_term(bool on);
+/* Whether the last attach stopped because its stdout reader went away. */
+bool hold_console_reader_gone(void);
 /* target_pid_fd: -1 = do not report; otherwise the broker writes its forked
  * target pid exactly once after exec-handshake success, then closes the fd. The
  * write precedes closing parent_pipe so a pid-write failure still reaches the
@@ -129,5 +146,7 @@ bool hold_console_was_refused(pid_t *by);
 /* Whether it found no console to connect to: the call's output had already
  * ended. Returns 3 and prints nothing then, as above. */
 bool hold_console_was_gone(void);
+/* Whether the last attach received anything from the broker. */
+bool hold_console_heard_output(void);
 
 #endif /* HOLD_CONSOLE_H */

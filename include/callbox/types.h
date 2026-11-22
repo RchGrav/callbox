@@ -17,7 +17,9 @@ struct hold_recipe {
     bool mode_detach;
     bool mode_wait; /* a waiter records the exit code (-w; implied by foreground, --rm, --restart) */
     bool allow_multi;
-    bool mode_chat;  /* callbox shell: composited display; callbox msg lands in its chat inbox */
+    bool mode_chat;  /* user mode (callbox <cmd>, -it, callbox shell): composited display; callbox msg
+                        lands in its chat inbox */
+    bool mode_shell; /* placed with callbox shell (chat's hints name the shell, not "the program") */
     int chat_key;    /* callbox shell: the key after the lead key that opens chat */
     bool has_chat_key;
     bool has_keys;   /* callbox shell: its broker reads the lead key itself (lead_key, then detach_key) */
@@ -74,6 +76,7 @@ struct hold_run_record {
     bool has_console;
     bool saved;
     bool auto_remove; /* --rm: removed as soon as it ends */
+    int64_t log_start; /* where this run's output starts in the log (redials append) */
     uint64_t pid_ns;  /* Linux: the launching PID namespace (inode of /proc/self/ns/pid); 0 = unknown */
     bool liveness_lock; /* its supervisor holds a lifetime lock on the log (the fallback) */
     pid_t broker_pid;   /* a TTY call's console broker, a session leader: it speaks for the call */

@@ -9,8 +9,10 @@ Every call runs in its own session, so it outlives the shell that started it eit
 ## Output
 
 - **`-d`:** prints the bare 64-hex call ID on stdout and nothing else.
-- **Foreground, no `-t`:** prints nothing of its own. It streams the log, then exits with the call's exit status. Ctrl-C stops the stream and leaves the call running (exit 0).
-- **Foreground with `-t`:** attaches to the call's screen. Ctrl-P Ctrl-Q detaches and leaves the call running.
+- **No session flags, or `-it`:** user mode. The program runs on a PTY and callbox attaches to its screen, with the chat window when stdin and stdout are a terminal (messages for the call go there, never into the program). From a script, the run's output arrives as a stream instead of a screen. callbox exits with the call's exit status.
+- **`-i` (no `-t`):** the program runs on pipes under a broker that relays your input, so it never holds your terminal. callbox shows its output, edits each typed line itself, and turns Ctrl-D into end of input. Piped input streams in and ends with EOF.
+- **Foreground plain call (`-w`, `--restart`, `--tail <cmd>`):** prints nothing of its own; it follows the log, then exits with the call's exit status.
+- **Keys, in every mode you are on a call:** Ctrl-C goes to the program; Ctrl-P Ctrl-Q detaches and leaves it running, with a note saying how to pick it up again.
 
 This is `docker run`'s output dialect ([Docker parity](docker-familiarity-contract.md)).
 
@@ -32,9 +34,10 @@ The environment:
 | Start | Process left with the program | Exit code recorded |
 |---|---|---|
 | `-d` | none | no |
-| foreground, `-w`, `--rm` (without `-t`) | a waiter in its own session | yes |
+| `-w`, `--rm`, a plain foreground call (without `-t` or `-i`) | a waiter in its own session | yes |
+| `-i` (without `-t`) | the console broker, which holds the program's input pipe | yes |
 | `--restart POLICY` | a supervisor that reruns the program | yes |
-| `-t` | the console broker, which owns the PTY | yes |
+| `-t`, and every user-mode launch | the console broker, which owns the PTY | yes |
 
 The waiter takes its own session before it forks the program. That way, killing the caller's process group cannot leave the exit unrecorded.
 
@@ -115,7 +118,7 @@ stateDiagram-v2
     Spawned --> Recorded: all writes succeed
     Recorded --> [*]: -d prints ID
     Recorded --> Following: foreground
-    Following --> [*]: call ends, Ctrl-C, or detach
+    Following --> [*]: call ends, or Ctrl-P Ctrl-Q detaches
     Refused --> [*]
     CleanedUp --> [*]
     RolledBack --> [*]
@@ -125,11 +128,15 @@ Every failure after the reservation goes through `launch_undo`. It SIGKILLs the 
 
 ## Logs and following
 
-Without `-t`, stdin is `/dev/null` unless `-i` is given, and stdout and stderr go straight into `<id>.log`, with no copying process in between. With `-t`, the broker copies PTY output into the same log while also feeding its screen, so `logs` and `tail` behave the same for both.
+A plain call (no `-t`, no `-i`) has stdin on `/dev/null`, and its stdout and stderr go straight into `<id>.log`, with no copying process in between. With `-t`, the broker copies PTY output into the same log while also feeding its screen. With `-i`, the program's stdin is a pipe the broker holds and its output a pipe the broker copies into the log and the screen (with `\n` read as `\r\n`, as a PTY would), so `logs`, `tail`, `peek`, and `wait` behave the same for all three.
 
-A foreground start writes the record first, then follows the log from its beginning with `hold_tail_log_until_exit`. That function opens the log with `O_NOFOLLOW` and polls every 100 ms. About once a second it checks whether the call still runs; when the call ends, it drains the log once more.
+A program starts with default Ctrl-C and Ctrl-\ handling whatever callbox inherited: a shell starts background jobs with SIGINT and SIGQUIT ignored, and a signal ignored at start cannot even be trapped.
 
-With `--rm`, a foreground start removes the call when it ends. If you detach or interrupt while the call runs, a watcher removes it later.
+A plain foreground start writes the record first, then follows the log from its beginning (`hold_follow_launched_call`, on the one client loop in `console/client.c`). At a terminal, keys are read one at a time with output untouched: Ctrl-C is passed to the program after the same identity checks as `callbox end`, and Ctrl-P Ctrl-Q stops following and leaves it running. Without a terminal, a SIGINT sent to callbox is passed on, as `docker run`'s sig-proxy does. The log is polled every 100 ms; about once a second callbox checks whether the call still runs, and when it ends it drains the log once more.
+
+An attached launch (user mode or `-i`) passes a SIGTERM it is sent on to its program, as `docker run`'s sig-proxy does, so `timeout 8 callbox foo` does not leave `foo` behind; a SIGHUP (the terminal went away) only detaches, since callbox keeps programs running. When its reader goes away (`callbox foo | head`), callbox says the call keeps running and ends as a writer to a closed pipe does (141). Each run records where its output starts in the shared log (`log_start`), so when a call was over before its launch could attach, callbox prints that run's output and not the earlier runs'.
+
+With `--rm`, a foreground start removes the call when it ends. If you detach while the call runs, a watcher removes it later.
 
 ## Redial
 

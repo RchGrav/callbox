@@ -15,6 +15,26 @@
 #define CONSOLE_FRAME_DATA 'D'
 #define CONSOLE_FRAME_RESIZE 'W'
 #define CONSOLE_FRAME_DETACH 'X'
+/* End of input (Ctrl-D, or piped input ran out): a program on pipes reads
+ * EOF. On a PTY (sent by a launch whose script input ran out), the broker
+ * types the terminal's end-of-input character, its echo kept out of the
+ * output. */
+#define CONSOLE_FRAME_EOF 'E'
+/* Interrupt (Ctrl-C) for a program on pipes, where no PTY turns the key
+ * into a signal: payload empty; the broker sends SIGINT to its group. With
+ * a one-byte payload (SIGINT or SIGTERM), that signal, for either kind of
+ * program: how a launch passes on a SIGTERM it was sent. */
+#define CONSOLE_FRAME_INTERRUPT 'S'
+/* The client is not a terminal (a script, a pipe): send it the output as a
+ * stream - this run's output so far, then what follows - instead of a screen
+ * repaint full of cursor moves. Sent first, right after the magic. */
+#define CONSOLE_FRAME_STREAM 'P'
+/* No terminal on the client's side (its stdin or stdout is not one), so
+ * nothing there will answer the program's terminal queries (cursor
+ * position, device attributes): the broker's screen answers them, as it
+ * does with nobody attached. Without it a program that waits for a reply
+ * stalls under `callbox <cmd>` from a script. Payload empty. */
+#define CONSOLE_FRAME_NO_TERMINAL 'N'
 #define CONSOLE_FRAME_HEADER_LEN 3
 
 /* Control clients (callbox peek/send/wait/resize) open with this magic, then

@@ -16,7 +16,7 @@ static size_t g_detach_key_count = 2;
 
 static char g_enclosing_sock[HOLD_PATH_MAX];
 /* How the last attach ended (see console.h). */
-static bool g_refused, g_gone, g_composited;
+static bool g_refused, g_gone, g_composited, g_line_mode, g_stream;
 static pid_t g_refused_by;
 
 bool hold_console_was_refused(pid_t *by) {
@@ -28,6 +28,16 @@ bool hold_console_was_gone(void) {
     return g_gone;
 }
 
+static bool g_heard, g_reader_gone;
+
+bool hold_console_reader_gone(void) {
+    return g_reader_gone;
+}
+
+bool hold_console_heard_output(void) {
+    return g_heard;
+}
+
 size_t hold_console_get_detach_keys(unsigned char *out, size_t cap) {
     memcpy(out, g_detach_keys, g_detach_key_count < cap ? g_detach_key_count : cap);
     return g_detach_key_count;
@@ -35,6 +45,20 @@ size_t hold_console_get_detach_keys(unsigned char *out, size_t cap) {
 
 void hold_console_set_composited(bool on) {
     g_composited = on;
+}
+
+void hold_console_set_line_mode(bool on) {
+    g_line_mode = on;
+}
+
+void hold_console_set_stream(bool on) {
+    g_stream = on;
+}
+
+static bool g_forward_term;
+
+void hold_console_set_forward_term(bool on) {
+    g_forward_term = on;
 }
 
 /* The broker's words to a client it turns away: "callbox: console already
@@ -98,15 +122,32 @@ static int64_t attach_now_ms(void) {
     return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
+/* hold_write_all, but a pending SIGTERM or SIGHUP ends the wait: a client
+ * blocked on a broker that is not reading (its program's input is full) must
+ * still restore the terminal and go when told to. */
+static int write_all_stoppable(int fd, const void *buf, size_t n) {
+    const char *p = buf;
+    while (n > 0) {
+        ssize_t w = write(fd, p, n);
+        if (w < 0) {
+            if (errno == EINTR && !hold_term_stop_signal()) continue;
+            return -1;
+        }
+        p += w;
+        n -= (size_t)w;
+    }
+    return 0;
+}
+
 /* Client-side wire: 3-byte type + be16-length frames after the attach magic. */
 static int write_frame(int fd, unsigned char type, const void *payload, uint16_t len) {
     unsigned char header[CONSOLE_FRAME_HEADER_LEN];
     header[0] = type;
     console_store_be16(header + 1, len);
-    if (hold_write_all(fd, header, sizeof(header)) != 0) {
+    if (write_all_stoppable(fd, header, sizeof(header)) != 0) {
         return -1;
     }
-    if (len > 0 && hold_write_all(fd, payload, len) != 0) {
+    if (len > 0 && write_all_stoppable(fd, payload, len) != 0) {
         return -1;
     }
     return 0;
@@ -131,12 +172,60 @@ struct attach_state {
     size_t held_len;
     bool holding;
     bool resize_failed;
+    bool line_mode;           /* the program is on pipes: keep the terminal's lines */
+    struct hold_term_line line;
 };
+
+/* A frame that cannot be sent because the broker has gone (the call ended
+ * while input was still coming): not an error - stop, and let what the call
+ * did decide the exit status. */
+static int sent_or_over(int rc) {
+    if (rc == 0) return 0;
+    return (errno == EPIPE || errno == ECONNRESET) ? 1 : -1;
+}
 
 /* Bytes the keys release go to the broker as DATA frames. */
 static int attach_on_input(void *ctx, const unsigned char *bytes, size_t n) {
     struct attach_state *a = ctx;
-    return write_frame(a->writer, CONSOLE_FRAME_DATA, bytes, (uint16_t)n) == 0 ? 0 : -1;
+    if (a->writer < 0) return 0;
+    return sent_or_over(write_frame(a->writer, CONSOLE_FRAME_DATA, bytes, (uint16_t)n));
+}
+
+/* A program on pipes: keys go through the line editor, and only whole lines
+ * (or what Ctrl-D sends) reach it. */
+static int attach_line_sink(void *ctx, const unsigned char *bytes, size_t n) {
+    return attach_on_input(ctx, bytes, n) == 0 ? 0 : -1;
+}
+
+static int attach_on_line_input(void *ctx, const unsigned char *bytes, size_t n) {
+    struct attach_state *a = ctx;
+    for (size_t i = 0; i < n; i++) {
+        bool eof = false;
+        if (hold_term_line_feed(&a->line, bytes[i], attach_line_sink, a, &eof) != 0) return sent_or_over(-1);
+        if (eof) {
+            int rc = sent_or_over(write_frame(a->writer, CONSOLE_FRAME_EOF, NULL, 0));
+            if (rc != 0) return rc;
+        }
+    }
+    return 0;
+}
+
+/* Ctrl-C for a program on pipes: no PTY turns the key into a signal, so the
+ * broker sends SIGINT; the half-typed line is dropped, as a terminal does. */
+static int attach_on_interrupt(void *ctx) {
+    struct attach_state *a = ctx;
+    hold_term_line_discard(&a->line);
+    (void)hold_write_all(STDOUT_FILENO, "^C\r\n", 4);
+    return sent_or_over(write_frame(a->writer, CONSOLE_FRAME_INTERRUPT, NULL, 0));
+}
+
+/* SIGINT sent to the client (Ctrl-C with its output piped, or a kill from a
+ * script): it is the program's, as in docker run. On a PTY it goes in as the
+ * key, so the program's own terminal signals it. */
+static int attach_on_pty_interrupt(void *ctx) {
+    struct attach_state *a = ctx;
+    if (a->writer < 0) return 0;
+    return sent_or_over(write_frame(a->writer, CONSOLE_FRAME_DATA, "\x03", 1));
 }
 
 /* The detach keys: the broker answers by closing the connection - or, when
@@ -151,12 +240,31 @@ static int attach_on_detach(void *ctx) {
 
 static int attach_on_input_end(void *ctx) {
     struct attach_state *a = ctx;
-    if (a->writer == a->sock) {
-        shutdown(a->sock, SHUT_WR);
-    } else {
-        close(a->writer);
-        a->writer = -1;
+    if (!g_stream) {
+        /* callbox attach whose input ran out: it leaves (closing our side is
+         * how the broker learns), as it always has - the program's input
+         * stays open for the next attach, and a piped attach returns. */
+        if (a->writer == a->sock) {
+            shutdown(a->sock, SHUT_WR);
+        } else if (a->writer >= 0) {
+            close(a->writer);
+            a->writer = -1;
+        }
+        return 0;
     }
+    if (a->line_mode) {
+        /* A launch whose piped input ran out: the program reads EOF, and its
+         * output goes on until it ends. */
+        return sent_or_over(write_frame(a->writer, CONSOLE_FRAME_EOF, NULL, 0));
+    }
+    /* On a PTY, closing our side would read to the broker as leaving: stay,
+     * and show the output until the program ends - `callbox make test
+     * </dev/null` from a script must not detach at once. A launch from a
+     * script passes its input's end on (the broker types the terminal's
+     * end-of-input key, Ctrl-D, without echoing it), so a program reading
+     * stdin finishes, as it would have on /dev/null. callbox attach does
+     * not: that would end an attached shell. */
+    if (g_stream && a->writer >= 0) return sent_or_over(write_frame(a->writer, CONSOLE_FRAME_EOF, NULL, 0));
     return 0;
 }
 
@@ -165,6 +273,15 @@ static int attach_on_resize(void *ctx, const struct winsize *ws) {
     if (a->writer < 0 || send_resize(a->writer, ws) == 0) return 0;
     if (!a->heard && (errno == EPIPE || errno == ECONNRESET)) a->resize_failed = true;
     return -1;
+}
+
+/* Our reader went away (`callbox foo | head`): stop showing output. The
+ * call itself is not ours to end - it keeps running - and the caller says
+ * so, then ends as a writer to a closed pipe does. */
+static int stdout_failed(void) {
+    if (errno != EPIPE) return -1;
+    g_reader_gone = true;
+    return 1;
 }
 
 /* A broker that turns us away says so in a line of text and hangs up. Text
@@ -185,17 +302,17 @@ static int attach_on_output(void *ctx, const char *buf, size_t n) {
         if (take == out_len && memcmp(a->held, lead, cmp) == 0) return 0; /* may be a refusal: wait */
         /* a screen after all: what was held, then the rest */
         a->holding = false;
-        if (hold_write_all(STDOUT_FILENO, a->held, a->held_len) != 0) return -1;
+        if (hold_write_all(STDOUT_FILENO, a->held, a->held_len) != 0) return stdout_failed();
         out += take;
         out_len -= take;
     }
-    if (out_len > 0 && hold_write_all(STDOUT_FILENO, out, out_len) != 0) return -1;
+    if (out_len > 0 && hold_write_all(STDOUT_FILENO, out, out_len) != 0) return stdout_failed();
     return 0;
 }
 
 int hold_run_native_console(const char *sock_path) {
     int writer = -1;
-    g_refused = g_gone = false;
+    g_refused = g_gone = g_heard = g_reader_gone = false;
     g_refused_by = 0;
     int sock = hold_open_channel(sock_path, 'A', &writer);
     if (sock < 0) {
@@ -218,23 +335,37 @@ int hold_run_native_console(const char *sock_path) {
 
     bool interactive = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
     struct hold_term_saved saved;
+    memset(&saved, 0, sizeof(saved));
     bool alt_screen = false;
-    if (interactive && hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_RAW, &saved) == 0 && saved.saved &&
-        hold_write_all(STDOUT_FILENO, "\033[?1049h\033[H\033[2J", 15) == 0) {
+    if (g_line_mode) {
+        /* A program on pipes: the terminal keeps its lines and its scrollback
+         * (no alternate screen); keys are read one by one so the detach keys
+         * and Ctrl-C can be seen, and the line editor does the rest. */
+        if (interactive) (void)hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_KEYS, &saved);
+    } else if (interactive && hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_RAW, &saved) == 0 && saved.saved &&
+               hold_write_all(STDOUT_FILENO, "\033[?1049h\033[H\033[2J", 15) == 0) {
         alt_screen = true;
-    } else if (!interactive) {
-        memset(&saved, 0, sizeof(saved));
     }
 
-    struct attach_state a = {.sock = sock, .writer = writer, .holding = true};
+    struct attach_state a = {.sock = sock, .writer = writer, .holding = true, .line_mode = g_line_mode};
+    hold_term_line_init(&a.line, STDOUT_FILENO);
     int rc = 0;
     int nest_writer = -1;
     int nest = interactive ? register_nested(sock_path, &nest_writer) : -1;
     struct hold_term_detach detach;
     hold_term_detach_init(&detach, g_detach_keys, g_composited ? 0 : g_detach_key_count);
+    if (g_line_mode) hold_term_detach_set_interrupt(&detach, 0x03); /* Ctrl-C */
     enum hold_client_end end = HOLD_CLIENT_OUTPUT_ENDED;
     if (hold_write_all(writer, CONSOLE_ATTACH_MAGIC, CONSOLE_ATTACH_MAGIC_LEN) != 0) {
         if (errno == EPIPE || errno == ECONNRESET) g_gone = true; /* ended as we arrived */
+        rc = 3;
+    } else if (g_stream && !interactive && write_frame(writer, CONSOLE_FRAME_STREAM, NULL, 0) != 0) {
+        /* Not a terminal: ask for the output as a stream, not a screen. */
+        if (errno == EPIPE || errno == ECONNRESET) g_gone = true;
+        rc = 3;
+    } else if (!interactive && write_frame(writer, CONSOLE_FRAME_NO_TERMINAL, NULL, 0) != 0) {
+        /* Nobody here answers the program's terminal queries: the screen will. */
+        if (errno == EPIPE || errno == ECONNRESET) g_gone = true;
         rc = 3;
     } else {
         struct hold_client c = {
@@ -247,13 +378,24 @@ int hold_run_native_console(const char *sock_path) {
 #endif
             .in_fd = STDIN_FILENO,
             .keys = interactive ? &detach : NULL,
-            .on_input = attach_on_input,
+            .on_input = g_line_mode && interactive ? attach_on_line_input : attach_on_input,
             .on_detach = attach_on_detach,
+            .on_interrupt = g_line_mode ? attach_on_interrupt : attach_on_pty_interrupt,
+            .want_sigint = true,
             .on_input_end = attach_on_input_end,
             .on_resize = attach_on_resize,
             .ctx = &a,
         };
         end = hold_client_run(&c);
+        if (hold_term_stop_signal()) end = HOLD_CLIENT_SIGNALED; /* even if it broke a blocked write */
+        if (end == HOLD_CLIENT_SIGNALED && g_forward_term && hold_term_stop_signal() == SIGTERM && a.writer >= 0) {
+            /* A launch told to stop (`timeout 8 callbox foo`) passes SIGTERM on
+             * to its program, as docker run's sig-proxy does: the program was
+             * run here, and must not be left behind unseen. (SIGHUP - the
+             * terminal went away - detaches: callbox keeps programs running.) */
+            unsigned char sig = SIGTERM;
+            (void)write_frame(a.writer, CONSOLE_FRAME_INTERRUPT, &sig, 1);
+        }
         if (end == HOLD_CLIENT_SIGNALED) rc = 128 + hold_term_stop_signal();
         else if (end == HOLD_CLIENT_ERROR) rc = 3;
         if (a.resize_failed) g_gone = true;
@@ -273,7 +415,7 @@ int hold_run_native_console(const char *sock_path) {
         if (nest_writer != nest) close(nest_writer);
         close(nest);
     }
-    if (saved.saved) {
+    if (saved.saved && !g_line_mode) {
         /* A program run inside the console may have left terminal-global modes
          * enabled — mouse reporting, bracketed paste, focus reports, application
          * keypad/cursor keys, a cursor style, a hidden cursor — and a callbox
@@ -291,9 +433,10 @@ int hold_run_native_console(const char *sock_path) {
         (void)hold_write_all(STDOUT_FILENO, "\033[?1049l", 8);
     }
     if (saved.saved) {
-        (void)hold_write_all(STDOUT_FILENO, "\033[?25h", 6);
+        if (!g_line_mode) (void)hold_write_all(STDOUT_FILENO, "\033[?25h", 6);
         hold_term_input_restore(&saved);
     }
+    g_heard = a.heard;
     if (a.writer >= 0 && a.writer != sock) close(a.writer);
     close(sock);
     if (end == HOLD_CLIENT_SIGNALED) hold_term_reraise_stop();

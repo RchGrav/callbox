@@ -692,7 +692,12 @@ static int prune_record_cb(const char *id, const char *path, struct hold_run_rec
                 return 0;
             }
         }
-        unlink(path);
+        if (unlink(path) != 0 && errno == ENOENT) {
+            /* Another purge removed it since we looked (under this same
+             * lock): it is that purge's to report, not ours too. */
+            hold_store_unlock(lock_fd);
+            return 0;
+        }
         unlink_call_artifacts(w->store, r);
         unlink_public_index(w->store, r->id);
         hold_store_unlock(lock_fd);

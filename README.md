@@ -43,9 +43,14 @@ screenshots an agent can actually read.
 ### The whole idea in one minute
 
 - **A call** is a program you start with callbox: `callbox -dt --name app -- CMD`.
-  `-t` gives it a headless terminal, `-d` returns at once. Every call has a
-  name, an ID, and a log. A TTY call, a foreground call, and a detached call
+  `-t` gives it a headless terminal, `-d` returns at once. With no flags,
+  `callbox CMD` runs it attached on a PTY in *user mode*, with a chat window
+  for its messages; `-i` relays your input to it on a pipe instead. Every
+  call has a name, an ID, and a log. A TTY call, a `-i` call, and a call
   placed with `-w`, `--rm`, or `--restart` also record their exit code.
+- **Keys** are Docker's wherever you are on a call: Ctrl-C goes to the
+  program, Ctrl-P Ctrl-Q detaches and leaves it running (`callbox attach`
+  brings it back).
 - **Look** with `callbox peek`: the screen as text, with `--ruler` coordinates,
   as `--json` state, or as an `--image` PNG.
 - **Act** with `callbox send`: text, keys, pastes, and mouse events, encoded for
@@ -193,7 +198,7 @@ callbox resize wide 100 30                             # change a running call (
 ```
 
 Without `--size`, a detached TTY call takes your saved `detach-size`, then the
-size of the terminal you launched it from, then 80x24 (a foreground launch
+size of the terminal you launched it from, then 80x24 (an attached launch
 skips the saved default: it has a real terminal). `--size` is where a call
 starts, not a lock, and a size outside 1-1000 is refused before anything runs.
 
@@ -413,9 +418,10 @@ Flags look like Docker's where they exist (and cluster the same way: `-dit`):
 `-d`, `-i`, `-t`, `-e`, `--env-file`, `--name`, `--rm`, `--restart`,
 `--detach-keys`. A plain `-d` call leaves nothing behind: its output goes
 straight into its log, and no callbox process stays to watch it. `-w` keeps a
-small waiter as its parent, which records the exit code (`--rm`, `--restart`,
-and foreground calls always have one). `callbox attach` picks up only calls
-placed with `-t` (`-it` or `-dt`), because only they have a console. Every
+small waiter as its parent, which records the exit code (`--rm` and
+`--restart` calls always have one). `callbox attach` picks up calls placed on
+a PTY (`callbox CMD`, `-it`, `-dt`) and calls placed with `-i`, because those
+have a console broker. Every
 call gets its own session and process group; before any signal, callbox
 re-checks the boot ID and the leader's identity, so a recycled PID is never
 killed by mistake. Calls placed as root (or under sudo) live in a separate
@@ -462,7 +468,7 @@ renderer and its PNG encoder are built in; glyphs come from
 
 | Command | What it does |
 | --- | --- |
-| `callbox [-d] [-w] [-t] [-i] [--name N] [--size COLS ROWS] -- CMD…` | place a call (foreground, detached, recording its exit, on a PTY of a chosen size) |
+| `callbox [-d] [-w] [-t] [-i] [--name N] [--size COLS ROWS] -- CMD…` | place a call: user mode (no flags: attached PTY, chat), `-i` (input on a pipe), `-d` detached, `-w` recording its exit, `-t` on a PTY of a chosen size |
 | `callbox shell [--name N] [SHELL ARGS…]` | your shell with a chat window to your agents (Ctrl-P Ctrl-T opens it) |
 | `callbox peek CALL [--ruler] [--json] [--image F]` | the screen as text, JSON, or PNG |
 | `callbox send CALL [TEXT] [-k KEY] [--paste T] [--mouse A,C,R] [--wait MS]` | type, press, paste, click |
@@ -473,7 +479,7 @@ renderer and its PNG encoder are built in; glyphs come from
 | `callbox list` · `callbox ps` · `callbox inspect CALL` | what is running, and everything known about it |
 | `callbox logs CALL [-f] [-n N]` | captured output |
 | `callbox tail CALL` | its output from now on |
-| `callbox attach CALL` | interactive attach to a `-t` call (Ctrl-P Ctrl-Q detaches) |
+| `callbox attach CALL` | attach to a PTY or `-i` call (Ctrl-P Ctrl-Q detaches) |
 | `callbox end CALL…` (alias `stop`) · `callbox kill CALL…` | stop politely / now |
 | `callbox save` · `callbox rename` · `callbox purge` · `callbox ports` · `callbox stats` | keep, name, clean up, observe |
 

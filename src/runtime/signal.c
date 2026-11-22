@@ -363,6 +363,20 @@ static int tail_call_ended(void *ctx) {
     return hold_eval_state(t->r, t->boot_id) != STATE_RUNNING;
 }
 
+/* This run's output, from where it starts in the log (redials append to one
+ * log; the earlier runs are not this run's). */
+int hold_print_run_log(const struct hold_run_record *r) {
+    int fd = open(r->log_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0) return -1;
+    if (r->log_start > 0) (void)lseek(fd, (off_t)r->log_start, SEEK_SET);
+    char buf[4096];
+    ssize_t n;
+    while ((n = read(fd, buf, sizeof(buf))) > 0)
+        if (hold_write_all(STDOUT_FILENO, buf, (size_t)n) != 0) break;
+    close(fd);
+    return 0;
+}
+
 int hold_tail_log_until_exit(const struct hold_run_record *r, bool from_end, bool follow_until_exit) {
     int fd = open(r->log_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) hold_die_errno("callbox: failed to open log for tail");
@@ -392,6 +406,84 @@ int hold_tail_log_until_exit(const struct hold_run_record *r, bool from_end, boo
     errno = run_errno;
     if (end == HOLD_CLIENT_ERROR) hold_die_errno("callbox: failed while tailing log");
     if (end == HOLD_CLIENT_SIGNALED) hold_term_reraise_stop();
+    return 0;
+}
+
+/* ---- following a call you launched ---------------------------------------
+ * A plain call launched in the foreground: callbox follows its log, and the
+ * keys mean what they mean everywhere you are on a call - Ctrl-C goes to the
+ * program, Ctrl-P Ctrl-Q leaves it running. At a terminal the keys are read
+ * one by one (output is untouched); without one, a SIGINT sent to callbox is
+ * passed on, as docker run's sig-proxy does. */
+
+struct launch_follow {
+    struct tail_state t;
+    bool detached;
+};
+
+static int follow_interrupt(void *ctx) {
+    struct launch_follow *f = ctx;
+    enum signal_validation_state st;
+    /* the same safety chain as callbox end: never signal a reused pid */
+    if (validate_signal_target(f->t.r->id, f->t.r, false, &st) == 0 && st == SIGNAL_TARGET_RUNNING)
+        (void)kill(-f->t.r->pgid, SIGINT);
+    return 0;
+}
+
+static int follow_detach(void *ctx) {
+    ((struct launch_follow *)ctx)->detached = true;
+    return 1;
+}
+
+int hold_follow_launched_call(const struct hold_invocation *inv, const struct hold_run_record *r, const char *label) {
+    int fd = open(r->log_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0) hold_die_errno("callbox: failed to open log for tail");
+    /* This run's output only: a redial appends to the same log, and what a
+     * launch shows is the run it started, not every earlier run's too. */
+    if (r->log_start > 0) (void)lseek(fd, (off_t)r->log_start, SEEK_SET);
+    char boot[128] = {0};
+    struct launch_follow f = {.t = {.r = r, .boot_id = r->has_boot ? hold_boot_id_or_null(boot) : NULL}};
+    /* The keyboard is ours only when we are the terminal's foreground job:
+     * `callbox -w cmd &` must not touch the terminal (the shell would stop
+     * it for doing so). */
+    bool keyboard = isatty(STDIN_FILENO) && tcgetpgrp(STDIN_FILENO) == getpgrp();
+    struct hold_term_saved saved;
+    memset(&saved, 0, sizeof(saved));
+    struct hold_term_detach keys;
+    unsigned char dk[HOLD_TERM_DETACH_MAX_KEYS];
+    size_t ndk = hold_console_get_detach_keys(dk, sizeof(dk));
+    hold_term_detach_init(&keys, dk, ndk);
+    hold_term_detach_set_interrupt(&keys, 0x03); /* Ctrl-C */
+    if (keyboard) (void)hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_KEYS, &saved);
+    struct hold_client c = {
+        .out_fd = fd,
+        .out_is_file = true,
+        .file_done = tail_call_ended,
+        .in_fd = keyboard ? STDIN_FILENO : -1,
+        .keys = keyboard ? &keys : NULL,
+        .on_detach = follow_detach,
+        .on_interrupt = follow_interrupt,
+        .want_sigint = true, /* SIGINT from outside is passed on, too */
+        .ctx = &f,
+    };
+    enum hold_client_end end = hold_client_run(&c);
+    int run_errno = errno;
+    hold_term_input_restore(&saved);
+    close(fd);
+    if (end == HOLD_CLIENT_SIGNALED) hold_term_reraise_stop();
+    if (end == HOLD_CLIENT_ERROR && run_errno == EPIPE) {
+        /* `callbox -w cmd | head`: the reader has what it wanted. The call is
+         * not ours to end; say where it is, then end as a writer to a closed
+         * pipe does (141) - the same as an attached launch. */
+        if (!tail_call_ended(&f.t))
+            hold_sig_note(inv, "callbox: %s keeps running; end it with: callbox end %s\n", label, label);
+        signal(SIGPIPE, SIG_DFL);
+        raise(SIGPIPE);
+    }
+    errno = run_errno;
+    if (end == HOLD_CLIENT_ERROR) hold_die_errno("callbox: failed while tailing log");
+    if (f.detached)
+        hold_sig_note(inv, "callbox: %s keeps running; follow it again: callbox --tail %s\n", label, label);
     return 0;
 }
 

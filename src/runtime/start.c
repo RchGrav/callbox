@@ -176,6 +176,12 @@ static void child_session_setup(int handshake_fd,
                                 int envc, char **env, bool clean_base,
                                 bool null_stdin) {
     if (setsid() < 0) child_fail_errno(handshake_fd);
+    /* A program starts with default Ctrl-C and Ctrl-\ handling, as a
+     * container does: a shell starts background jobs with SIGINT and SIGQUIT
+     * ignored, and an ignored-at-start signal cannot even be trapped - Ctrl-C
+     * passed on to the program would do nothing. */
+    signal(SIGINT, SIG_DFL);
+    signal(SIGQUIT, SIG_DFL);
     if (pin_privileged_cwd && enter_privileged_exec_cwd() != 0) child_fail_errno(handshake_fd);
     if (apply_child_env(envc, env, clean_base) != 0) child_fail_errno(handshake_fd);
     if (null_stdin) {
@@ -228,9 +234,9 @@ static void sleep_restart_delay(int seconds) {
 /* Exit persistence: rc 1 (record purged after load) is FINAL — never
  * resurrect a call the user just removed. Only rc -1 retries (covers a
  * fast exit before the parent has written the record). */
-static void mark_finished_with_retry(const struct hold_store *store, const char *id, int status) {
+static void mark_finished_with_retry(const struct hold_store *store, const char *id, int status, pid_t pid) {
     for (int i = 0; i < 50; i++) {
-        int rc = hold_mark_run_finished(store, id, status);
+        int rc = hold_mark_run_finished(store, id, status, pid);
         if (rc == 0 || rc == 1) break;
         struct timespec sl = {.tv_sec = 0, .tv_nsec = 100 * 1000000L};
         while (nanosleep(&sl, &sl) != 0 && errno == EINTR) {
@@ -276,7 +282,7 @@ static void run_restart_supervisor(const struct hold_store *store,
         pid_t worker = fork();
         if (worker < 0) {
             fprintf(stderr, "callbox: restart supervisor failed to fork: %s\n", strerror(errno));
-            mark_finished_with_retry(store, id, 127 << 8);
+            mark_finished_with_retry(store, id, 127 << 8, getpid()); /* the record names the supervisor */
             _exit(127);
         }
         if (worker == 0) {
@@ -300,10 +306,15 @@ static void run_restart_supervisor(const struct hold_store *store,
         if (restart_status_failed(status)) failures++;
         else failures = 0;
         if (!restart_should_run_again(restart_policy, status, failures)) break;
-        fprintf(stderr, "callbox: restarting %s after exit status %d\n", resolved_exec_path, status);
+        /* status is a wait status: say what the program did */
+        if (WIFSIGNALED(status))
+            fprintf(stderr, "callbox: restarting %s after signal %d\n", resolved_exec_path, WTERMSIG(status));
+        else
+            fprintf(stderr, "callbox: restarting %s after exit status %d\n", resolved_exec_path,
+                    WIFEXITED(status) ? WEXITSTATUS(status) : status);
         sleep_restart_delay(restart_delay_seconds);
     }
-    if (have_status) mark_finished_with_retry(store, id, status);
+    if (have_status) mark_finished_with_retry(store, id, status, getpid());
     _exit(0);
 }
 
@@ -343,8 +354,10 @@ static int foreground_exit_status(const struct hold_store *store, const char *id
         bool marked = r.has_exit_code;
         int code = r.exit_code;
         hold_free_run_record(&r);
-        if (st == STATE_RUNNING) return 0;
+        /* The stamp first: an exited program whose background child still
+         * holds its process group has ended, with its own exit code. */
         if (marked) return code;
+        if (st == STATE_RUNNING) return 0;
         struct timespec sl = {.tv_sec = 0, .tv_nsec = 100 * 1000000L};
         while (nanosleep(&sl, &sl) != 0 && errno == EINTR) {
             continue;
@@ -523,6 +536,12 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         return HOLD_EXIT_USAGE;
     }
     bool restart_enabled = restart_policy_is_enabled(restart_policy);
+    /* -i without -t: the program runs on pipes under a broker that relays its
+     * input, so the program never holds the person's terminal, Ctrl-P Ctrl-Q
+     * can detach, and callbox attach can reconnect. (--restart's supervisor
+     * still hands its workers stdin directly.) */
+    bool pipe_mode = interactive_stdin && !console_mode && !restart_enabled;
+    bool brokered = console_mode || pipe_mode;
     if (restart_enabled && console_mode) {
         fprintf(stderr, "callbox: error: --restart with --tty/-t is not supported yet\n");
         return HOLD_EXIT_USAGE;
@@ -549,7 +568,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
      * else the invoking terminal, when it reports a usable size; else 80x24.
      * The broker runs with /dev/null stdio and cannot ask a terminal, so the
      * launcher samples it here, while the real one is still on its stdio. */
-    struct hold_console_options console_options = {.chat = opts->chat};
+    struct hold_console_options console_options = {.chat = opts->chat, .pipe = pipe_mode, .program = !opts->shell};
     if (opts->chat) {
         /* A callbox shell's broker reads the keys itself: the lead key, then the
          * detach key or the chat key. */
@@ -680,11 +699,16 @@ int hold_perform_start_options(const struct hold_invocation *inv,
             launch_die(&u, "callbox: log path too long");
         }
     }
-    if (console_mode && hold_format_console_sock_path(store, id, console_sock, sizeof(console_sock)) != 0) {
+    if (brokered && hold_format_console_sock_path(store, id, console_sock, sizeof(console_sock)) != 0) {
         console_sock[0] = '\0';
         launch_die(&u, "callbox: console socket path too long");
     }
     int log_preflight_fd = hold_open_append_no_symlink(log_path);
+    /* Where this run's output will start: a redial appends to the same log,
+     * and what is shown of a run (when its console was over before callbox
+     * got there) is this run's part, not every earlier run's too. */
+    struct stat log_st;
+    int64_t run_log_start = (log_preflight_fd >= 0 && fstat(log_preflight_fd, &log_st) == 0) ? (int64_t)log_st.st_size : 0;
     if (log_preflight_fd < 0) {
         launch_die(&u, "callbox: failed to open log");
     }
@@ -712,9 +736,9 @@ int hold_perform_start_options(const struct hold_invocation *inv,
      * supervisor is the waiter). A plain -d call leaves nothing behind - root's
      * too: other users see a global call's liveness from its process group,
      * not from the public entry's hint. A TTY call's broker is its parent. */
-    bool waiter = !console_mode && (opts->wait || tail || opts->auto_remove || restart_enabled);
+    bool waiter = !brokered && (opts->wait || tail || opts->auto_remove || restart_enabled);
     /* The waiter (or broker) reports the program's pid back over this pipe. */
-    if (!restart_enabled && (console_mode || waiter) && hold_cloexec_pipe(io + TP_R) != 0) {
+    if (!restart_enabled && (brokered || waiter) && hold_cloexec_pipe(io + TP_R) != 0) {
         launch_die(&u, "callbox: pipe failed");
     }
 
@@ -722,7 +746,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     /* Only under the fallback (Unix sockets denied, or forced) does a call
      * carry the cross-shell lock; asked once, before the fork (a TTY call's
      * broker decides by its own listener). */
-    bool fallback = !console_mode && hold_console_fallback_selected();
+    bool fallback = !brokered && hold_console_fallback_selected();
     g_liveness_lock = fallback && waiter;
     g_output_lock = fallback && !waiter;
     pid_t pid = fork();
@@ -772,7 +796,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
                     status = 127 << 8;
                     break;
                 }
-                mark_finished_with_retry(store, id, status);
+                mark_finished_with_retry(store, id, status, target);
                 if (WIFEXITED(status)) _exit(WEXITSTATUS(status));
                 if (WIFSIGNALED(status)) _exit(128 + WTERMSIG(status));
                 _exit(255);
@@ -781,7 +805,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         }
         child_session_setup(io[HS_W], pin_privileged_cwd, envc, env, clean_child_env,
                             !console_mode && !interactive_stdin);
-        if (console_mode) {
+        if (brokered) {
             int nullfd = open("/dev/null", O_RDWR);
             if (nullfd < 0 ||
                 dup2(nullfd, STDIN_FILENO) < 0 ||
@@ -808,7 +832,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     u.group = pid;
     u.supervisor = pid;
     u.unlink_log = owns_new_log;
-    pid_t broker_pid = console_mode ? pid : 0; /* the forked child is the broker itself */
+    pid_t broker_pid = brokered ? pid : 0; /* the forked child is the broker itself */
     close(io[HS_W]);
     io[HS_W] = -1;
     for (int w = TP_W; w < IO_N; w += 2) {
@@ -894,7 +918,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
      * lock going away means the call has ended. (A plain -d call's output
      * lock says only that it runs: a program may close its output.) */
     struct stat ep;
-    r.liveness_lock = console_mode ? (console_sock[0] && lstat(console_sock, &ep) == 0 && S_ISFIFO(ep.st_mode))
+    r.liveness_lock = brokered ? (console_sock[0] && lstat(console_sock, &ep) == 0 && S_ISFIFO(ep.st_mode))
                                    : g_liveness_lock;
     if (console_sock[0]) {
         r.has_console = true;
@@ -905,7 +929,9 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     r.recipe.mode_detach = !tail; /* how it ran: -dt redials detached too */
     r.recipe.mode_wait = waiter;
     r.recipe.allow_multi = false;
-    r.recipe.mode_chat = opts->chat;
+    r.log_start = run_log_start;
+    r.recipe.mode_chat = opts->chat || opts->user_mode;
+    r.recipe.mode_shell = opts->shell;
     r.recipe.has_chat_key = opts->chat;
     r.recipe.chat_key = console_options.chat_key;
     r.recipe.has_keys = opts->chat;
@@ -1012,18 +1038,36 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     if (tail) {
         free_launch_and_observed_argv(launch_argv, observed_argv, argc);
         int tail_rc = 0;
-        if (console_mode) {
+        if (brokered) {
             /* placed from inside another call: this attach is nested in it */
             struct hold_store home_store;
             const char *home = getenv("HOME");
             bool have_home = home && *home && hold_init_user_store_from_home(home, &home_store) == 0;
             hold_note_enclosing_call(store, have_home ? &home_store : NULL);
             hold_console_set_composited(opts->chat);
-            bool on_terminal = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
+            hold_console_set_line_mode(pipe_mode);
+            hold_console_set_stream(!(isatty(STDIN_FILENO) && isatty(STDOUT_FILENO)));
+            hold_console_set_forward_term(true);
+            /* A program on pipes printed its output into this terminal as it
+             * went; there is no screen to print again when it ends. */
+            bool on_terminal = console_mode && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
             tail_rc = hold_run_native_console(r.console_sock);
+            if (hold_console_reader_gone()) {
+                /* `callbox foo | head`: the reader has what it wanted. foo is
+                 * not ours to end; say where it is, then end as a writer to
+                 * a closed pipe does (141). */
+                const char *label = r.has_name ? r.name : display_id;
+                if (hold_call_still_running(store, id))
+                    hold_sig_note(inv, "callbox: %s keeps running; end it with: callbox end %s\n", label, label);
+                signal(SIGPIPE, SIG_DFL);
+                raise(SIGPIPE);
+            }
             /* A program that is over before the attach gets there is not an
              * error: it ran, and what it printed and how it exited follow. */
-            bool unseen = hold_console_was_gone();
+            /* From a script, a call that was over before the stream reached
+             * it (it sent nothing) is shown from the log, too. */
+            bool streamed = !(isatty(STDIN_FILENO) && isatty(STDOUT_FILENO));
+            bool unseen = hold_console_was_gone() || (streamed && tail_rc == 0 && !hold_console_heard_output());
             if (unseen) tail_rc = 0;
             /* Detached, or over (an attach that failed has said so itself).
              * An ended call's exit status is callbox's own, as for a launch
@@ -1031,7 +1075,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
             if (tail_rc == 0 && hold_after_attach(inv, store, &r, r.has_name ? r.name : display_id, on_terminal, unseen))
                 tail_rc = foreground_exit_status(store, r.id);
         } else {
-            tail_rc = hold_tail_log_until_exit(&r, false, true);
+            tail_rc = hold_follow_launched_call(inv, &r, r.has_name ? r.name : display_id);
             if (tail_rc == 0) tail_rc = foreground_exit_status(store, r.id);
         }
         if (opts->auto_remove && hold_call_still_running(store, r.id)) {

@@ -758,9 +758,38 @@ int hold_cli_main(int argc, char **argv) {
          * missing command fails without leaving a record), matching the doc's
          * "call id -> call name -> PATH command" order. Shell snippets go
          * through an explicit `callbox -- sh -c ...`. */
+        /* User mode: a program placed with no session flags (or with -it)
+         * runs attached on a PTY, as `callbox shell` does for a shell - with
+         * the chat window, so messages for the call go there and are never
+         * typed into the program - and redial brings that program back. It
+         * is how a person runs a terminal program; scripts and agents say
+         * what they want with -d, -dt, -dw, or -i. Without a terminal there
+         * is nowhere to draw the window: the program still runs attached on
+         * its PTY. */
+        bool restart_asked = run.restart_policy[0] && strcmp(run.restart_policy, "no") != 0;
+        bool bare = !run.detach && !run.interactive && !run.tty && !console_mode && !run.tail_flag && !run.wait &&
+                    !restart_asked;
+        bool user_mode = !shell_mode && (bare || (run.interactive && run.tty && !run.detach));
+        bool on_terminal = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
+        if (user_mode) {
+            run.tty = true;
+            console_mode = true;
+            tail = true;
+            interactive_stdin = false;
+        }
         struct hold_start_options opts = start_options_from_run(&run, tail, console_mode,
                                                                 interactive_stdin, cmd_argc, cmd_argv);
-        opts.chat = shell_mode;
+        /* The chat window opens with the lead key, then the chat key: it needs
+         * detach keys that are a lead key plus one, with the chat key distinct
+         * (custom --detach-keys such as ctrl-a leave no room - the program
+         * then runs attached without the window, as -it always has). */
+        unsigned char dk[8];
+        size_t ndk = hold_console_get_detach_keys(dk, sizeof(dk));
+        unsigned char ck = run.chat_key ? run.chat_key : HOLD_CHAT_KEY_DEFAULT;
+        bool keys_fit_chat = ndk == 2 && ck != dk[0] && ck != dk[1];
+        opts.chat = shell_mode || (user_mode && on_terminal && keys_fit_chat);
+        opts.user_mode = user_mode && keys_fit_chat;
+        opts.shell = shell_mode;
         opts.chat_key = run.chat_key;
         int rc = hold_perform_start_options(&inv, &start_store, &opts);
         free_run_options(&run);

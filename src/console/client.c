@@ -173,7 +173,9 @@ enum hold_client_end hold_client_run(const struct hold_client *c) {
                 errno = read_errno;
                 if (n > 0) {
                     if (hook_stops(deliver_output(c, buf, (size_t)n), &end)) break;
-                } else if (n == 0) {
+                } else if (n == 0 || errno == ECONNRESET) {
+                    /* (a reset is the source closing with our last bytes
+                     * unread - it has ended all the same) */
                     end = HOLD_CLIENT_OUTPUT_ENDED;
                     break;
                 } else if (errno != EINTR && errno != EAGAIN) {

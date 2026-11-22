@@ -186,7 +186,12 @@ static int restart_existing_run(const struct hold_invocation *inv,
          * invocation gave its own. */
         .size_cols = size_cols ? size_cols : (console_mode && old.recipe.has_size ? old.recipe.size_cols : 0),
         .size_rows = size_cols ? size_rows : (console_mode && old.recipe.has_size ? old.recipe.size_rows : 0),
-        .chat = old.recipe.mode_chat,
+        /* The chat window needs a terminal to be drawn on: redialed from a
+         * script, a user-mode call comes back attached without it. */
+        .chat = old.recipe.mode_chat && !explicit_session_mode && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO),
+        /* the intent survives a redial from a script, where chat cannot be drawn */
+        .user_mode = old.recipe.mode_chat && !explicit_session_mode,
+        .shell = old.recipe.mode_shell,
         .chat_key = old.recipe.has_chat_key ? (unsigned char)old.recipe.chat_key : 0,
         .existing_id = old.id,
         .existing_log_path = old.log_path,

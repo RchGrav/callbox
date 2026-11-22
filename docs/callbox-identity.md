@@ -46,10 +46,10 @@ a program named `run`.
 
 ```sh
 # place a call (callbox help launch)
-callbox <cmd> [args...]          # foreground: stream output, exit as it does
+callbox <cmd> [args...]          # user mode (= -it): attached on a PTY, messages to chat
+callbox -i <cmd> [args...]       # attached, your input relayed on a pipe (no PTY)
 callbox -d <cmd> [args...]       # detached: print the 64-hex call id
 callbox -dw <cmd> [args...]      #  ...and keep a waiter that records the exit code
-callbox -it <cmd> [args...]      # attached on a PTY (Ctrl-P Ctrl-Q detaches)
 callbox -dt <cmd> [args...]      # detached on a PTY: a screen to drive
 callbox -dt --size C R <cmd>     #  ...of that size
 callbox shell [shell args...]    # your shell, with a chat window to your agents
@@ -91,9 +91,9 @@ What the short lines leave out:
   else the invoking terminal's size, else 80x24. The launcher samples the
   terminal itself, because the broker runs with no terminal to ask.
 - **Redial** reuses the call's id, name, and log, and honors the recorded
-  session mode: a `-it` recipe reattaches, a detached recipe detaches, a
-  foreground recipe streams, and a shell comes back attached with chat. A
-  running call is not redialed.
+  session mode: a user-mode call (and a shell) comes back attached with
+  chat, a `-i` recipe comes back on pipes, a detached recipe detaches, and a
+  plain foreground recipe streams. A running call is not redialed.
 - **`logs`** prints the raw captured bytes: plain text for a plain call, the
   raw terminal stream (escape sequences included) for a TTY call. For a TTY
   call's screen, use `peek`.

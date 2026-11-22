@@ -24,6 +24,7 @@ const struct hold_record_field hold_record_fields[] = {
     F("auto_remove", RF_BOOL, 0, auto_remove),    /* --rm; absent = false */
     F("pid_ns", RF_U64, 0, pid_ns),               /* launching PID namespace; absent = 0 = unknown */
     F("liveness_lock", RF_BOOL, 0, liveness_lock), /* lifetime lock on the log; absent = false */
+    F("log_start", RF_I64, 0, log_start),         /* this run's output starts here; absent = 0 */
     FH("broker_pid", RF_PID, 0, broker_pid, has_broker), /* a TTY call's console broker */
     FH("size_cols", RF_INT, 0, recipe.size_cols, recipe.has_size), /* --size */
     FH("size_rows", RF_INT, 0, recipe.size_rows, recipe.has_size),
@@ -158,7 +159,7 @@ static int emit_record_json(FILE *f, void *vctx) {
         hold_write_json_argv(f, r->recipe.envc, r->recipe.env);
     }
     if (r->recipe.mode_interactive || r->recipe.mode_tty || r->recipe.mode_detach || r->recipe.mode_wait ||
-        r->recipe.allow_multi || r->recipe.mode_chat) {
+        r->recipe.allow_multi || r->recipe.mode_chat || r->recipe.mode_shell) {
         hold_emit_kv(f, &first, "mode");
         const char *sep = "{";
         if (r->recipe.mode_interactive) { fprintf(f, "%s\"interactive\": true", sep); sep = ", "; }
@@ -167,6 +168,7 @@ static int emit_record_json(FILE *f, void *vctx) {
         if (r->recipe.mode_wait) { fprintf(f, "%s\"wait\": true", sep); sep = ", "; }
         if (r->recipe.allow_multi) { fprintf(f, "%s\"allow_multi\": true", sep); sep = ", "; }
         if (r->recipe.mode_chat) { fprintf(f, "%s\"chat\": true", sep); sep = ", "; }
+        if (r->recipe.mode_shell) { fprintf(f, "%s\"shell\": true", sep); sep = ", "; }
         fprintf(f, "}");
     }
     fprintf(f, "\n}\n");

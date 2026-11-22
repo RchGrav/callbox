@@ -86,8 +86,8 @@ test: $(TEST_OBJS)
 	@bash tests/test_release_installer.sh
 	@$(MAKE) test-040
 
-screen-test: tests/screen_test.c src/screen/screen.c src/console/compose.c src/console/overlay.h $(wildcard include/callbox/*.h) $(VTERM_OBJS)
-	$(CC) $(ALL_CPPFLAGS) $(TEST_CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o screen-test tests/screen_test.c src/screen/screen.c src/console/compose.c $(VTERM_OBJS)
+screen-test: tests/screen_test.c src/screen/screen.c src/console/compose.c src/console/overlay.h src/term/line.c $(wildcard include/callbox/*.h) $(VTERM_OBJS)
+	$(CC) $(ALL_CPPFLAGS) $(TEST_CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o screen-test tests/screen_test.c src/screen/screen.c src/console/compose.c src/term/line.c $(VTERM_OBJS)
 	@./screen-test
 
 test-040: callbox-dynamic

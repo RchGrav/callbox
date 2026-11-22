@@ -2,8 +2,11 @@
 
 [Docs index](index.md) | [Repository README](../README.md) | Related: [Console](console.md), [Screens](screen.md)
 
-`callbox shell` opens your shell on a PTY, as `callbox -it` would, and adds a
-floating chat window for talking to the agents you run under callbox. The shell
+`callbox shell` opens your shell on a PTY with a floating chat window for
+talking to the agents you run under callbox. It is user mode for a shell:
+`callbox <cmd>` (or `callbox -it <cmd>`) does the same for any program, and
+redial brings that program back - a shell's redial can only bring back the
+shell, not what you ran in it. The shell
 is an ordinary call: it has a name, a log, and a screen that `callbox peek`
 reads. What differs is how its display is produced, and where a message for
 it goes. Both are fixed by the launch command — the record carries
@@ -11,8 +14,8 @@ it goes. Both are fixed by the launch command — the record carries
 
 | Launched with | A message (`callbox msg`) for it | Its attach client is sent |
 | --- | --- | --- |
-| `callbox -it` / `-dt` (any program, shells included) | is typed into the program's prompt at once | the PTY's raw bytes |
-| `callbox shell` | goes to the chat inbox; nothing is ever typed | composed frames |
+| `callbox -dt` (any program, shells included) | is typed into the program's prompt at once | the PTY's raw bytes |
+| `callbox shell`, and `callbox <cmd>` / `-it` at a terminal (user mode) | goes to the chat inbox; nothing is ever typed | composed frames |
 
 ```sh
 callbox shell                       # $SHELL, else your login shell, else /bin/sh

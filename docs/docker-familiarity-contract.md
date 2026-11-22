@@ -17,7 +17,7 @@ runs host processes, not containers, and has no daemon.
 ```text
 -d, --detach        detached; stdout is exactly one line: the full 64-hex
                     call id
--i, --interactive   keep non-PTY stdin open
+-i, --interactive   your input relayed to the program on a pipe (no PTY)
 -t, --tty           allocate a PTY
 -e, --env           set one variable: KEY=VALUE only (Docker's bare -e KEY
                     pass-through is not supported)
@@ -39,11 +39,27 @@ own. A root-managed call starts from an empty environment with a fixed
 applies `-e`/`--env-file`. Every call also gets `CALLBOX_ID`, `CALLBOX_PARENT`
 when placed from inside another call, and `CALLBOX_NAME` when named.
 
-A foreground launch prints nothing of its own, only the process output. It
-exits with the held process's exit status, as `docker run` does. The call
-runs in its own session, so Ctrl-C stops only the output stream: the call
-keeps running and callbox exits 0. A PTY launch (`-it`) detaches with
-`Ctrl-P Ctrl-Q`, as in Docker.
+A foreground launch prints nothing of its own, only the process output, and
+exits with the held process's exit status, as `docker run` does.
+
+Where callbox differs: with no session flags, a program runs attached on a
+PTY, as `-it` (user mode, with a chat window when there is a terminal; see
+callbox help launch). Docker's bare `docker run` attaches without a TTY;
+callbox's bare form is how a person runs a terminal program, and scripts and
+agents name what they want (`-d`, `-dt`, `-dw`, `-i`).
+
+The keys are Docker's, in every mode you are on a call: Ctrl-C goes to the
+program (Docker's sig-proxy; without a terminal, a SIGINT sent to callbox is
+passed on), and `Ctrl-P Ctrl-Q` detaches, leaving it running. Docker's detach
+keys need a TTY; callbox reads keys itself, so they also detach `-i` calls
+and plain foreground calls (`-w`). Following a log (`logs -f`, `tail`,
+`--tail`) is not being on a call: Ctrl-C stops following, as `docker logs -f`
+does.
+
+`-i` gives the program a pipe its broker holds, never your terminal, as
+Docker's `-i` gives a container a pipe: piped input streams in and ends with
+EOF, Ctrl-D ends typed input, and `callbox attach` reconnects input and
+output (`-di` starts it in the background with its input open).
 
 Flags that need a container are rejected with exit 1 and an explanation, so
 a script never believes they took effect:

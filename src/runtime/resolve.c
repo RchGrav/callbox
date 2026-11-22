@@ -43,11 +43,13 @@ static int resolve_system_public_id(const struct hold_store *store, const char *
 }
 
 bool hold_record_matches_alias_intent(const char *command, const struct hold_run_record *r, enum run_state st) {
-    if (!strcmp(command, "start") || !strcmp(command, "stop") || !strcmp(command, "kill") ||
-        !strcmp(command, "tail")) {
+    if (!strcmp(command, "start") || !strcmp(command, "stop") || !strcmp(command, "kill")) {
         return st == STATE_RUNNING;
     }
-    if (!strcmp(command, "view")) {
+    /* tail of an ended call prints its whole log (callbox help tail), so it
+     * finds any call with a log, as logs does - and --tail of an ended call
+     * must find it rather than fall through to a redial. */
+    if (!strcmp(command, "view") || !strcmp(command, "tail")) {
         return r->has_log;
     }
     /* Screen verbs, and attach, resolve any matching call and then explain

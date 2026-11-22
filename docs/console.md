@@ -2,11 +2,14 @@
 
 [Docs index](index.md) | Related: [Screens](screen.md), [Launcher](launcher.md)
 
-A call placed with `-t` runs on a pseudo-terminal owned by its **console
-broker**: `callbox -it <cmd>` attaches to it at once, `callbox -dt <cmd>` leaves it
-running in the background, and `callbox attach <target>` picks it back up later
-(`console` is an alias). `Ctrl-P Ctrl-Q` detaches without stopping the call;
-`--detach-keys` changes the sequence.
+A call placed with `-t` - and every user-mode launch, `callbox <cmd>` with no
+session flags - runs on a pseudo-terminal owned by its **console broker**:
+`callbox <cmd>` and `callbox -it <cmd>` attach to it at once, `callbox -dt
+<cmd>` leaves it running in the background, and `callbox attach <target>`
+picks it back up later (`console` is an alias). A call placed with `-i` (no
+`-t`) has a broker too, holding its input pipe instead of a PTY (see [Programs
+on pipes](#programs-on-pipes)). `Ctrl-P Ctrl-Q` detaches without stopping the
+call; `--detach-keys` changes the sequence.
 
 The broker is forked per call and lives exactly as long as the call. It owns
 the PTY master and a private socket under the store's `console/` directory
@@ -38,6 +41,13 @@ and similar tools leave the lead key untimed too. `Ctrl-Q` then detaches,
 `Ctrl-P` again sends one `Ctrl-P` to the program (the quick way through), and any other key sends
 both through. (A `callbox shell`'s broker reads these keys itself, so it can
 show what the lead key offers while it waits; see [shell.md](shell.md).)
+
+Ctrl-C means one thing wherever you are on a call: it goes to the program. On
+a PTY the key reaches the program's terminal, which signals it. For a program
+on pipes, the attach client turns Ctrl-C into an interrupt frame and the
+broker sends SIGINT to the program's process group. Following a log (`callbox
+tail`, `--tail`, `logs -f`) is not being on a call: there, Ctrl-C stops
+following.
 Two cases need more than that.
 
 **Nested attach.** Attach to one call from inside another — `callbox attach
@@ -107,10 +117,40 @@ first look at its terminal is already right. See [screen.md](screen.md).
 
 The wire protocol: a client opening with the 8-byte magic `holdv1\0\0` sends
 3-byte `type + be16 length` frames (`D` data; `W` resize, payload be16 rows
-then be16 cols; `X` detach) and receives the screen as plain, unframed
-bytes. A client opening with `holdctl1` is a control client (see
+then be16 cols; `X` detach; `E` end of input (a program on pipes reads EOF; on a PTY the broker types its end-of-input key, keeping its echo out of the output); `S`
+interrupt - empty, Ctrl-C for a program on pipes, or one byte naming SIGINT
+or SIGTERM for either kind; `P` "send me a stream", from a launch attaching
+for a script; `N` "no terminal here", from any client whose stdin or stdout
+is not a terminal, so the broker's screen answers the program's terminal
+queries - nobody else will, and a program waiting for a reply would stall) and receives the screen as plain, unframed bytes. A client opening with `holdctl1` is a control client (see
 [screen.md](screen.md)). Anything else is raw passthrough in both
 directions.
+
+## Programs on pipes
+
+`callbox -i <cmd>` (without `-t`) puts the program on pipes under a broker:
+its stdin is a pipe the broker holds, and its stdout and stderr a pipe the
+broker copies into the log and the headless screen (reading `\n` as `\r\n`,
+as a PTY would, so `peek` and `wait --match` work). Why a broker for a
+program without a PTY: so the program never holds your terminal (handed your
+terminal directly, it would keep reading your keystrokes after you left), so
+Ctrl-P Ctrl-Q can detach it, and so `callbox attach` can reconnect its input
+and output later. `-di` starts it in the background with its input open.
+
+The attach client for such a call keeps your terminal's lines and scrollback
+(no alternate screen) and reads keys one at a time, editing each line itself:
+echo, backspace, Ctrl-U, Enter sends the line, Ctrl-D on an empty line is end
+of input (an `E` frame: the broker closes the program's stdin). With piped
+input, bytes go through as they are and the end of the pipe is end of input.
+Instead of a screen repaint, the first client - the launcher, attaching as
+the program starts - gets this run's output so far from the log, so nothing
+printed before it connected is lost; a client attaching later gets what
+comes next, as `docker attach` does.
+
+A launch that attaches from a script (stdin or stdout not a terminal) asks
+for the same stream on a PTY call too (`P` frame), so a script gets the
+output, not cursor moves. `callbox attach` keeps its repaint of the live
+screen.
 
 ## Where Unix sockets are denied
 

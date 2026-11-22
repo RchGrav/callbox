@@ -2150,6 +2150,323 @@ test_tail_ctrl_c_detaches_from_tail_and_keeps_run() {
 }
 
 
+# A plain call launched in the foreground (here -w) is followed, and the keys
+# mean what they mean everywhere you are on a call: Ctrl-C goes to the
+# program; Ctrl-P Ctrl-Q leaves it running and says how to follow it again.
+# Driven from a -dt call, so the keys come from a real terminal.
+test_foreground_keys_interrupt_or_detach() {
+  "$HOLD_BIN" -dt --name kdrv -- "$HOLD_REAL_BIN" -w --name trapper -- sh -c 'trap "echo got-INT; exit 6" INT; echo armed; while :; do sleep 0.2; done' >/dev/null || return 1
+  "$HOLD_BIN" wait kdrv --match armed --timeout 8000 >/dev/null || { "$HOLD_BIN" peek kdrv >&2; return 1; }
+  "$HOLD_BIN" send kdrv -k C-c || return 1
+  "$HOLD_BIN" wait trapper --exit --timeout 5000 >/dev/null || return 1
+  out_has '"exit_code": 6' "$HOLD_BIN" inspect trapper || { echo "Ctrl-C did not reach the program" >&2; "$HOLD_BIN" peek kdrv >&2; return 1; }
+  "$HOLD_BIN" -dt --name kdrv2 -- "$HOLD_REAL_BIN" -w --name keeper -- sh -c 'echo keeper-up; while :; do sleep 0.3; done' >/dev/null || return 1
+  "$HOLD_BIN" wait kdrv2 --match keeper-up --timeout 8000 >/dev/null || return 1
+  "$HOLD_BIN" send kdrv2 -k C-p -k C-q || return 1
+  "$HOLD_BIN" wait kdrv2 --match 'keeper keeps running; follow it again: callbox --tail keeper' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek kdrv2 >&2; return 1; }
+  out_has 'Up ' "$HOLD_BIN" list keeper || { echo "detaching stopped the call" >&2; return 1; }
+  "$HOLD_BIN" end keeper kdrv kdrv2 >/dev/null 2>&1 || true
+}
+
+# Without a terminal, a SIGINT sent to callbox goes to the program, as
+# docker run's sig-proxy does.
+test_foreground_sigint_reaches_the_program() {
+  command -v setsid >/dev/null 2>&1 || skip "setsid not available"
+  local fg_pid rc
+  setsid "$HOLD_BIN" -w --name proxied -- sh -c 'trap "exit 6" INT; while :; do sleep 0.2; done' </dev/null >/dev/null 2>&1 &
+  fg_pid=$!
+  "$HOLD_BIN" wait proxied --idle 300 --timeout 5000 >/dev/null 2>&1 || sleep 1
+  sleep 0.5
+  kill -INT "$fg_pid" 2>/dev/null || true
+  set +e; wait "$fg_pid"; rc=$?; set -e
+  [ "$rc" -eq 6 ] || { echo "SIGINT to callbox: rc=$rc (want the program's 6)" >&2; return 1; }
+}
+
+# A program placed with no session flags runs in user mode: attached on a
+# PTY. From a script (no terminal) it still runs on its PTY, its output
+# arrives as a stream (no screen repaint), and callbox exits as it did.
+test_bare_launch_runs_on_a_pty() {
+  local out rc=0
+  out=$("$HOLD_BIN" --name bare1 -- sh -c 'tty; echo bare-out; exit 4' </dev/null) || rc=$?
+  [ "$rc" -eq 4 ] || { echo "bare launch: rc=$rc (want 4)" >&2; return 1; }
+  printf '%s\n' "$out" | grep -q '^/dev/' || { echo "not on a PTY: [$out]" >&2; return 1; }
+  printf '%s\n' "$out" | grep -q 'bare-out' || { echo "output lost: [$out]" >&2; return 1; }
+  ! printf '%s' "$out" | grep -q "$(printf '\033')\[2J" || { echo "a script got a screen repaint" >&2; return 1; }
+  out_has '"tty": true' "$HOLD_BIN" inspect bare1 || return 1
+}
+
+# User mode at a terminal: a message for the call goes to its chat window and
+# is never typed into the program; redial brings the program back the same way.
+test_user_mode_messages_go_to_chat() {
+  "$HOLD_BIN" -dt --size 120 30 --name udrv -- "$HOLD_REAL_BIN" --name umode -- sh -c 'echo umode-ready; while IFS= read -r l; do echo "typed:$l"; done' >/dev/null || return 1
+  "$HOLD_BIN" wait udrv --match umode-ready --timeout 8000 >/dev/null || { "$HOLD_BIN" peek udrv >&2; return 1; }
+  out_has '"chat": true' "$HOLD_BIN" inspect umode || { echo "not in user mode" >&2; return 1; }
+  CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg umode 'for the chat' || return 1
+  "$HOLD_BIN" wait udrv --match 'chat: 1 new' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek udrv >&2; return 1; }
+  if "$HOLD_BIN" peek umode | grep -q 'typed:'; then echo "the message was typed into the program" >&2; return 1; fi
+  "$HOLD_BIN" end umode udrv >/dev/null 2>&1 || true
+  "$HOLD_BIN" -dt --size 120 30 --name udrv2 -- "$HOLD_REAL_BIN" umode >/dev/null || return 1
+  "$HOLD_BIN" wait udrv2 --match umode-ready --timeout 8000 >/dev/null || { "$HOLD_BIN" peek udrv2 >&2; return 1; }
+  out_has '"chat": true' "$HOLD_BIN" inspect umode || { echo "redial did not come back in user mode" >&2; return 1; }
+  "$HOLD_BIN" end umode udrv2 >/dev/null 2>&1 || true
+}
+
+# -i: the program's input is a pipe its broker holds, never your terminal.
+# Piped input streams in and ends with EOF; the exit code comes back.
+test_pipe_input_streams_and_ends() {
+  local out rc=0
+  out=$(printf 'b\na\nc\n' | "$HOLD_BIN" -i --name sorter -- sort) || rc=$?
+  [ "$rc" -eq 0 ] || return 1
+  [ "$(printf '%s' "$out" | tr '\n' ' ')" = "a b c" ] || { echo "sorted: [$out]" >&2; return 1; }
+  out_has '"interactive": true' "$HOLD_BIN" inspect sorter || return 1
+  if out_has '"tty": true' "$HOLD_BIN" inspect sorter; then echo "-i put the program on a PTY" >&2; return 1; fi
+  rc=0
+  printf 'x\n' | "$HOLD_BIN" -i -- sh -c 'read l; [ -t 0 ] && exit 9; exit 3' || rc=$?
+  [ "$rc" -eq 3 ] || { echo "-i exit code: rc=$rc (want 3; 9 = stdin was a terminal)" >&2; return 1; }
+}
+
+# -i at a terminal: callbox edits each line (backspace works), Ctrl-P Ctrl-Q
+# detaches leaving it running, callbox attach reconnects input and output,
+# Ctrl-D is end of input, and Ctrl-C reaches a program on pipes as SIGINT.
+test_pipe_input_keys_detach_and_attach() {
+  "$HOLD_BIN" -dt --name pdrv -- "$HOLD_REAL_BIN" -i --name piper -- sh -c 'echo pipe-ready; while IFS= read -r l; do echo "got:$l"; done; echo eof-seen' >/dev/null || return 1
+  "$HOLD_BIN" wait pdrv --match pipe-ready --timeout 8000 >/dev/null || { "$HOLD_BIN" peek pdrv >&2; return 1; }
+  "$HOLD_BIN" send pdrv abc -k BSpace -k Enter || return 1
+  "$HOLD_BIN" wait pdrv --match 'got:ab' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek pdrv >&2; return 1; }
+  "$HOLD_BIN" send pdrv -k C-p -k C-q || return 1
+  "$HOLD_BIN" wait pdrv --match 'detached from piper' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek pdrv >&2; return 1; }
+  out_has 'Up ' "$HOLD_BIN" list piper || { echo "detaching stopped the call" >&2; return 1; }
+  "$HOLD_BIN" -dt --name pdrv2 -- "$HOLD_REAL_BIN" attach piper >/dev/null || return 1
+  sleep 0.5
+  "$HOLD_BIN" send pdrv2 again -k Enter || return 1
+  "$HOLD_BIN" wait pdrv2 --match 'got:again' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek pdrv2 >&2; return 1; }
+  "$HOLD_BIN" send pdrv2 -k C-d || return 1
+  "$HOLD_BIN" wait piper --exit --timeout 5000 >/dev/null || return 1
+  "$HOLD_BIN" logs piper | grep -q 'eof-seen' || { echo "Ctrl-D was not end of input" >&2; return 1; }
+  "$HOLD_BIN" -dt --name pdrv3 -- "$HOLD_REAL_BIN" -i --name pint -- sh -c 'trap "exit 5" INT; echo int-armed; while :; do sleep 0.2; done' >/dev/null || return 1
+  "$HOLD_BIN" wait pdrv3 --match int-armed --timeout 8000 >/dev/null || return 1
+  "$HOLD_BIN" send pdrv3 -k C-c || return 1
+  "$HOLD_BIN" wait pint --exit --timeout 5000 >/dev/null || return 1
+  out_has '"exit_code": 5' "$HOLD_BIN" inspect pint || { echo "Ctrl-C did not reach the program on pipes" >&2; return 1; }
+  "$HOLD_BIN" end pdrv pdrv2 pdrv3 >/dev/null 2>&1 || true
+}
+
+# -di: in the background with input open; callbox attach types into it later.
+test_pipe_input_detached_then_attached() {
+  "$HOLD_BIN" -di --name later -- sh -c 'echo later-ready; while IFS= read -r l; do echo "got:$l"; done' >/dev/null || return 1
+  "$HOLD_BIN" -dt --name ldrv -- "$HOLD_REAL_BIN" attach later >/dev/null || return 1
+  "$HOLD_BIN" wait ldrv --match later-ready --timeout 8000 >/dev/null || { "$HOLD_BIN" peek ldrv >&2; return 1; }
+  "$HOLD_BIN" send ldrv typed-later -k Enter || return 1
+  "$HOLD_BIN" wait ldrv --match 'got:typed-later' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek ldrv >&2; return 1; }
+  "$HOLD_BIN" end later ldrv >/dev/null 2>&1 || true
+}
+
+
+# -i never lets a program that does not read its input lock up its broker:
+# output keeps flowing (a program that prints more than it reads), and peek
+# answers while the program ignores a large piped input.
+test_pipe_input_never_blocks_the_broker() {
+  local n
+  # (the feeder may die of SIGPIPE once the program has read all it will: not ours to judge)
+  n=$(set +o pipefail; seq 1 20000 | "$HOLD_BIN" -i --name amp -- sh -c 'while read l; do echo $l $l $l $l $l $l $l $l; done' | wc -l)
+  [ "$n" -eq 20000 ] || { echo "amplifier: $n of 20000 lines" >&2; return 1; }
+  ( head -c 300000 /dev/zero | tr '\0' x | fold -w100 | "$HOLD_BIN" -i --name deaf -- sh -c 'echo deaf-up; sleep 3' >/dev/null 2>&1 ) &
+  local i
+  for i in $(seq 1 50); do "$HOLD_BIN" inspect deaf >/dev/null 2>&1 && break; sleep 0.1; done
+  "$HOLD_BIN" wait deaf --match deaf-up --timeout 5000 >/dev/null || return 1
+  out_has 'deaf-up' "$HOLD_BIN" peek deaf || { echo "peek did not answer while the program ignored its input" >&2; return 1; }
+  wait
+}
+
+# -i: a program that stops reading (or closes stdin) early still reports its
+# own exit code, and its output after that still arrives.
+test_pipe_input_early_close_keeps_exit_code() {
+  local rc=0
+  # callbox's own status (PIPESTATUS[1]): the feeder dies of SIGPIPE once the
+  # program has stopped reading, which is the point of the test.
+  set +e
+  seq 1 200000 | "$HOLD_BIN" -i -- head -2 >/dev/null; rc=${PIPESTATUS[1]}
+  set -e
+  [ "$rc" -eq 0 ] || { echo "head -2: rc=$rc" >&2; return 1; }
+  set +e
+  yes | "$HOLD_BIN" -i -- sh -c 'head -2 >/dev/null; exit 9'; rc=${PIPESTATUS[1]}
+  set -e
+  [ "$rc" -eq 9 ] || { echo "exit 9: rc=$rc" >&2; return 1; }
+  rc=0
+  local out
+  out=$( (sleep 0.5; echo a; sleep 0.5; echo b) | "$HOLD_BIN" -i -- sh -c 'exec 0<&-; echo closed; sleep 1.5; echo still; exit 6') || rc=$?
+  [ "$rc" -eq 6 ] || { echo "closed stdin: rc=$rc" >&2; return 1; }
+  printf '%s\n' "$out" | grep -q still || { echo "output after closing stdin was lost: [$out]" >&2; return 1; }
+}
+
+# msg and send --enter complete a line for a program on pipes (a PTY turns
+# Enter's carriage return into a newline; a pipe needs the newline itself).
+test_pipe_input_enter_is_a_newline() {
+  "$HOLD_BIN" -di --name liner -- sh -c 'while IFS= read -r l; do echo "got:[$l]"; done' >/dev/null || return 1
+  CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg liner 'hello agent' || return 1
+  "$HOLD_BIN" send liner sent-text --enter || return 1
+  "$HOLD_BIN" wait liner --match 'got:[sent-text]' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek liner >&2; return 1; }
+  "$HOLD_BIN" logs liner | grep -q 'hello agent\]' || { echo "msg did not end its line" >&2; "$HOLD_BIN" logs liner >&2; return 1; }
+  "$HOLD_BIN" end liner >/dev/null 2>&1 || true
+}
+
+# Started with stdin closed, callbox never reads its own console as input;
+# from a script, end of input reaches a PTY program (it finishes).
+test_closed_or_empty_stdin_ends_input() {
+  local out rc=0
+  out=$("$HOLD_BIN" --name noin -- sh -c 'echo line1; read x; echo "read:[$x]"' <&- | tr -d '\r') || rc=$?
+  [ "$rc" -eq 0 ] || { echo "stdin closed: rc=$rc" >&2; return 1; }
+  [ "$(printf '%s\n' "$out" | grep -c line1)" -eq 1 ] || { echo "output came back as input: [$out]" >&2; return 1; }
+  printf '%s\n' "$out" | grep -q 'read:\[\]' || { echo "the program saw no end of input: [$out]" >&2; return 1; }
+  rc=0; "$HOLD_BIN" -i -- sh -c 'cat >/dev/null; exit 4' <&- || rc=$?
+  [ "$rc" -eq 4 ] || { echo "-i stdin closed: rc=$rc" >&2; return 1; }
+  rc=0; "$HOLD_BIN" cat </dev/null >/dev/null || rc=$?
+  [ "$rc" -eq 0 ] || { echo "callbox cat </dev/null: rc=$rc" >&2; return 1; }
+}
+
+# A SIGINT sent to an attached client goes to the program (as docker run's
+# sig-proxy does), for a PTY call and a call on pipes.
+test_sigint_to_attached_client_reaches_program() {
+  local m p rc
+  for m in -t -i; do
+    rc=0
+    "$HOLD_BIN" $m --name "sig${m#-}" -- sh -c 'trap "exit 5" INT; echo armed; while :; do sleep 0.2; done' </dev/null >/dev/null 2>&1 &
+    p=$!
+    "$HOLD_BIN" wait "sig${m#-}" --match armed --timeout 5000 >/dev/null 2>&1 || sleep 1
+    kill -INT "$p"
+    wait "$p" || rc=$?
+    [ "$rc" -eq 5 ] || { echo "$m: SIGINT to the client: rc=$rc (want 5)" >&2; return 1; }
+  done
+}
+
+# A program that exits but leaves a background child behind has ended, with
+# its own exit code - the recorded exit, not the live process group, decides.
+test_exit_stamp_beats_a_leftover_child() {
+  local rc=0
+  "$HOLD_BIN" -i -- sh -c 'sleep 3 & echo hi; exit 2' </dev/null >/dev/null || rc=$?
+  [ "$rc" -eq 2 ] || { echo "-i with a background child: rc=$rc (want 2)" >&2; return 1; }
+}
+
+
+# Run a command, sending it SIGTERM after N seconds if it is still going:
+# macOS has no timeout(1). Its stdin is passed on (a background job's would
+# be /dev/null). Returns the command's status.
+term_after() {
+  local secs=$1 pid killer rc=0
+  shift
+  "$@" <&0 &
+  pid=$!
+  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) &
+  killer=$!
+  wait "$pid" || rc=$?
+  kill "$killer" 2>/dev/null || true
+  wait "$killer" 2>/dev/null || true
+  return "$rc"
+}
+
+# A fast redial prints its own run's output once - never a protocol reply,
+# never the earlier runs' output - and its record is this run's (the exit
+# stamp of a program that ends at once must not put the old run back).
+test_fast_redial_prints_its_own_run() {
+  local i out rc
+  "$HOLD_BIN" --name quick -- echo first </dev/null >/dev/null || return 1
+  for i in 1 2 3 4; do
+    rc=0
+    out=$("$HOLD_BIN" quick </dev/null 2>&1 | tr -d '\r') || rc=$?
+    [ "$rc" -eq 0 ] || { echo "redial $i: rc=$rc out=[$out]" >&2; return 1; }
+    [ "$out" = "first" ] || { echo "redial $i printed [$out]" >&2; return 1; }
+  done
+  out_has '"log_start": 28' "$HOLD_BIN" inspect quick || { echo "the record is not the last run's" >&2; "$HOLD_BIN" inspect quick | grep log_start >&2; return 1; }
+}
+
+# `callbox foo | head`: callbox ends as a writer to a closed pipe does (141)
+# and says the call keeps running.
+test_closed_reader_ends_with_141() {
+  local st
+  set +e +o pipefail
+  "$HOLD_BIN" --name gush -- seq 1 1000000 </dev/null 2>"$TEST_ROOT/gush.err" | head -2 >/dev/null
+  st=${PIPESTATUS[0]}
+  set -e -o pipefail
+  [ "$st" -eq 141 ] || { echo "rc=$st (want 141)" >&2; cat "$TEST_ROOT/gush.err" >&2; return 1; }
+  grep -q 'gush keeps running' "$TEST_ROOT/gush.err" || { cat "$TEST_ROOT/gush.err" >&2; return 1; }
+  "$HOLD_BIN" end gush >/dev/null 2>&1 || true
+}
+
+# A SIGTERM to a launch (timeout 2 callbox foo) is passed on to its program,
+# which is not left behind.
+test_sigterm_to_a_launch_reaches_program() {
+  set +e
+  term_after 2 "$HOLD_BIN" --name termed -- sh -c 'trap "exit 7" TERM; while :; do sleep 0.2; done' </dev/null >/dev/null 2>&1
+  set -e
+  "$HOLD_BIN" wait termed --exit --timeout 5000 >/dev/null 2>&1 || true
+  out_has 'Exited (7)' "$HOLD_BIN" list -a termed || { echo "the program did not get the SIGTERM" >&2; "$HOLD_BIN" list -a >&2; return 1; }
+}
+
+# A piped attach to a -di call does not end its input: the next attach can
+# feed it again.
+test_piped_attach_keeps_di_input_open() {
+  "$HOLD_BIN" -di --name feed -- sh -c 'while IFS= read -r l; do echo "got:$l"; done; echo EOF-seen' >/dev/null || return 1
+  set +e
+  printf 'one\n' | term_after 2 "$HOLD_BIN" attach feed >/dev/null 2>&1
+  printf 'two\n' | term_after 2 "$HOLD_BIN" attach feed >/dev/null 2>&1
+  set -e
+  "$HOLD_BIN" wait feed --match 'got:two' --timeout 5000 >/dev/null || { "$HOLD_BIN" logs feed >&2; return 1; }
+  if "$HOLD_BIN" logs feed | grep -q EOF-seen; then echo "an attach ended the call's input" >&2; return 1; fi
+  "$HOLD_BIN" end feed >/dev/null 2>&1 || true
+}
+
+# wait --match finds text that wrapped at the right edge.
+test_wait_match_spans_a_soft_wrap() {
+  "$HOLD_BIN" -dt --name narrow --size 20 5 -- sh -c 'printf "0123456789abcdefNEEDLEword\n"; sleep 30' >/dev/null || return 1
+  "$HOLD_BIN" wait narrow --match NEEDLEword --timeout 3000 >/dev/null || { "$HOLD_BIN" peek narrow >&2; return 1; }
+  "$HOLD_BIN" end narrow >/dev/null 2>&1 || true
+}
+
+
+# `callbox -w cmd | head`: quiet 141, as `logs | head` is, with a note
+# that the call keeps running.
+test_follow_closed_reader_ends_with_141() {
+  local st
+  set +e +o pipefail
+  "$HOLD_BIN" -w --name wgush -- seq 1 1000000 </dev/null 2>"$TEST_ROOT/wgush.err" | head -1 >/dev/null
+  st=${PIPESTATUS[0]}
+  set -e -o pipefail
+  [ "$st" -eq 141 ] || { echo "rc=$st (want 141)" >&2; cat "$TEST_ROOT/wgush.err" >&2; return 1; }
+  if grep -q 'failed while tailing' "$TEST_ROOT/wgush.err"; then cat "$TEST_ROOT/wgush.err" >&2; return 1; fi
+  "$HOLD_BIN" end wgush >/dev/null 2>&1 || true
+}
+
+# A foreground redial shows its own run, not every earlier run's output.
+test_foreground_redial_shows_its_run_only() {
+  local n
+  "$HOLD_BIN" -w --name thrice -- seq 1 3 </dev/null >/dev/null || return 1
+  n=$("$HOLD_BIN" thrice </dev/null | wc -l | tr -d ' ')
+  [ "$n" -eq 3 ] || { echo "redial printed $n lines (want 3)" >&2; return 1; }
+  n=$("$HOLD_BIN" thrice </dev/null | wc -l | tr -d ' ')
+  [ "$n" -eq 3 ] || { echo "second redial printed $n lines (want 3)" >&2; return 1; }
+}
+
+# With no terminal on the client's side, the screen answers the program's
+# terminal queries: a program waiting for its cursor position gets it.
+test_stream_client_gets_query_replies() {
+  local out
+  out=$("$HOLD_BIN" --name dsr -- sh -c 'sleep 0.5; stty -icanon -echo min 0 time 30; printf "\033[6n"; dd bs=1 count=6 2>/dev/null | od -c' </dev/null 2>&1 | tr -d '\r')
+  printf '%s' "$out" | grep -q '033   \[   1   ;   1' || { echo "no reply to the query: [$out]" >&2; return 1; }
+}
+
+# Purges at once each report only what they removed.
+test_concurrent_purges_count_once() {
+  local i total
+  for i in $(seq 1 12); do "$HOLD_BIN" -d --name "pc$i" true >/dev/null; done
+  "$HOLD_BIN" wait pc12 --exit --timeout 5000 >/dev/null 2>&1 || sleep 1
+  sleep 0.5
+  for i in 1 2 3 4; do "$HOLD_BIN" purge >"$TEST_ROOT/purge$i.out" 2>&1 & done
+  wait
+  total=$(cat "$TEST_ROOT"/purge[1-4].out | grep -c '  pc[0-9]*$' || true)
+  [ "$total" -eq 12 ] || { echo "purges reported $total removals of 12" >&2; cat "$TEST_ROOT"/purge[1-4].out >&2; return 1; }
+}
+
+
 test_long_command_list_truncates_instead_of_skips() {
   local out id long_arg list_out
   long_arg=$(printf 'x%.0s' $(seq 1 140))
@@ -2661,7 +2978,8 @@ PY
 test_docker_bare_launch_foreground_follows_output_by_default() {
   local out id
   # Bare foreground streams the process output and prints no id of its own.
-  out=$("$HOLD_BIN" -- /bin/sh -c 'echo bare-foreground-ok' 2>"$TEST_ROOT/docker-bare-foreground.err") || {
+  # (on a PTY now - user mode - so lines end in \r\n)
+  out=$("$HOLD_BIN" -- /bin/sh -c 'echo bare-foreground-ok' 2>"$TEST_ROOT/docker-bare-foreground.err" | tr -d '\r') || {
     cat "$TEST_ROOT/docker-bare-foreground.err" >&2
     return 1
   }
@@ -2687,7 +3005,7 @@ test_docker_bare_launch_foreground_follows_output_by_default() {
 
 test_docker_run_foreground_follows_output_by_default() {
   local out id
-  out=$("$HOLD_BIN" -- /bin/sh -c 'echo docker-foreground-ok' 2>"$TEST_ROOT/docker-foreground.err") || {
+  out=$("$HOLD_BIN" -- /bin/sh -c 'echo docker-foreground-ok' 2>"$TEST_ROOT/docker-foreground.err" | tr -d '\r') || {
     cat "$TEST_ROOT/docker-foreground.err" >&2
     return 1
   }
@@ -3761,8 +4079,12 @@ test_tail_flag_follows_a_calls_log() {
   grep -q 'tick 5' "$TEST_ROOT/tail.out" || { cat "$TEST_ROOT/tail.out" >&2; return 1; }
   out_has '"tty": true' "$HOLD_BIN" inspect ticker || { echo "--tail rewrote the recipe" >&2; return 1; }
   "$HOLD_BIN" wait ticker --exit --timeout 5000 >/dev/null || return 1
+  local runs_before
+  runs_before=$("$HOLD_BIN" logs ticker | grep -c 'tick 0')
   "$HOLD_BIN" -f ticker </dev/null >"$TEST_ROOT/tail-ended.out" 2>&1 || true
   grep -q 'tick 5' "$TEST_ROOT/tail-ended.out" || { echo "-f on an ended call did not print its log" >&2; cat "$TEST_ROOT/tail-ended.out" >&2; return 1; }
+  [ "$("$HOLD_BIN" logs ticker | grep -c 'tick 0')" -eq "$runs_before" ] || { echo "--tail of an ended call ran it again" >&2; return 1; }
+  "$HOLD_BIN" tail ticker </dev/null | grep -q 'tick 5' || { echo "tail of an ended call (by name) did not print its log" >&2; return 1; }
   [ "$("$HOLD_BIN" --tail echo tail-launch </dev/null)" = "tail-launch" ] || { echo "--tail with a command did not launch it" >&2; return 1; }
 }
 
@@ -5016,9 +5338,18 @@ rows = [l for l in json.load(sys.stdin)["lines"] if re.match(r"r\d\d ", l)]
 assert len(rows) >= 20, "the program is not on screen"
 newest = 0
 for line in rows:
-    seen = {int(n) for n in re.findall(r"(?<!\d)\d{6}(?!\d)", line)}
+    nums = [int(n) for n in re.findall(r"(?<!\d)\d{6}(?!\d)", line)]
+    seen = set(nums)
     assert seen, "a row shows nothing of the program: " + line
-    assert len(seen) == 1, "a row mixes frames: " + line
+    # A row the program is redrawing at this instant: the new frame as a
+    # prefix, the one just before after it (the screen was read between two
+    # pieces of one write - macOS PTYs deliver writes in small pieces).
+    if len(seen) == 2 and max(seen) == min(seen) + 1:
+        k = nums.index(min(seen))
+        mid_redraw = all(n == max(seen) for n in nums[:k]) and all(n == min(seen) for n in nums[k:])
+    else:
+        mid_redraw = False
+    assert len(seen) == 1 or mid_redraw, "a row mixes frames: " + line
     assert min(seen) >= floor, "a stale cell (frame %d < %d): %s" % (min(seen), floor, line)
     newest = max(newest, max(seen))
 print(newest)' "$1"
@@ -5729,6 +6060,28 @@ run_test "--rm: kill/end remove before returning; wait reports the code" test_rm
 run_test "a call survives its caller's process group being killed" test_call_survives_caller_group_kill
 run_test "env flags are recipe data, not callbox's own environment" test_env_flag_is_recipe_data_only
 run_test "tail Ctrl-C detaches from tail and does not stop run" test_tail_ctrl_c_detaches_from_tail_and_keeps_run
+run_test "foreground: Ctrl-C goes to the program, Ctrl-P Ctrl-Q detaches" test_foreground_keys_interrupt_or_detach
+run_test "foreground without a terminal: SIGINT goes to the program" test_foreground_sigint_reaches_the_program
+run_test "a bare launch runs attached on a PTY, streamed to a script" test_bare_launch_runs_on_a_pty
+run_test "user mode: messages go to chat, redial comes back in user mode" test_user_mode_messages_go_to_chat
+run_test "-i: piped input streams in and ends; no PTY" test_pipe_input_streams_and_ends
+run_test "-i at a terminal: line editing, detach, attach, Ctrl-D, Ctrl-C" test_pipe_input_keys_detach_and_attach
+run_test "-di: attach later types into its input" test_pipe_input_detached_then_attached
+run_test "-i: a program that does not read never blocks its broker" test_pipe_input_never_blocks_the_broker
+run_test "-i: early close of stdin keeps the exit code and later output" test_pipe_input_early_close_keeps_exit_code
+run_test "-i: msg and send --enter complete a line on pipes" test_pipe_input_enter_is_a_newline
+run_test "closed or empty stdin: no self-feeding, end of input reaches the program" test_closed_or_empty_stdin_ends_input
+run_test "SIGINT to an attached client reaches the program" test_sigint_to_attached_client_reaches_program
+run_test "the exit stamp beats a leftover background child" test_exit_stamp_beats_a_leftover_child
+run_test "a fast redial prints its own run once; the record is that run's" test_fast_redial_prints_its_own_run
+run_test "callbox foo | head ends with 141 and says foo keeps running" test_closed_reader_ends_with_141
+run_test "SIGTERM to a launch reaches its program" test_sigterm_to_a_launch_reaches_program
+run_test "a piped attach leaves a -di call's input open" test_piped_attach_keeps_di_input_open
+run_test "wait --match spans a soft wrap" test_wait_match_spans_a_soft_wrap
+run_test "callbox -w cmd | head ends quietly with 141" test_follow_closed_reader_ends_with_141
+run_test "a foreground redial shows its own run only" test_foreground_redial_shows_its_run_only
+run_test "a stream client's program gets replies to terminal queries" test_stream_client_gets_query_replies
+run_test "purges at once each report only what they removed" test_concurrent_purges_count_once
 run_test "build artifacts for static and dynamic coexist" test_build_artifact_coexistence
 run_test "concurrent starts produce unique ids" test_concurrent_unique_ids
 run_test "--env-file populates the recipe env only" test_env_file_populates_recipe_env

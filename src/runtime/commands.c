@@ -77,10 +77,27 @@ static void await_exit_record(const struct hold_store *store, const char *id) {
     }
 }
 
+/* The broker stamps the program's exit in the record when it reaps it. A
+ * stamped call has ended even when something it started lives on in its
+ * process group (a background child on pipes keeps the group alive, and no
+ * SIGHUP clears it). */
+static bool exit_recorded(const struct hold_store *store, const char *id) {
+    struct hold_run_record r;
+    char path[HOLD_PATH_MAX];
+    if (hold_load_record_by_id(store->record_dir, id, &r, path, sizeof(path)) != 0) return false;
+    bool stamped = r.has_exit_code;
+    hold_free_run_record(&r);
+    return stamped;
+}
+
+static bool program_running(const struct hold_store *store, const char *id) {
+    return hold_call_still_running(store, id) && !exit_recorded(store, id);
+}
+
 bool hold_after_attach(const struct hold_invocation *inv, const struct hold_store *store,
                        const struct hold_run_record *r, const char *label, bool on_terminal, bool unseen) {
     struct stat st;
-    bool running = hold_call_still_running(store, r->id);
+    bool running = program_running(store, r->id);
     /* The broker removes the console's endpoint as soon as no more output
      * can come: the program ended, or closed its terminal and runs on. */
     bool closed = unseen || !running || (lstat(r->console_sock, &st) != 0 && errno == ENOENT);
@@ -88,12 +105,12 @@ bool hold_after_attach(const struct hold_invocation *inv, const struct hold_stor
      * on its way out: give it a moment to be gone before saying it runs on. */
     for (int i = 0; running && closed && i < 10; i++) {
         nap_ms(100);
-        running = hold_call_still_running(store, r->id);
+        running = program_running(store, r->id);
     }
     if (!running) await_exit_record(store, r->id);
     if (closed) {
         if (on_terminal) (void)hold_print_final_screen(store, r->id, stdout);
-        else if (unseen) (void)hold_tail_log_until_exit(r, false, false);
+        else if (unseen) (void)hold_print_run_log(r);
     }
     if (running && closed)
         hold_sig_note(inv, "callbox: %s has closed its terminal and runs on; there is nothing to attach - see 'callbox logs %s'\n",
@@ -132,7 +149,12 @@ static int attach_console_record(const struct hold_invocation *inv,
     /* A callbox shell's broker reads the lead key itself; any other call's keys
      * are read here, by the attach client. */
     hold_console_set_composited(r->recipe.mode_chat && r->recipe.has_keys);
-    bool on_terminal = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
+    /* A call with a console but no PTY runs on pipes (callbox -i): attach in
+     * line mode. */
+    hold_console_set_line_mode(!r->recipe.mode_tty);
+    /* A call on pipes printed its output into this terminal as it went:
+     * there is no screen to print again when it ends. */
+    bool on_terminal = r->recipe.mode_tty && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
     int rc = hold_run_native_console(r->console_sock);
     pid_t by = 0;
     if (hold_console_was_refused(&by)) hold_note_attached_elsewhere(label, by, user_store, system_store);
@@ -202,10 +224,10 @@ void hold_usage(void) {
            "Place a command as a durable call: see its screen, type into it, wait on\n"
            "it, list it, pick it back up, end it politely. No daemon, no config server.\n\n"
            "PLACE A CALL\n"
-           "  callbox <cmd> [args...]         foreground: stream its output\n"
+           "  callbox <cmd> [args...]         attached on a PTY; its messages go to chat\n"
+           "  callbox -i <cmd> [args...]      attached, your input on a pipe (no PTY)\n"
            "  callbox -d <cmd> [args...]      detached: print the bare 64-hex call id\n"
            "  callbox -dw <cmd> [args...]     ...plus a waiter that records the exit code\n"
-           "  callbox -it <cmd> [args...]     attached on a PTY (Ctrl-P Ctrl-Q detaches)\n"
            "  callbox -dt --size 120 40 <cmd> detached on a PTY of that size, to drive\n"
            "  callbox shell [shell args...]   your shell, with a chat window to your agents\n"
            "  callbox <id|name>               redial: restart a call from its recipe\n"

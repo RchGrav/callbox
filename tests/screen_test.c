@@ -3,6 +3,7 @@
 #include "callbox/config.h"
 #include "callbox/screen.h"
 #include "../src/console/overlay.h"
+#include "callbox/term.h"
 
 static int failures = 0;
 #define CHECK(cond, ...)                                                   \
@@ -345,6 +346,79 @@ static void test_compositor_frames(void) {
     hold_screen_free(term);
 }
 
+/* ---- the -i line editor --------------------------------------------------- */
+
+/* line.c echoes through core's hold_write_all; core's util.c pulls in much
+ * more, so the test gives it this one function (same contract). */
+int hold_write_all(int fd, const void *buf, size_t n) {
+    const char *p = buf;
+    while (n > 0) {
+        ssize_t w = write(fd, p, n);
+        if (w < 0 && errno == EINTR) continue;
+        if (w <= 0) return -1;
+        p += w;
+        n -= (size_t)w;
+    }
+    return 0;
+}
+
+struct line_sink {
+    char got[256];
+    size_t len;
+    int sends;
+};
+
+static int line_sink_fn(void *ctx, const unsigned char *b, size_t n) {
+    struct line_sink *s = ctx;
+    if (s->len + n < sizeof(s->got)) {
+        memcpy(s->got + s->len, b, n);
+        s->len += n;
+        s->got[s->len] = '\0';
+    }
+    s->sends++;
+    return 0;
+}
+
+static void line_type(struct hold_term_line *l, struct line_sink *s, const char *keys, bool *eof) {
+    for (const char *k = keys; *k; k++) hold_term_line_feed(l, (unsigned char)*k, line_sink_fn, s, eof);
+}
+
+static void test_line_editor(void) {
+    int p[2];
+    CHECK(pipe(p) == 0, "pipe");
+    struct hold_term_line l;
+    hold_term_line_init(&l, p[1]);
+    struct line_sink s = {0};
+    bool eof = false;
+    /* backspace and Ctrl-U edit; Enter sends the line with a newline */
+    line_type(&l, &s, "abx\x7f" "c\r", &eof);
+    CHECK(!strcmp(s.got, "abc\n") && s.sends == 1, "line '%s' sends %d", s.got, s.sends);
+    line_type(&l, &s, "zz\x15ok\n", &eof);
+    CHECK(!strcmp(s.got, "abc\nok\n"), "after Ctrl-U '%s'", s.got);
+    /* pasted CRLF is one Enter, not an empty line after it */
+    s.len = 0; s.got[0] = '\0'; s.sends = 0;
+    line_type(&l, &s, "one\r\ntwo\r\n", &eof);
+    CHECK(!strcmp(s.got, "one\ntwo\n") && s.sends == 2, "CRLF paste '%s' sends %d", s.got, s.sends);
+    /* arrow keys leave nothing in the line */
+    s.len = 0; s.got[0] = '\0';
+    line_type(&l, &s, "a\x1b[Ab\n", &eof);
+    CHECK(!strcmp(s.got, "ab\n"), "arrow key '%s'", s.got);
+    /* Ctrl-D: sends what is typed, then on an empty line is the end */
+    s.len = 0; s.got[0] = '\0';
+    line_type(&l, &s, "x\x04", &eof);
+    CHECK(!strcmp(s.got, "x") && !eof, "Ctrl-D with text '%s'", s.got);
+    line_type(&l, &s, "\x04", &eof);
+    CHECK(eof, "Ctrl-D on an empty line is end of input");
+    /* the echo: Enter is "\n" alone (output processing adds the CR) */
+    close(p[1]);
+    char echo[512];
+    ssize_t n = read(p[0], echo, sizeof(echo) - 1);
+    close(p[0]);
+    echo[n > 0 ? n : 0] = '\0';
+    CHECK(strstr(echo, "\r\n") == NULL, "echo has no CR before LF");
+    CHECK(strstr(echo, "abx\b \bc\n") != NULL, "echo of the first line");
+}
+
 int main(void) {
     test_text_and_cursor();
     test_dim_attribute();
@@ -354,6 +428,7 @@ int main(void) {
     test_roundtrip_and_repaint();
     test_resize_and_text_ruler();
     test_compositor_frames();
+    test_line_editor();
     if (failures) {
         fprintf(stderr, "screen-test: %d failure(s)\n", failures);
         return 1;

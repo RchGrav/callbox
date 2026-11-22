@@ -126,6 +126,11 @@ void hold_screen_resize(struct hold_screen *s, int rows, int cols) {
     if (s) vterm_set_size(s->vt, clamp_dim(rows, 1000), clamp_dim(cols, 1000));
 }
 
+bool hold_screen_row_continues(const struct hold_screen *s, int row) {
+    const VTermLineInfo *info = vterm_state_get_lineinfo(s->state, row);
+    return info && info->continuation;
+}
+
 void hold_screen_size(const struct hold_screen *s, int *rows, int *cols) {
     vterm_get_size(s->vt, rows, cols);
 }

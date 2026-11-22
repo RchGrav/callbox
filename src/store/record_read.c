@@ -89,6 +89,7 @@ int hold_load_record(const char *path, struct hold_run_record *r) {
         if (hold_json_get_bool(obj, "wait", &b) == 0) r->recipe.mode_wait = b;
         if (hold_json_get_bool(obj, "allow_multi", &b) == 0) r->recipe.allow_multi = b;
         if (hold_json_get_bool(obj, "chat", &b) == 0) r->recipe.mode_chat = b;
+        if (hold_json_get_bool(obj, "shell", &b) == 0) r->recipe.mode_shell = b;
     }
     if (hold_json_find_key(j, "observed", &obj) == 0 && obj && *obj == '{') {
         r->has_observed |= hold_json_get_str(obj, "exe", r->observed_exe, sizeof(r->observed_exe)) == 0;

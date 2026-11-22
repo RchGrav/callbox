@@ -8,12 +8,50 @@ AI agents can read and drive, and lets agents message each other.
 
 ### Added
 
-- Calls, in Docker's dialect: `callbox <cmd>` runs in the foreground,
-  `-d` detaches (printing the 64-hex call id), `-it` attaches a terminal,
+- Calls, in Docker's dialect: `-d` detaches (printing the 64-hex call id),
   `-dt` starts on a headless terminal, `-w` keeps a waiter that records the
   exit code, `--rm` removes the call when it ends, `--name`, `-e`,
-  `--restart`, `--size COLS ROWS`. Why Docker's spelling: it is the process
-  vocabulary most developers and agents already know.
+  `--restart`, `--size COLS ROWS`, `--tail CALL` follows a call's log. Why
+  Docker's spelling: it is the process vocabulary most developers and agents
+  already know.
+- User mode: `callbox <cmd>` with no session flags (or `-it`) runs the
+  program attached on a PTY, as `callbox shell` runs a shell - with the chat
+  window when there is a terminal, so messages for the call go there and are
+  never typed into it - and redial brings that program back. Why: it is how
+  a person runs a terminal program, and a shell's redial could only bring
+  back the shell, never what ran in it. From a script it still runs on its
+  PTY, and its output arrives as a stream.
+- `-i` relays your input to the program on a pipe its broker holds. Why: a
+  program handed your terminal keeps reading your keystrokes after you
+  leave; through the broker, Ctrl-P Ctrl-Q can detach it, `callbox attach`
+  reconnects its input and output, piped input still works (EOF at its
+  end), and `-di` keeps the input open for a later attach. At a terminal,
+  callbox edits each line (echo, backspace, Ctrl-U, Ctrl-D = end of input).
+- The same keys wherever you are on a call: Ctrl-C goes to the program
+  (Docker's sig-proxy; without a terminal, a SIGINT sent to callbox is passed
+  on), Ctrl-P Ctrl-Q detaches and leaves it running. Why: one rule is easier
+  than Docker's (whose detach needs a TTY), and leaving a program running
+  should never depend on how it was launched. Following a log (`tail`,
+  `--tail`, `logs -f`) is watching, not being on a call: Ctrl-C stops
+  following. Programs start with default Ctrl-C handling, whatever callbox
+  inherited, so a forwarded Ctrl-C always takes effect.
+- An attached launch passes a SIGTERM on to its program (`timeout 8 callbox
+  foo` ends foo too). Why: the program was run there and must not be left
+  behind unseen; a SIGHUP still only detaches, because callbox keeps programs
+  running. `callbox foo | head` ends with 141 and says foo keeps running.
+  Why: the reader having had enough is not a reason to end the call.
+- Each run records where its output starts in the shared log (`log_start`).
+  Why: redials append to one log, and a run that ended before its launch
+  could attach should show its own output, not every earlier run's.
+- A client with no terminal on its side (a script, `attach` into a file)
+  lets the call's screen answer the program's terminal queries. Why: nobody
+  else will, and a program that waits for its cursor position would stall.
+- A launch from a script passes the end of its input on to a PTY program as
+  the terminal's end-of-input key, with its echo kept out of the output.
+  Why: macOS echoes it as `^D` into what a script reads; Linux does not.
+- `wait --match` finds text that wrapped at the right edge. Why: a long
+  line split across two screen rows is still one line to the person reading
+  it.
 - Every call is a durable record (`~/.local/state/callbox`; root's in
   `/var/lib/callbox`, `/var/db/callbox` on macOS) that survives the shell that
   started it: `list`/`ps`, `logs`, `inspect`, `end`/`stop`/`kill`, `save`,

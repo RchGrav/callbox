@@ -77,6 +77,9 @@ struct chat_host {
     /* The keys chat reads for itself, out of what the terminal sends: the
      * lead key, then the detach key or the chat key (0 = the defaults). */
     unsigned char lead, detach_key, key;
+    /* Any program in user mode, not a shell: the hints name the program
+     * ("callbox", "typing in the program") instead of the shell. */
+    bool program;
 };
 
 #define CHAT_MAX_OUTBOUND 8

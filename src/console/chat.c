@@ -937,7 +937,7 @@ static void set_focus(struct chat *c, bool chat) {
         if (c->notice_tip) c->notice[0] = '\0';
         if (c->current && !c->picking) c->current->unread = 0;
     } else if (c->visible) {
-        set_tip(c, "typing in the shell", "chat");
+        set_tip(c, c->host.program ? "typing in the program" : "typing in the shell", "chat");
     }
     c->dirty = true;
 }
@@ -1754,7 +1754,7 @@ void chat_attached(struct chat *c, int rows, int cols, int64_t now) {
     c->pasting = false;
     c->mouse_on = false;
     chat_terminal_resized(c, rows, cols);
-    if (!c->visible) set_tip(c, "callbox shell", "chat");
+    if (!c->visible) set_tip(c, c->host.program ? "callbox" : "callbox shell", "chat");
     comp_invalidate(c->comp); /* a fresh terminal: paint it all, set every mode */
     /* What arrived for the conversation on show while nobody was attached is
      * in front of them now. */

@@ -13,7 +13,11 @@ int hold_ensure_system_store(struct hold_store *store);
 int hold_write_record_atomic(const char *dir, const struct hold_run_record *r, int argc, char **argv, char *out_json_path, size_t out_n);
 int hold_write_public_index_atomic(const struct hold_store *store, const struct hold_run_record *r,
                                      const char *observed_ports_csv);
-int hold_mark_run_finished(const struct hold_store *store, const char *id, int status);
+/* Stamp the exit of the run whose program is pid (0: whatever the record
+ * names). -1 when the record is not there yet - or names another pid: this
+ * run's launcher has not written it yet (a redial reuses the id), so the
+ * caller retries; 1 when it was purged (final). */
+int hold_mark_run_finished(const struct hold_store *store, const char *id, int status, pid_t pid);
 /* Store-wide advisory lock (see atomic.c); -1 means proceed unlocked. */
 int hold_store_lock(const char *record_dir);
 void hold_store_unlock(int fd);

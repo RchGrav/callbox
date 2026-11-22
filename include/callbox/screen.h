@@ -83,6 +83,9 @@ void hold_screen_free(struct hold_screen *s);
 void hold_screen_feed(struct hold_screen *s, const char *bytes, size_t n);
 void hold_screen_resize(struct hold_screen *s, int rows, int cols);
 void hold_screen_size(const struct hold_screen *s, int *rows, int *cols);
+/* Whether row continues the row above: text that ran past the right edge
+ * and wrapped, rather than a line of its own. */
+bool hold_screen_row_continues(const struct hold_screen *s, int row);
 void hold_screen_modes(const struct hold_screen *s, struct hold_screen_modes *out);
 
 /* Bytes the terminal wants written to the PTY: replies to the program's
