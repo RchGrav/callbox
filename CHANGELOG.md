@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 - 2026-11-22
 
 The first release of callbox: one static C11 binary for Linux and macOS that
 keeps programs running, gives every terminal program a screen that scripts and
