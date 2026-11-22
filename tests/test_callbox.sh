@@ -898,7 +898,7 @@ test_argument_edges() {
   "$HOLD_BIN" --help >/dev/null || return 1
   "$HOLD_BIN" help >/dev/null || return 1
   "$HOLD_BIN" help --help >/dev/null || return 1
-  "$HOLD_BIN" help targets | grep -q 'call id, leading id prefix, or call name' || return 1
+  "$HOLD_BIN" help targets | grep -q 'call id, leading id prefix, call name, or the start of a name' || return 1
   "$HOLD_BIN" help scripting | grep -q 'Exit codes:' || return 1
   "$HOLD_BIN" end -h | grep -q 'usage: callbox end' || return 1
   out=$("$HOLD_BIN" --version) || return 1
@@ -2464,6 +2464,71 @@ test_concurrent_purges_count_once() {
   wait
   total=$(cat "$TEST_ROOT"/purge[1-4].out | grep -c '  pc[0-9]*$' || true)
   [ "$total" -eq 12 ] || { echo "purges reported $total removals of 12" >&2; cat "$TEST_ROOT"/purge[1-4].out >&2; return 1; }
+}
+
+
+# An id prefix that matches several calls lists them and exits 6, for
+# every verb - not "no call matches" (5), which would be false.
+test_ambiguous_id_prefix_lists_and_exits_6() {
+  local i c v rc
+  for i in $(seq 1 20); do "$HOLD_BIN" -d true >/dev/null; done
+  c=$(ls "$HOME/.local/state/callbox/"*.json | xargs -n1 basename | cut -c1 | sort | uniq -d | head -1)
+  [ -n "$c" ] || { skip "no two ids share a first digit"; return; }
+  for v in inspect logs end peek wait save purge; do
+    rc=0; "$HOLD_BIN" "$v" "$c" >/dev/null 2>"$TEST_ROOT/amb.err" || rc=$?
+    [ "$rc" -eq 6 ] || { echo "$v $c: rc=$rc (want 6)" >&2; cat "$TEST_ROOT/amb.err" >&2; return 1; }
+    grep -q "more than one call matches '$c'" "$TEST_ROOT/amb.err" || { cat "$TEST_ROOT/amb.err" >&2; return 1; }
+  done
+  rc=0; "$HOLD_BIN" "$c" </dev/null >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 6 ] || { echo "redial $c: rc=$rc (want 6)" >&2; return 1; }
+}
+
+# The start of a name is a target when one call fits; several are listed.
+test_name_prefix_targets() {
+  local rc
+  "$HOLD_BIN" -d --name helper -- sh -c 'echo from-helper' >/dev/null
+  "$HOLD_BIN" -d --name helium -- sh -c 'echo from-helium' >/dev/null
+  "$HOLD_BIN" wait helper --exit --timeout 5000 >/dev/null 2>&1 || sleep 1
+  out_has 'from-helper' "$HOLD_BIN" logs helpe || return 1
+  rc=0; "$HOLD_BIN" logs hel >/dev/null 2>"$TEST_ROOT/np.err" || rc=$?
+  [ "$rc" -eq 6 ] || { echo "logs hel: rc=$rc (want 6)" >&2; return 1; }
+  grep -q helium "$TEST_ROOT/np.err" && grep -q helper "$TEST_ROOT/np.err" || { cat "$TEST_ROOT/np.err" >&2; return 1; }
+}
+
+# A top-level word that is no verb, call, or program may be the start of
+# one verb or call name; a program on PATH still wins; several fits list.
+test_shortened_top_level_words() {
+  local rc bin
+  "$HOLD_BIN" --name quokka -- sh -c 'echo quokka-ran' </dev/null >/dev/null
+  out_has 'CALL ID' "$HOLD_BIN" li || { echo "li is not list" >&2; return 1; }
+  out_has 'quokka-ran' "$HOLD_BIN" lo quokka || { echo "lo is not logs" >&2; return 1; }
+  rc=0; "$HOLD_BIN" p >/dev/null 2>"$TEST_ROOT/sh.err" || rc=$?
+  [ "$rc" -eq 6 ] || { echo "p: rc=$rc (want 6)" >&2; return 1; }
+  grep -q 'peek' "$TEST_ROOT/sh.err" && grep -q 'purge' "$TEST_ROOT/sh.err" || { cat "$TEST_ROOT/sh.err" >&2; return 1; }
+  # the start of a call's name redials it
+  out_has 'quokka-ran' "$HOLD_BIN" quok </dev/null || { echo "quok did not redial quokka" >&2; return 1; }
+  # a program on PATH beats the start of a verb
+  bin="$TEST_ROOT/pathbin"; mkdir -p "$bin"
+  printf '#!/bin/sh\necho i-am-li\n' > "$bin/li"; chmod +x "$bin/li"
+  out_has 'i-am-li' env PATH="$bin:$PATH" "$HOLD_BIN" li </dev/null || { echo "li on PATH did not run" >&2; return 1; }
+}
+
+# Redialing a running call goes back to it: a console call is attached, a
+# plain one has its log followed; -d prints its id. Nothing starts twice.
+test_redial_running_call_goes_back_to_it() {
+  local id out
+  "$HOLD_BIN" -dt --name upcon -- sh -c 'echo con-up; sleep 30' >/dev/null || return 1
+  "$HOLD_BIN" wait upcon --match con-up --timeout 5000 >/dev/null || return 1
+  out=$(term_after 3 "$HOLD_BIN" upcon </dev/null 2>&1 | tr -d '\r') || true
+  printf '%s' "$out" | grep -q con-up || { echo "redial of a running console call did not attach: [$out]" >&2; return 1; }
+  "$HOLD_BIN" -d --name uplog -- sh -c 'echo log-up; sleep 1; echo log-done' >/dev/null || return 1
+  out=$("$HOLD_BIN" uplog </dev/null 2>&1) || true
+  printf '%s' "$out" | grep -q log-done || { echo "redial of a running call did not follow its log: [$out]" >&2; return 1; }
+  # (following starts at the log's end, as tail -f does; the log shows runs)
+  [ "$("$HOLD_BIN" logs uplog | grep -c log-up)" -eq 1 ] || { echo "it ran twice" >&2; "$HOLD_BIN" logs uplog >&2; return 1; }
+  id=$("$HOLD_BIN" -d upcon 2>/dev/null) || { echo "-d of a running call failed" >&2; return 1; }
+  [ "${#id}" -eq 64 ] || { echo "-d printed [$id]" >&2; return 1; }
+  "$HOLD_BIN" end upcon >/dev/null 2>&1 || true
 }
 
 
@@ -6082,6 +6147,10 @@ run_test "callbox -w cmd | head ends quietly with 141" test_follow_closed_reader
 run_test "a foreground redial shows its own run only" test_foreground_redial_shows_its_run_only
 run_test "a stream client's program gets replies to terminal queries" test_stream_client_gets_query_replies
 run_test "purges at once each report only what they removed" test_concurrent_purges_count_once
+run_test "an ambiguous id prefix lists the calls and exits 6, for every verb" test_ambiguous_id_prefix_lists_and_exits_6
+run_test "the start of a name is a target when one call fits" test_name_prefix_targets
+run_test "shortened verbs and call names; PATH still wins" test_shortened_top_level_words
+run_test "redialing a running call attaches or follows, never starts it twice" test_redial_running_call_goes_back_to_it
 run_test "build artifacts for static and dynamic coexist" test_build_artifact_coexistence
 run_test "concurrent starts produce unique ids" test_concurrent_unique_ids
 run_test "--env-file populates the recipe env only" test_env_file_populates_recipe_env

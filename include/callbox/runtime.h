@@ -72,6 +72,12 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
                              bool graceful,
                              bool all,
                              bool print_cmd);
+/* A top-level word that is no verb, no call, and no program: the start of
+ * exactly one verb (1, *verb_out) or, for a lone word, of one call's name
+ * (2, name_out); 0 when it is none of these (run it as a command); 6 when it
+ * starts several (listed on stderr). */
+int hold_shorten_word(const char *word, bool lone, const char *const *verbs, size_t nverbs,
+                      const char **verb_out, char *name_out, size_t name_n);
 int hold_cmd_tail_action(const struct hold_invocation *inv,
                            const struct hold_store *user_store,
                            const struct hold_store *system_store,

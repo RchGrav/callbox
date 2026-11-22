@@ -26,6 +26,13 @@ bool hold_after_attach(const struct hold_invocation *inv, const struct hold_stor
 /* Is the call running right now? (An attach that ended while its call runs
  * on was a detach.) */
 bool hold_call_still_running(const struct hold_store *store, const char *id);
+/* Say that more than one call matches token (an id prefix or a name, or with
+ * name_prefix the start of a name), listing them; returns 6. */
+int hold_report_ambiguous(const struct hold_store *store, const char *token, bool name_prefix);
+/* Calls in store whose name starts with prefix (that command can act on;
+ * NULL: any). matched gets the last one's id. */
+int hold_count_name_prefix(const struct hold_store *store, const char *prefix, const char *command,
+                           char matched[ID_STR_LEN]);
 /* An ended TTY call's last screen as plain rows (trailing blank rows left
  * out), from the frame its broker saved. -1 when there is none. */
 int hold_print_final_screen(const struct hold_store *store, const char *id, FILE *f);

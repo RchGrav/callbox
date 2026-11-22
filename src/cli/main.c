@@ -561,6 +561,22 @@ int hold_cli_main(int argc, char **argv) {
      * whether the recipe's recorded mode applies or the invocation overrides it. */
     bool explicit_session_mode = run.detach || run.interactive || run.tty || console_mode || tail;
 
+    /* A shortened verb or call name (see hold_shorten_word for the order and
+     * the why): it becomes the whole word before anything else looks. */
+    static char short_name[ALIAS_MAX_LEN + 1];
+    if (!shell_mode && !force_raw && !tail && !run.name && argi < argc &&
+        !hold_cli_command_is_parser_owned(argv[argi])) {
+        const char *verbs[64];
+        size_t nverbs = hold_cli_verb_names(verbs, 64);
+        const char *verb = NULL;
+        int sr = hold_shorten_word(argv[argi], argi == argc - 1, verbs, nverbs, &verb, short_name, sizeof(short_name));
+        if (sr == 6) {
+            free_run_options(&run);
+            return 6;
+        }
+        if (sr == 1) argv[argi] = (char *)verb;
+        if (sr == 2) argv[argi] = short_name;
+    }
     bool owned = !shell_mode && !force_raw && !tail && hold_cli_command_is_parser_owned(argv[argi]);
     const char *command = owned ? argv[argi++] : NULL;
     int cmd_argc = 0;

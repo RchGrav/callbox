@@ -140,9 +140,9 @@ With `--rm`, a foreground start removes the call when it ends. If you detach whi
 
 ## Redial
 
-`callbox <id|name>` places a recorded call again. Redial happens only when the command is a single word, with no `--` and no `--name`. The word matches by ID prefix or by name, in your own store first, then (as root) in the system store.
+`callbox <id|name>` places a recorded call again. Redial happens only when the command is a single word, with no `--` and no `--name`. The word matches by ID prefix or by name, in your own store first, then (as root) in the system store. A word that is none of these, and no program on PATH either, may be the start of exactly one call's name or verb (`callbox hel` for helper, `callbox li` for list); several fits are listed and nothing runs (exit 6). That order keeps every word that meant something before meaning the same thing.
 
-The redial runs the recorded recipe under the same call ID and appends to the same log. It reuses the recorded argv, environment, mode, size, restart policy, and name. A redial runs in the mode the call first ran in, unless it names a mode itself. A `callbox shell` call comes back as a shell. A call that is still running is refused (exit 6), as is an ambiguous word.
+The redial runs the recorded recipe under the same call ID and appends to the same log. It reuses the recorded argv, environment, mode, size, restart policy, and name. A redial runs in the mode the call first ran in, unless it names a mode itself. A `callbox shell` call comes back as a shell. A call that is still running is not started again: there is nothing to start, and the reason to type its name is to get back to it. callbox attaches to it if it has a console (Ctrl-P Ctrl-Q leaves again), and otherwise follows its log until it ends (Ctrl-C stops following). With an explicit `-d`, it prints the call's id and says it is already running (exit 0). A word that matches more than one call lists them (exit 6).
 
 ## Implementation map
 

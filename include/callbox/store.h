@@ -53,6 +53,7 @@ int hold_load_record_by_id(const char *dir, const char *id, struct hold_run_reco
 
 /* THE id resolver: exact 64-hex id if its file exists, else a prefix matching
  * exactly one <id>.json in dir. Works on record and public-index directories. */
+/* 0 one match, -1 none (or an error), -2 several. */
 int hold_resolve_record_id(const char *dir, const char *token, char *resolved, size_t n);
 
 /* Record iteration: fn runs per <id>.json with the loaded record, or r == NULL

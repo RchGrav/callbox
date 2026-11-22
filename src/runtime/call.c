@@ -99,7 +99,7 @@ static int find_restart_record(const struct hold_store *store, const char *token
     if (hold_for_each_record(store->record_dir, restart_match_cb, &w) != 0) return -1;
     if (w.matches == 0) return 0;
     if (w.matches > 1) {
-        fprintf(stderr, "callbox: error: call '%s' is ambiguous\n", token);
+        (void)hold_report_ambiguous(store, token, false);
         return -2;
     }
     return 1;
@@ -247,6 +247,30 @@ int hold_cmd_redial(const struct hold_invocation *inv,
         return 0;
     }
     *redialed = true;
+    /* Still running: there is nothing to start, and the reason to type its
+     * name is to get back to it - so go there, the way it can be reached:
+     * its console (attach; Ctrl-P Ctrl-Q leaves again), or else its log
+     * (followed until it ends; Ctrl-C stops following). An explicit -d
+     * means "in the background": it is, so say which call and return. */
+    struct hold_run_record cur;
+    char cur_path[HOLD_PATH_MAX];
+    if (hold_load_record_by_id(restart_store->record_dir, restart_id, &cur, cur_path, sizeof(cur_path)) == 0) {
+        char boot[128];
+        bool running = hold_eval_state(&cur, hold_boot_id_or_null(boot)) == STATE_RUNNING;
+        bool console = cur.has_console;
+        char display[ID_DISPLAY_HEX_LEN + 1];
+        hold_run_id_display(cur.id, display);
+        hold_free_run_record(&cur);
+        if (running) {
+            if (explicit_session_mode && !tail) {
+                printf("%s\n", restart_id);
+                fprintf(stderr, "callbox: %s is already running\n", token);
+                return 0;
+            }
+            return console ? hold_cmd_console_action(inv, user_store, system_store, restart_id)
+                           : hold_cmd_tail_action(inv, user_store, system_store, restart_id);
+        }
+    }
     return restart_existing_run(inv, restart_store, tail, console_mode, auto_remove, wait,
                                 interactive_stdin, explicit_session_mode, restart_policy,
                                 restart_delay_seconds, size_cols, size_rows, restart_id);

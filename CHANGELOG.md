@@ -52,6 +52,18 @@ AI agents can read and drive, and lets agents message each other.
 - `wait --match` finds text that wrapped at the right edge. Why: a long
   line split across two screen rows is still one line to the person reading
   it.
+- Shortened words: the start of a name is a target when one call the verb
+  can act on fits (`callbox logs hel`), and a top-level word that is no
+  verb, no call and no program may be the start of one verb or call name
+  (`callbox li`, `callbox hel`). Why: less typing, and nothing that meant
+  something before changes meaning - whole names, id prefixes and programs
+  on PATH still come first.
+- More than one match is never a guess: callbox lists the calls (or verbs)
+  and exits 6, for every verb. Why: "no call matches" (5) was false, and
+  acting on one of several would be a guess.
+- Naming a call that is still running gets you back to it: attached if it
+  has a console, its log followed otherwise (`-d`: its id, exit 0). Why:
+  there is nothing to start, and getting back is why you typed its name.
 - Every call is a durable record (`~/.local/state/callbox`; root's in
   `/var/lib/callbox`, `/var/db/callbox` on macOS) that survives the shell that
   started it: `list`/`ps`, `logs`, `inspect`, `end`/`stop`/`kill`, `save`,

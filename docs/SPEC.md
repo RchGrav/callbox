@@ -64,7 +64,12 @@ output appends), and replays its argv, environment, session mode (`mode{}`:
 `interactive`, `tty`, `detach`, `wait`, `chat`; `chat` marks a `callbox
 shell`), the `--size` it was placed with (`size_cols`, `size_rows`), and
 `--restart` / `--restart-delay`. Mode flags given on the redial override the
-recipe. A running call is not redialed (exit 6).
+recipe. A running call is not redialed: naming it gets you back to it
+(attach when it has a console, else follow its log; with `-d`, print its id,
+exit 0), because there is nothing to start. A target that matches more than
+one call is listed, exit 6, never guessed; the start of a name is a target
+when exactly one call fits, and a top-level word that is no verb, call, or
+program may be the start of one verb or name (see `callbox help targets`).
 
 A `callbox shell`'s record carries `lead_key`, `detach_key`, and `chat_key`
 (control bytes), which its broker reads itself. When `mode.chat` and these

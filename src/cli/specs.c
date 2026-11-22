@@ -437,11 +437,18 @@ static int help_targets(void) {
            "  <target>          resolve in the current context\n"
            "  user:<target>     force user-local lookup\n"
            "  system:<target>   force root-managed lookup\n\n"
-           "target = call id, leading id prefix, or call name\n\n"
+           "target = call id, leading id prefix, call name, or the start of a name\n\n"
            "A call id addresses one call directly, always. A call name resolves to the\n"
            "single call recorded under that name, narrowed by the verb: end/kill/logs\n"
            "look at running or logged calls, inspect looks at retained records, and purge\n"
-           "looks at removable past call data.\n");
+           "looks at removable past call data. Failing a whole name or an id prefix, the\n"
+           "start of a name works when one call the verb can act on has it (callbox logs\n"
+           "hel for helper). When more than one call matches, callbox lists them and\n"
+           "exits 6 - it never picks one.\n\n"
+           "Verbs shorten the same way: callbox li is callbox list, when nothing else\n"
+           "has that meaning. The top-level word is tried in this order: a verb; a call\n"
+           "by whole name or id prefix (redial); a program on PATH; then the start of\n"
+           "exactly one verb or (alone) one call's name. Several fits are listed, exit 6.\n");
     return 0;
 }
 
@@ -544,7 +551,7 @@ static int help_scripting(void) {
            "  3  permission denied or storage/security failure\n"
            "  4  signal delivery failed\n"
            "  5  no such call: nothing matches the target, or it is not a valid id or name\n"
-           "  6  must disambiguate\n"
+           "  6  more than one call (or verb) matches: they are listed; be more exact\n"
            "  7  callbox wait timed out\n"
            "  8  the call ended before the wait condition held\n"
            "  9  send --mouse: the program has mouse reporting off (not delivered)\n");
@@ -567,6 +574,13 @@ int hold_show_help(const char *topic) {
     }
     fprintf(stderr, "callbox: unknown help topic '%s' (callbox help lists the commands)\n", topic);
     return HOLD_EXIT_USAGE;
+}
+
+size_t hold_cli_verb_names(const char **out, size_t max) {
+    size_t n = 0;
+    for (size_t i = 0; i < sizeof(command_specs) / sizeof(command_specs[0]) && n < max; i++)
+        out[n++] = command_specs[i].name;
+    return n;
 }
 
 bool hold_cli_command_is_parser_owned(const char *s) {
