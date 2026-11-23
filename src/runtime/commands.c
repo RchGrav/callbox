@@ -279,6 +279,7 @@ void hold_usage(void) {
            "MORE\n"
            "  callbox help all                       every command and flag\n"
            "  callbox help examples                  workflows, start to finish\n"
+           "  callbox help features                  what callbox does under the hood\n"
            "  callbox help launch                    every flag for starting a call\n"
            "  callbox help scripting | system        exit codes and stdout | root, sudo\n"
            "  callbox <command> -h                   one command in full\n"

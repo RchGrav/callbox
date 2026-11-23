@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.9 - 2026-11-23
+
+### Added
+
+- `callbox help features`: what callbox does under the hood - one binary
+  and no daemon, signals that cannot hit a reused pid, the headless
+  terminal, calls that come back, names, messages, and where it keeps
+  working (FIFOs, PID namespaces, sudo).
+- `callbox help service` and `callbox help examples` show testing a network
+  service in CI (start it, wait until it is ready, keep its log when the
+  tests fail) and a QEMU mesh driven through each node's serial console.
+
+### Fixed
+
+- `callbox help service` gave a ~/.bashrc line with `-q`, which callbox
+  does not have (only `--quiet`), and which would have printed "already
+  exists" in every new shell. The line is now silent and was run as shown.
+
 ## 0.9.8 - 2026-11-23
 
 ### Changed
