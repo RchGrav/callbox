@@ -63,7 +63,7 @@ Conventions:
   exact output, not just "exit 0". Add a negative test for every refusal
   path.
 - Security-sensitive changes (store layout and modes, sudo routing, the
-  signal path, console sockets, message verification) need a test that fails
+  signal path, console sockets, message-text sanitizing) need a test that fails
   if the invariant regresses. See `test_system_store_*`,
   `test_*_sudo_provenance`, `test_signal_*`, and `test_msg_*` for the pattern.
 

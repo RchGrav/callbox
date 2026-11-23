@@ -43,7 +43,7 @@ wait [idle=MS] [since=SEQ] [match=<hex>] [regex=1] [exit=1] [timeout=MS]
                               | ok|ended reason=exit seq=N exit_code=C
                               | timeout seq=N
 msg [from=<hex>] [submit=0]\n<hex text>
-                             -> ok delivered verified=0|1 id=<6 hex>
+                             -> ok delivered id=<6 hex>
 signal sig=N                 -> ok   (TERM, KILL, INT or HUP, to the program's process group)
 nested keys=<hex>            -> no reply; held open while a nested attach client lives (console.md)
 ```
@@ -139,8 +139,9 @@ inbox, at once, and is never typed. See [shell.md](shell.md).)
 once. Waiting for a quiet screen would only block the sender until the
 receiver's turn ends: an agent harness queues what is typed while it works,
 and a busy agent's spinner never goes quiet. Two things can hold a message
-back. A claimed sender whose call has no record yet gets up to 2 s, because
-a call that messages the instant it starts can beat its own record. And
+back. A sender whose call has no record yet gets up to 2 s, because a call
+that messages the instant it starts can beat its own record, and the
+header's name comes from that record. And
 messages go in oldest first, one per broker pass, with at most 16 pending.
 
 Every control character except newline and tab (C0 bytes, DEL, C1) is
@@ -152,24 +153,28 @@ in as a bracketed paste when the program enabled mode 2004. Otherwise
 newlines and carriage returns become spaces, so it cannot submit early.
 Enter follows, unless `--no-enter` was given (`submit=0`).
 
-The sender claims its call by `CALLBOX_ID`, else `CALLBOX_NAME`; only an id
-or a call name counts as a claim. The receiver learns the connecting
-process's pid from the socket's peer credentials (Linux, macOS) or, over
-FIFOs, from the introduction, believed only if that process holds the
-channel open. On other platforms no claim can be verified. The claim is
-**verified** only if that process belongs to the claimed call: its session
-is the call's recorded session, it descends from the call's leader, or it is
-in the session of the call's own broker (how a `callbox shell`'s chat window
-sends). The header, on one line before the text, takes one of three forms:
+The sender names its call by `CALLBOX_ID`, else `CALLBOX_NAME`; only an id
+or a call name is taken (anything else could break the header or a `.msgs`
+line). The receiver looks that call up and shows its name as the record has it
+now, so a renamed call is shown, and answered, by its new name. The header,
+on one line before the text, takes one of two forms:
 
 ```text
-[msg ID from NAME; reply: callbox msg NAME "..."; verify: callbox msg --received ID]   verified
-[msg ID from NAME (unverified); verify: callbox msg --received ID]                    not verified
-[msg ID via callbox; verify: callbox msg --received ID]                               no claim
+[msg from NAME; reply: callbox msg NAME "..."]   from a call
+[msg from outside callbox]                       from no call callbox knows
 ```
 
-Each delivered message is appended to `<id>.msgs` as `ID UNIXTIME VERIFIED
-SENDER HEXTEXT`. `callbox msg --received` reads it, so a receiver can tell a
-real message from printed text that only looks like a header. Delivery is
+The header is addressing, not proof. Only the console's own user can reach
+it (the socket checks the peer's uid; FIFOs are the user's), and anything
+running as that user could type the same text with `callbox send`. Why there
+is no check beyond that: an earlier version verified the sender's session and
+process ancestry, which guarded only against the user's own processes, put a
+verify step and a longer header in front of every agent, and read as "safe"
+when it meant only "from".
+
+Each delivered message is appended to `<id>.msgs` as `ID UNIXTIME FROMCALL
+SENDER HEXTEXT` (FROMCALL is 1 when the sender is a call; it is where that
+earlier version wrote its verified flag, so older logs read the same).
+`callbox msg --received` reads it: the call's message history. Delivery is
 capped at 20 messages a minute per receiver, counted when a request is
 accepted, to stop two agents replying to each other in a loop.

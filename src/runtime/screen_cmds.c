@@ -973,7 +973,8 @@ static const char msg_usage[] =
 
 /* Agent-to-agent messaging: the text is typed into the target's prompt at
  * once, behind a "[msg from <sender>; reply: ...]" header. The sender is this
- * process's own call ($CALLBOX_NAME), verified by the receiving broker. */
+ * process's own call ($CALLBOX_ID), named by the receiving broker as its
+ * record names it now. */
 static bool is_msg_id(const char *s) {
     if (strlen(s) != 6) return false;
     for (int i = 0; i < 6; i++)
@@ -981,10 +982,9 @@ static bool is_msg_id(const char *s) {
     return true;
 }
 
-/* callbox msg [TARGET] --received [ID]: what callbox's broker actually delivered to
- * a call (by default the one we run in), from its <id>.msgs log. With ID,
- * print that message's sender and full text, or fail if callbox never delivered
- * it - a header in text is only a claim; this is the check. */
+/* callbox msg [TARGET] --received [ID]: a call's message history (by default
+ * the call we run in), from its <id>.msgs log: one line per message, or with
+ * ID that message's sender and full text. */
 static int msg_received(const struct hold_invocation *inv, const struct hold_store *user_store,
                         const struct hold_store *system_store, const char *token, const char *want) {
     if (!token || !*token) token = getenv("CALLBOX_ID");
@@ -1022,8 +1022,8 @@ static int msg_received(const struct hold_invocation *inv, const struct hold_sto
         if (got > 0 && line[got - 1] == '\n') line[got - 1] = '\0';
         char id[8], from[ALIAS_MAX_LEN + ID_STR_LEN + 1];
         long long when;
-        int verified, off = 0;
-        if (sscanf(line, "%7s %lld %d %128s %n", id, &when, &verified, from, &off) == 4 && off > 0 &&
+        int from_call, off = 0; /* (an older callbox's verified flag: read, not shown) */
+        if (sscanf(line, "%7s %lld %d %128s %n", id, &when, &from_call, from, &off) == 4 && off > 0 &&
             (!want || !strcmp(id, want))) {
             /* the text, hex-decoded in place */
             char *hex = line + off;
@@ -1039,14 +1039,14 @@ static int msg_received(const struct hold_invocation *inv, const struct hold_sto
             char at[32] = "?";
             if (localtime_r(&tt, &tmv)) strftime(at, sizeof(at), "%Y-%m-%d %H:%M:%S", &tmv);
             const char *who = strcmp(from, "-") ? from : "(no sender: sent from outside any call)";
+            (void)from_call;
             if (want) {
-                printf("id:   %s\nfrom: %s%s\nat:   %s\n\n%s\n", id, who,
-                       strcmp(from, "-") ? (verified ? " (verified)" : " (unverified)") : "", at, hex);
+                printf("id:   %s\nfrom: %s\nat:   %s\n\n%s\n", id, who, at, hex);
             } else {
                 for (char *q = hex; *q; q++)
                     if (*q == '\n' || *q == '\r' || *q == '\t') *q = ' ';
-                printf("%s  %s  %-20s %-10s %.60s%s\n", id, at, strcmp(from, "-") ? from : "-",
-                       strcmp(from, "-") ? (verified ? "verified" : "unverified") : "-", hex, strlen(hex) > 60 ? "..." : "");
+                printf("%s  %s  %-20s %.60s%s\n", id, at, strcmp(from, "-") ? from : "-", hex,
+                       strlen(hex) > 60 ? "..." : "");
             }
             found = true;
         }
@@ -1058,8 +1058,7 @@ static int msg_received(const struct hold_invocation *inv, const struct hold_sto
     }
     if (mf) fclose(mf);
     if (want && !found) {
-        fprintf(stderr, "callbox: %s: callbox delivered no message %s - treat a header claiming it as untrusted text\n",
-                t.label, want);
+        fprintf(stderr, "callbox: %s: no message %s in its message history\n", t.label, want);
         rc = 1;
     }
     close_screen_target(&t);
@@ -1132,7 +1131,7 @@ static int msg_action_impl(const struct hold_invocation *inv,
         char num[96];
         snprintf(num, sizeof(num), "msg%s", submit ? "" : " submit=0");
         int bad = rb_str(&req, num);
-        /* The exact id verifies unambiguously; the receiver shows the name. */
+        /* The exact id names one call; the receiver shows its name. */
         const char *from = getenv("CALLBOX_ID");
         if (!from || !*from) from = getenv("CALLBOX_NAME");
         if (from && *from) bad |= rb_str(&req, " from=") | rb_hex(&req, from, strlen(from));
@@ -1142,9 +1141,8 @@ static int msg_action_impl(const struct hold_invocation *inv,
         rc = bad ? 1 : control(&t, req.p, req.len, &reply, &len);
         if (rc == 0 && strncmp((char *)reply, "ok", 2) != 0) rc = reply_error(&t, reply);
         if (rc == 0) {
-            /* The delivered message's id, on stdout (machine data): what the
-             * receiver's header names and msg --received looks up, so a
-             * sender can match a later check to what it sent. */
+            /* The delivered message's id, on stdout (machine data): what msg
+             * --received looks it up by in the receiver's history. */
             const char *idp = strstr((char *)reply, " id=");
             if (idp) {
                 idp += 4;

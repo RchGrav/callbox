@@ -167,14 +167,11 @@ receiver has the text: at once, apart from up to 2 s while a just-launched
 sender's record is written and up to 10 s of retries while the receiver's
 console is busy. A send with no answer after 90 s is abandoned. The broker
 forks a short-lived helper per send (at most 8 at a time) and stays with the
-display, so the window never freezes. The helper is in the broker's session,
-and the shell's record names its broker (`broker_pid`): that is how the
-receiving broker verifies the sender, alongside the call's own session and
-descent from its leader. The agent therefore sees an ordinary verified
-header —
+display, so the window never freezes. The helper names the shell's call as
+the sender, so the agent sees an ordinary header —
 
 ```text
-[msg 3f9a12 from work; reply: callbox msg work "..."; verify: callbox msg --received 3f9a12] can you look at the build?
+[msg from work; reply: callbox msg work "..."] can you look at the build?
 ```
 
 — and answers with an ordinary `callbox msg work "..."`. It needs to know
@@ -183,19 +180,18 @@ receiver confirms it, then `delivered`. If the call is gone or not running,
 its console cannot be reached or does not answer within 90 s, it refuses the
 message (rate limit, too large), or too many sends are in flight, the
 message is marked `NOT DELIVERED` with the reason, and never shown as
-delivered. An unverified conversation cannot be replied to at all.
+delivered. The `outside callbox` conversation cannot be replied to: there
+is no call to send to.
 
 **In.** A message for the shell is recorded like any other (so
 `callbox msg --received` works inside the shell) and filed in the chat inbox
-under who callbox verified it came from:
+under the call that sent it:
 
-- from a call callbox verified: that call's conversation;
-- claiming to be a call, unverified: a conversation of its own, labeled
-  `(unverified)` — it never joins the real call's conversation, and there
-  is no one to reply to;
+- from a call: that call's conversation, keyed by its id, so it follows a
+  rename;
 - sent from outside any call: `outside callbox`.
 
-So another agent's reply cannot appear in the wrong conversation. The
+The
 selected conversation stays selected for follow-ups; `Tab` lists the calls
 that can be messaged (running, on a PTY) and every conversation, with what
 is unread. While the window is hidden a message only raises the corner
@@ -223,5 +219,5 @@ incoming message is not shown (`callbox msg --received` still has it).
 | --- | --- |
 | `src/console/compose.c` | Frames: base layer from a snapshot, overlay drawing, the cell diff, terminal modes. |
 | `src/console/chat.c` | The window, conversations, the input router, the send helper. |
-| `src/console/broker.c` | The `b->chat` branches: frames instead of raw bytes, the inbox instead of typing, the broker's place in sender verification. |
+| `src/console/broker.c` | The `b->chat` branches: frames instead of raw bytes, the inbox instead of typing, naming the sender. |
 | `src/console/overlay.h` | The two modules' interface, private to the console layer. |

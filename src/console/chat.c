@@ -9,11 +9,9 @@
 /* A callbox shell's chat: the floating window, its conversations, and the
  * routing of everything the attached terminal sends.
  *
- * Conversations are kept per sender. A message callbox verified as coming from
- * a call goes to that call's conversation; an unproven claim to be that call
- * gets a conversation of its own, marked so, and a message from outside any
- * call another: a reply can never show up under a name callbox did not vouch
- * for. What the person sends goes out over the ordinary callbox msg transport,
+ * Conversations are kept per sender: a message from a call goes to that
+ * call's conversation (keyed by its id, so a rename keeps it), and messages
+ * from outside any call share one. What the person sends goes out over the ordinary callbox msg transport,
  * from this call, so an agent answers with a plain `callbox msg`.
  *
  * Nothing here writes to the shell except the person's own keystrokes and
@@ -34,12 +32,11 @@
 #define CHAT_PICK_REFRESH_MS 1000
 #define CHAT_MOUSE_TAIL_MS 300 /* reports still in flight after reporting is turned off */
 #define CHAT_MAX_PICK 64
-/* A conversation's key (the call's id, or the name an unverified sender
- * claimed) and its title. */
+/* A conversation's key (the call's id) and its title. */
 #define CHAT_KEY_LEN (ALIAS_MAX_LEN + ID_STR_LEN + 1)
 #define CHAT_LABEL_LEN (ALIAS_MAX_LEN + ID_STR_LEN + 16)
 
-enum thread_kind { TH_CALL, TH_UNVERIFIED, TH_OUTSIDE };
+enum thread_kind { TH_CALL, TH_OUTSIDE };
 enum msg_state { MSG_IN, MSG_SENDING, MSG_SENT, MSG_FAILED };
 
 struct chat_msg {
@@ -647,8 +644,8 @@ static void hex_into(char *out, const char *s, size_t n) {
 /* The helper process of one send. callbox msg's transport is a blocking
  * request (the receiver answers once the text is typed into its prompt; a
  * busy console is retried for up to 10 s), so it runs beside the broker,
- * which must keep the shell's display alive. It is in the broker's session, which
- * is how the receiver verifies that the message comes from this call. */
+ * which must keep the shell's display alive. It names this call as the
+ * sender (self_id), so the reply comes back to this chat. */
 static _Noreturn void send_helper(const char *sock, const char *self_id, const char *body, size_t body_len, int wfd) {
     for (int fd = 3; fd < 1024; fd++)
         if (fd != wfd) close(fd);
@@ -758,7 +755,7 @@ static void send_message(struct chat *c) {
         return;
     }
     if (t->kind != TH_CALL) {
-        set_notice(c, "unverified sender: no one to answer");
+        set_notice(c, "sent from outside callbox: no call to answer");
         return;
     }
     struct chat_msg *m = add_msg(t, MSG_SENDING, c->input, len);
@@ -895,18 +892,9 @@ void chat_poll_done(struct chat *c, const struct pollfd *pfds, int n, int64_t no
 
 /* ---- incoming ------------------------------------------------------------------------- */
 
-void chat_inbound(struct chat *c, bool has_claim, int verdict, const char *sender_id, const char *label,
-                  const char *text, size_t len) {
-    char name[CHAT_LABEL_LEN];
-    struct chat_thread *t;
-    if (!has_claim) {
-        t = get_thread(c, TH_OUTSIDE, "", "outside callbox");
-    } else if (verdict == 1 && sender_id && *sender_id) {
-        t = get_thread(c, TH_CALL, sender_id, label);
-    } else {
-        snprintf(name, sizeof(name), "%.100s (unverified)", label && *label ? label : "?");
-        t = get_thread(c, TH_UNVERIFIED, label ? label : "", name);
-    }
+void chat_inbound(struct chat *c, const char *sender_id, const char *label, const char *text, size_t len) {
+    struct chat_thread *t = sender_id && *sender_id ? get_thread(c, TH_CALL, sender_id, label ? label : sender_id)
+                                                    : get_thread(c, TH_OUTSIDE, "", "outside callbox");
     if (!t) return; /* every conversation is in use: callbox msg --received still has it */
     if (len > CHAT_MAX_INBOUND) len = CHAT_MAX_INBOUND;
     while (len > 0 && (text[len - 1] == '\n' || text[len - 1] == '\r' || text[len - 1] == ' ')) len--;

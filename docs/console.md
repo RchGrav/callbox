@@ -159,7 +159,7 @@ fails with `EPERM`, `EACCES`, or `EAFNOSUPPORT`. There the broker serves
 the same console over FIFOs instead, automatically;
 `CALLBOX_CONSOLE_TRANSPORT=fifo` forces it
 anywhere (useful for tests). Nothing is given up: peek, send, wait, resize,
-msg with verified senders, and attach with detach and reattach all work.
+msg, and attach with detach and reattach all work.
 
 The endpoint is a FIFO (0600) at the usual `<id>.sock` path, and clients pick
 the transport by its file type. It only ever carries fixed-size 17-byte

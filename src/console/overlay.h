@@ -97,11 +97,9 @@ void chat_input(struct chat *c, const unsigned char *buf, size_t n, int64_t now)
 /* Did that input ask to detach (the lead key, then the detach key)? Reported
  * once: the broker lets go of the attach client, or of one nested in it. */
 bool chat_take_detach(struct chat *c);
-/* A message callbox msg delivered to this call. verdict as verify_sender:
- * 1 = from the call sender_id (label its name), 0 = an unproven claim to be
- * label, has_claim false = sent from outside any call. */
-void chat_inbound(struct chat *c, bool has_claim, int verdict, const char *sender_id, const char *label,
-                  const char *text, size_t len);
+/* A message callbox msg delivered to this call: from the call sender_id
+ * (label its name now), or, with sender_id NULL, from outside any call. */
+void chat_inbound(struct chat *c, const char *sender_id, const char *label, const char *text, size_t len);
 /* Timers (a lone Esc, the corner hint, a send in flight) and the descriptors
  * of sends in flight. */
 int64_t chat_due_in(const struct chat *c, int64_t now);

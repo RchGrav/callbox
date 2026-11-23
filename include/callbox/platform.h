@@ -50,10 +50,6 @@ int hold_scan_listening_sockets(const unsigned long long *inodes, size_t count,
 /* resolve_*: realpath() spellings, for identity and privilege checks.
  * find_binary / absolute_existing: absolute but symlinks intact, for what a
  * program is launched as (argv[0], exec path, path arguments). */
-/* Process ancestry: a pid's parent, and whether ancestor is pid itself or one
- * of its ancestors (bounded walk). Used to verify a callbox msg sender. */
-int hold_proc_parent_pid(pid_t pid, pid_t *ppid_out);
-bool hold_pid_has_ancestor(pid_t pid, pid_t ancestor);
 /* Whether process pid holds the file (dev, ino) open: how a FIFO console
  * verifies the pid a client claims, as a socket's peer credentials would.
  * Linux scans /proc/<pid>/fd, macOS asks libproc; false where neither. */

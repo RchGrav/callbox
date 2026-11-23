@@ -39,8 +39,9 @@
 #define BROKER_MAX_MSGS 16
 /* callbox msg loop guard: at most this many deliveries per receiver per minute. */
 #define BROKER_MSG_RATE 20
-/* A sender that messages the instant it starts may beat its call's record. */
-#define BROKER_MSG_VERIFY_GRACE_MS 2000
+/* A sender that messages the instant it starts may beat its call's record,
+ * and the header's name comes from that record: wait this long for it. */
+#define BROKER_MSG_SENDER_GRACE_MS 2000
 /* A callbox shell's display is redrawn at most this often: output that arrives
  * faster is coalesced into the next frame. */
 #define BROKER_FRAME_MS 12
@@ -106,10 +107,8 @@ struct broker {
         char *text; /* the body; the header is built at delivery */
         size_t len;
         bool submit;
-        bool verified;
         bool has_claim;
-        char claim[ALIAS_MAX_LEN + ID_STR_LEN + 1]; /* the sender's claimed call */
-        pid_t peer;                                 /* the sending process */
+        char claim[ALIAS_MAX_LEN + ID_STR_LEN + 1]; /* the sender's call: its CALLBOX_ID */
         int64_t start_ms;
         struct control_client *waiter; /* reply here if still the same client */
         uint64_t waiter_gen;
@@ -951,36 +950,34 @@ static int match_record_name(const char *id, const char *path, struct hold_run_r
     return 0;
 }
 
-/* Who is speaking: the claimed call (the sender's CALLBOX_ID, or a name)
- * is verified when the connecting process belongs to that call's session or
- * descends from its leader. */
-/* 1 verified, 0 not verified, -1 the claimed call has no record (yet: a
- * call that messages the moment it starts can beat its own record write). */
-static int verify_sender(const struct broker *b, pid_t peer, const char *claim, char *label, size_t n,
-                         char id[ID_STR_LEN]) {
-    snprintf(label, n, "%s", claim);
+/* Who is speaking: the sender's call (its CALLBOX_ID, or a name), named as
+ * its record names it now - so a renamed call is shown, and answered, by its
+ * new name. Not a proof: anything that can reach this console runs as the
+ * console's user (the socket admits no one else), and could as well type
+ * any text with callbox send. Why no more than that: the session and
+ * ancestry check this replaced guarded only against the user's own
+ * processes, cost every agent a longer header and a verify step, and read
+ * as "safe" when it meant only "from". 1 found, -1 no record (yet: a call
+ * that messages the moment it starts can beat its own record write), 0 not
+ * one call. */
+static int resolve_sender(const struct broker *b, const char *claim, char *label, size_t n, char id[ID_STR_LEN]) {
+    label[0] = '\0';
     id[0] = '\0';
-    if (!b->store || peer <= 0) return 0;
-    struct hold_run_record r;
-    char path[HOLD_PATH_MAX];
+    if (!b->store) return 0;
     if (hold_resolve_record_id(b->store->record_dir, claim, id, ID_STR_LEN) != 0) {
         struct name_lookup nl = {.name = claim};
         (void)hold_for_each_record(b->store->record_dir, match_record_name, &nl);
         if (nl.matches != 1) return nl.matches == 0 ? -1 : 0;
         memcpy(id, nl.id, ID_STR_LEN);
     }
+    struct hold_run_record r;
+    char path[HOLD_PATH_MAX];
     if (hold_load_record_by_id(b->store->record_dir, id, &r, path, sizeof(path)) != 0) return -1;
-    if (r.has_name && r.name[0]) snprintf(label, n, "%s", r.name);
-    /* Same session as the call, or a descendant of its leader: agent
-     * harnesses (Claude Code among them) run each tool command in a new
-     * session, but it still descends from the harness the call launched. Or
-     * the call's own broker - a session leader, with only its helpers in its
-     * session - speaking for it: a callbox shell's chat sends that way. */
-    pid_t peer_sid = getsid(peer);
-    bool ok = (peer_sid > 0 && r.sid > 0 && peer_sid == r.sid) || hold_pid_has_ancestor(peer, r.pid) ||
-              (peer_sid > 1 && r.has_broker && peer_sid == r.broker_pid);
+    char display[ID_DISPLAY_HEX_LEN + 1];
+    hold_run_id_display(r.id, display);
+    snprintf(label, n, "%s", r.has_name && r.name[0] ? r.name : display);
     hold_free_run_record(&r);
-    return ok ? 1 : 0;
+    return 1;
 }
 
 /* A message is text from a sender callbox does not trust: keep newlines and
@@ -1087,7 +1084,6 @@ static void handle_msg(struct broker *b, struct control_client *c, const char *a
             if (!m->has_claim) m->claim[0] = '\0';
         }
     }
-    m->peer = c->peer_pid;
     m->text = malloc((size_t)blen + 1);
     if (!m->text) {
         control_replyf(c, "error out of memory\n");
@@ -1133,16 +1129,17 @@ static void own_like_log(const struct broker *b, int fd) {
 }
 
 /* <id>.msgs beside <id>.log: one line per delivered message, "ID UNIXTIME
- * VERIFIED SENDER HEXTEXT", so the receiver can tell a message callbox
- * delivered (callbox msg --received ID) from text that only looks like one. */
-static void record_received(const struct broker *b, const char *id, bool verified, const char *label,
+ * FROMCALL SENDER HEXTEXT" - the call's message history (callbox msg
+ * --received). FROMCALL is 1 when the sender is a call; the field is where an
+ * older callbox put its verified flag, so logs from before read the same. */
+static void record_received(const struct broker *b, const char *id, bool from_call, const char *label,
                             const char *text, size_t len) {
     size_t ll = b->log_path ? strlen(b->log_path) : 0;
     if (ll < 5 || strcmp(b->log_path + ll - 4, ".log") != 0) return;
     char path[HOLD_PATH_MAX];
     if (hold_checked_snprintf(path, sizeof(path), "%.*s.msgs", (int)(ll - 4), b->log_path) != 0) return;
     char head[ALIAS_MAX_LEN + ID_STR_LEN + 64];
-    int hn = snprintf(head, sizeof(head), "%s %lld %d %s ", id, (long long)time(NULL), verified ? 1 : 0,
+    int hn = snprintf(head, sizeof(head), "%s %lld %d %s ", id, (long long)time(NULL), from_call ? 1 : 0,
                       label && *label ? label : "-");
     if (hn < 0 || (size_t)hn >= sizeof(head)) return;
     char *line = malloc((size_t)hn + 2 * len + 2);
@@ -1169,37 +1166,32 @@ static void record_received(const struct broker *b, const char *id, bool verifie
 static void msg_done(struct pending_msg *m, const char *id) {
     struct control_client *w = m->waiter;
     if (w && w->fd >= 0 && w->gen == m->waiter_gen && w->phase == CTL_MSG)
-        control_replyf(w, "ok delivered verified=%d id=%s\n", m->verified ? 1 : 0, id);
+        control_replyf(w, "ok delivered id=%s\n", id);
     free(m->text);
     memset(m, 0, sizeof(*m));
 }
 
 /* Type a queued message: bracketed paste when the program asked for it, else
- * newlines flattened so it cannot submit early; then Enter. The header names
- * the sender, how to reply, and how to check it was really delivered. */
-static void deliver_msg(struct broker *b, struct pending_msg *m, int verdict, const char *label,
-                        const char *sender_id) {
+ * newlines flattened so it cannot submit early; then Enter. The header says
+ * who sent it and how to reply - addressing, nothing more (see
+ * resolve_sender). FROM is the sender call's name, or NULL when the message
+ * came from outside any call callbox knows. */
+static void deliver_msg(struct broker *b, struct pending_msg *m, const char *from, const char *sender_id) {
     char id[7], header[400];
     make_msg_id(b, m, id);
-    m->verified = verdict == 1;
     if (b->chat) {
-        /* A callbox shell: the message goes to the chat inbox, filed under who
-         * callbox verified it came from. It is shown, never typed: nothing a
-         * sender writes reaches the shell's input. */
-        record_received(b, id, m->verified, m->has_claim ? label : "", m->text, m->len);
-        chat_inbound(b->chat, m->has_claim, verdict, sender_id, label, m->text, m->len);
+        /* A callbox shell: the message goes to the chat inbox, filed under the
+         * call that sent it. It is shown, never typed: nothing a sender writes
+         * reaches the shell's input. */
+        record_received(b, id, from != NULL, from ? from : "", m->text, m->len);
+        chat_inbound(b->chat, from ? sender_id : NULL, from, m->text, m->len);
         msg_done(m, id);
         return;
     }
-    if (m->has_claim && verdict == 1)
-        snprintf(header, sizeof(header),
-                 "[msg %s from %.100s; reply: callbox msg %.100s \"...\"; verify: callbox msg --received %s] ", id, label,
-                 label, id);
-    else if (m->has_claim)
-        snprintf(header, sizeof(header), "[msg %s from %.100s (unverified); verify: callbox msg --received %s] ", id,
-                 label, id);
+    if (from)
+        snprintf(header, sizeof(header), "[msg from %.100s; reply: callbox msg %.100s \"...\"] ", from, from);
     else
-        snprintf(header, sizeof(header), "[msg %s via callbox; verify: callbox msg --received %s] ", id, id);
+        snprintf(header, sizeof(header), "[msg from outside callbox] ");
     size_t hl = strlen(header);
     char *full = malloc(hl + m->len + 1);
     if (!full) {
@@ -1211,7 +1203,7 @@ static void deliver_msg(struct broker *b, struct pending_msg *m, int verdict, co
         memset(m, 0, sizeof(*m));
         return;
     }
-    record_received(b, id, m->verified, m->has_claim ? label : "", m->text, m->len);
+    record_received(b, id, from != NULL, from ? from : "", m->text, m->len);
     memcpy(full, header, hl);
     memcpy(full + hl, m->text, m->len);
     size_t flen = hl + m->len;
@@ -1233,19 +1225,19 @@ static void deliver_msg(struct broker *b, struct pending_msg *m, int verdict, co
 }
 
 /* The oldest queued message goes in at once - unless its claimed sender's
- * record is not written yet, which gets the verify grace below. One per
+ * record is not written yet, which gets the grace below. One per
  * pass, so messages arrive whole and in order. */
 static void pump_msgs(struct broker *b, int64_t now) {
     struct pending_msg *oldest = NULL;
     for (int i = 0; i < BROKER_MAX_MSGS; i++)
         if (b->msgs[i].used && (!oldest || b->msgs[i].start_ms < oldest->start_ms)) oldest = &b->msgs[i];
     if (!oldest || b->target_done) return;
-    /* Verify at delivery: by now a just-launched sender's record exists. If
-     * the claimed call still has none, give it up to 2 s before deciding. */
+    /* Name the sender at delivery: by now a just-launched sender's record
+     * exists. If it still has none, give it up to 2 s before deciding. */
     char label[ALIAS_MAX_LEN + ID_STR_LEN + 1] = "", sender_id[ID_STR_LEN] = "";
-    int verdict = oldest->has_claim ? verify_sender(b, oldest->peer, oldest->claim, label, sizeof(label), sender_id) : 0;
-    if (verdict == -1 && now - oldest->start_ms < BROKER_MSG_VERIFY_GRACE_MS) return;
-    deliver_msg(b, oldest, verdict, label, sender_id);
+    int found = oldest->has_claim ? resolve_sender(b, oldest->claim, label, sizeof(label), sender_id) : 0;
+    if (found == -1 && now - oldest->start_ms < BROKER_MSG_SENDER_GRACE_MS) return;
+    deliver_msg(b, oldest, found == 1 ? label : NULL, sender_id);
 }
 
 static int64_t msgs_due_in(const struct broker *b) {

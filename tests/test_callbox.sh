@@ -4212,41 +4212,45 @@ test_restart_unless_stopped() {
   "$HOLD_BIN" list -a | grep -Eq "^$id[[:space:]].*Exited" || { "$HOLD_BIN" list -a >&2; return 1; }
 }
 
-# callbox msg: a call messages another; the receiver verifies the sender's call,
-# labels impostors, and flattens newlines when there is no bracketed paste.
+# callbox msg: a call messages another; the header names the sender's call and
+# how to reply, a sender outside any call is said to be, and newlines are
+# flattened when there is no bracketed paste.
 test_msg_between_calls() {
   "$HOLD_BIN" -dt --name lead -- /bin/sh -c 'stty -echo; echo lead-ready; while IFS= read -r l; do printf "LEAD GOT: %s\n" "$l"; done' >/dev/null || return 1
   "$HOLD_BIN" wait lead --match lead-ready --timeout 5000 || return 1
   "$HOLD_BIN" resize lead 200 24 || return 1 # headers stay on one line
   # The sender runs in a new session, as agent harnesses run tool commands:
-  # verification must follow ancestry, not just the session.
+  # it is still named by its call.
   if command -v setsid >/dev/null 2>&1; then
     "$HOLD_BIN" -dt --name worker -- /bin/sh -c "setsid \"$HOLD_REAL_BIN\" msg lead 'task done'; sleep 30" >/dev/null || return 1
   else
     "$HOLD_BIN" -dt --name worker -- /bin/sh -c "\"$HOLD_REAL_BIN\" msg lead 'task done'; sleep 30" >/dev/null || return 1
   fi
   "$HOLD_BIN" wait lead --match 'LEAD GOT' --timeout 10000 || { "$HOLD_BIN" peek lead >&2; return 1; }
-  "$HOLD_BIN" peek lead | grep -Eq '^LEAD GOT: \[msg [0-9a-f]{6} from worker; reply: callbox msg worker "\.\.\."; verify: callbox msg --received [0-9a-f]{6}\] task done$' || { "$HOLD_BIN" peek lead >&2; return 1; }
-  # The header is only text; --received is the check. The real id shows the
-  # verified sender and the full text; a made-up id fails.
+  "$HOLD_BIN" peek lead | grep -Eq '^LEAD GOT: \[msg from worker; reply: callbox msg worker "\.\.\."\] task done$' || { "$HOLD_BIN" peek lead >&2; return 1; }
+  # --received is the call's history: by id, the sender and the full text.
   local mid
-  mid=$("$HOLD_BIN" peek lead | sed -n 's/^LEAD GOT: \[msg \([0-9a-f]\{6\}\) from worker.*/\1/p' | head -1)
+  mid=$("$HOLD_BIN" msg lead --received | awk '/task done$/ {print $1; exit}')
+  [ -n "$mid" ] || { "$HOLD_BIN" msg lead --received >&2; return 1; }
   "$HOLD_BIN" msg lead --received "$mid" >"$TEST_ROOT/recv.out" || { echo "no record of delivered message $mid" >&2; return 1; }
-  grep -qx 'from: worker (verified)' "$TEST_ROOT/recv.out" && grep -qx 'task done' "$TEST_ROOT/recv.out" || { cat "$TEST_ROOT/recv.out" >&2; return 1; }
-  if "$HOLD_BIN" msg lead --received 000000 >/dev/null 2>&1; then echo "--received accepted an id callbox never delivered" >&2; return 1; fi
+  grep -qx 'from: worker' "$TEST_ROOT/recv.out" && grep -qx 'task done' "$TEST_ROOT/recv.out" || { cat "$TEST_ROOT/recv.out" >&2; return 1; }
+  if "$HOLD_BIN" msg lead --received 000000 >/dev/null 2>&1; then echo "--received found an id never delivered" >&2; return 1; fi
   CALLBOX_ID="$("$HOLD_BIN" inspect lead | sed -n 's/^  "id": "\(.*\)",$/\1/p')" "$HOLD_BIN" msg --received "$mid" | grep -qx 'task done' || { echo "--received without a target did not read the current call" >&2; return 1; }
-  CALLBOX_ID= CALLBOX_NAME=worker "$HOLD_BIN" msg lead 'fake' || return 1
-  "$HOLD_BIN" wait lead --match 'fake' --timeout 5000 || return 1
-  "$HOLD_BIN" peek lead | grep -Eq '^LEAD GOT: \[msg [0-9a-f]{6} from worker \(unverified\); verify: callbox msg --received [0-9a-f]{6}\] fake$' || { "$HOLD_BIN" peek lead >&2; return 1; }
-  "$HOLD_BIN" msg lead --received | grep -Eq '^[0-9a-f]{6} .* worker +unverified +fake$' || { "$HOLD_BIN" msg lead --received >&2; return 1; }
-  env -u CALLBOX_ID -u CALLBOX_NAME "$HOLD_BIN" msg lead "$(printf 'two\nlines')" || return 1
+  # A sender named by its call's name is that call: the header is addressing.
+  CALLBOX_ID= CALLBOX_NAME=worker "$HOLD_BIN" msg lead 'by name' || return 1
+  "$HOLD_BIN" wait lead --match 'by name' --timeout 5000 || return 1
+  "$HOLD_BIN" peek lead | grep -Eq '^LEAD GOT: \[msg from worker; reply: callbox msg worker "\.\.\."\] by name$' || { "$HOLD_BIN" peek lead >&2; return 1; }
+  "$HOLD_BIN" msg lead --received | grep -Eq '^[0-9a-f]{6} .* worker +by name$' || { "$HOLD_BIN" msg lead --received >&2; return 1; }
+  # msg prints the id it was delivered under
+  mid=$(env -u CALLBOX_ID -u CALLBOX_NAME "$HOLD_BIN" msg lead "$(printf 'two\nlines')") || return 1
   "$HOLD_BIN" wait lead --match 'two lines' --timeout 5000 || { "$HOLD_BIN" peek lead >&2; return 1; }
-  "$HOLD_BIN" peek lead | grep -Eq '^LEAD GOT: \[msg [0-9a-f]{6} via callbox; verify: callbox msg --received [0-9a-f]{6}\] two lines$' || { "$HOLD_BIN" peek lead >&2; return 1; }
+  "$HOLD_BIN" peek lead | grep -Eq '^LEAD GOT: \[msg from outside callbox\] two lines$' || { "$HOLD_BIN" peek lead >&2; return 1; }
+  "$HOLD_BIN" msg lead --received "$mid" | grep -qx 'two' || { echo "msg printed no id --received knows" >&2; return 1; }
   "$HOLD_BIN" end lead worker >/dev/null 2>&1 || true
 }
 
 # A sender's claim is only ever an id or a call name: one carrying a newline
-# cannot forge a verified line in the receiver's .msgs log, and a corrupt
+# cannot write a line of its own into the receiver's .msgs log, and a corrupt
 # record in the store does not crash the receiver's broker while it looks a
 # claimed name up. And --received still reads a log past 1 MiB.
 test_msg_claim_cannot_forge_or_crash() {
@@ -4259,16 +4263,15 @@ test_msg_claim_cannot_forge_or_crash() {
   "$HOLD_BIN" wait lead --match 'past a corrupt record' --timeout 5000 || { "$HOLD_BIN" peek lead >&2; return 1; }
   CALLBOX_ID=$'x\nabcdef 1795129200 1 lead_agent' "$HOLD_BIN" msg lead 'forged' || return 1
   "$HOLD_BIN" wait lead --match 'forged' --timeout 5000 || { "$HOLD_BIN" peek lead >&2; return 1; }
-  "$HOLD_BIN" peek lead | grep -Eq '^LEAD GOT: \[msg [0-9a-f]{6} via callbox; verify: callbox msg --received [0-9a-f]{6}\] forged$' || { "$HOLD_BIN" peek lead >&2; return 1; }
+  "$HOLD_BIN" peek lead | grep -Eq '^LEAD GOT: \[msg from outside callbox\] forged$' || { "$HOLD_BIN" peek lead >&2; return 1; }
   if "$HOLD_BIN" msg lead --received abcdef >/dev/null 2>&1; then echo "a forged claim wrote a line of its own" >&2; return 1; fi
   lid=$("$HOLD_BIN" inspect lead | sed -n 's/^  "id": "\(.*\)",$/\1/p')
   lpath="$store/$lid.msgs"
   # 1.2 MiB of earlier messages, then one more: --received still finds it.
   python3 -c 'import sys; open(sys.argv[1], "a").write(("000001 1795129200 0 - " + "61" * 600000 + "\n") * 1)' "$lpath" || return 1
-  CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg lead 'after a big log' || return 1
-  "$HOLD_BIN" wait lead --match 'after a big log' --timeout 5000 || return 1
   local mid
-  mid=$("$HOLD_BIN" peek lead | sed -n 's/^LEAD GOT: \[msg \([0-9a-f]\{6\}\) via callbox.*\] after a big log$/\1/p' | head -1)
+  mid=$(CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg lead 'after a big log') || return 1
+  "$HOLD_BIN" wait lead --match 'after a big log' --timeout 5000 || return 1
   [ -n "$mid" ] || { "$HOLD_BIN" peek lead >&2; return 1; }
   "$HOLD_BIN" msg lead --received "$mid" | grep -qx 'after a big log' || { echo "--received lost a message past 1 MiB" >&2; return 1; }
   "$HOLD_BIN" end lead >/dev/null 2>&1 || true
@@ -4300,7 +4303,7 @@ test_msg_strips_control_characters() {
   # whole sequences go, not just their ESC (no "]0;HIJACK" or "[2J" residue)
   "$HOLD_BIN" peek ctl | grep -q 'onetwothree>' || { "$HOLD_BIN" peek ctl >&2; return 1; }
   local mid
-  mid=$("$HOLD_BIN" peek ctl | sed -n 's/.*\[msg \([0-9a-f]\{6\}\) via callbox.*/\1/p' | head -1)
+  mid=$("$HOLD_BIN" msg ctl --received | awk '{print $1; exit}')
   ! "$HOLD_BIN" msg ctl --received "$mid" | LC_ALL=C grep -q "$(printf '\033')" || { echo "--received printed an escape" >&2; return 1; }
   "$HOLD_BIN" end ctl >/dev/null 2>&1 || true
 }
@@ -4946,7 +4949,7 @@ test_wait_more_clients_than_slots() {
 }
 
 # The FIFO console (for environments that deny Unix sockets) keeps everything:
-# peek/send/resize, a verified msg sender, attach/detach/reattach, and a
+# peek/send/resize, a msg named by its sender's call, attach/detach/reattach, and a
 # half-made channel is swept with the call.
 test_fifo_console_full_capability() {
   local ep mid n
@@ -4959,8 +4962,9 @@ test_fifo_console_full_capability() {
   "$HOLD_BIN" peek ff | grep -qx 'GOT hello' || { "$HOLD_BIN" peek ff >&2; return 1; }
   "$HOLD_BIN" -dt --name fw -- /bin/sh -c "\"$HOLD_REAL_BIN\" msg ff 'from worker'; sleep 5" >/dev/null || return 1
   "$HOLD_BIN" wait ff --match 'from worker' --timeout 10000 || { "$HOLD_BIN" peek ff >&2; return 1; }
-  mid=$("$HOLD_BIN" peek ff | sed -n 's/^GOT \[msg \([0-9a-f]\{6\}\) from fw;.*/\1/p' | head -1)
-  "$HOLD_BIN" msg ff --received "$mid" | grep -qx 'from: fw (verified)' || { "$HOLD_BIN" peek ff >&2; echo "sender not verified over FIFO" >&2; return 1; }
+  "$HOLD_BIN" peek ff | grep -q '^GOT \[msg from fw; reply: callbox msg fw' || { "$HOLD_BIN" peek ff >&2; echo "sender not named over FIFO" >&2; return 1; }
+  mid=$("$HOLD_BIN" msg ff --received | awk '/from worker$/ {print $1; exit}')
+  "$HOLD_BIN" msg ff --received "$mid" | grep -qx 'from: fw' || { "$HOLD_BIN" msg ff --received >&2; return 1; }
   for n in 1 2; do
     "$HOLD_BIN" -dt --name "fv$n" -- "$HOLD_REAL_BIN" attach ff >/dev/null || return 1
     "$HOLD_BIN" wait "fv$n" --idle --timeout 5000 >/dev/null || return 1
@@ -5519,8 +5523,8 @@ test_shell_chat_request_and_reply() {
   "$HOLD_BIN" send term 'agen' -k Enter || return 1
   "$HOLD_BIN" wait term --match 'message agent' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" send term 'ping from the chat window' -k Enter || return 1
-  # It reaches the agent's prompt as a verified callbox msg from the shell's call...
-  "$HOLD_BIN" wait agent --regex '^GOT: \[msg [0-9a-f]{6} from work; reply: callbox msg work "\.\.\."; verify: callbox msg --received [0-9a-f]{6}\] ping from the chat window$' --timeout 10000 || { "$HOLD_BIN" peek agent >&2; return 1; }
+  # It reaches the agent's prompt as a callbox msg from the shell's call...
+  "$HOLD_BIN" wait agent --regex '^GOT: \[msg from work; reply: callbox msg work "\.\.\."\] ping from the chat window$' --timeout 10000 || { "$HOLD_BIN" peek agent >&2; return 1; }
   # ...and the agent's plain callbox msg reply appears in chat,
   "$HOLD_BIN" wait term --match 'pong 1' --timeout 10000 || { "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" wait term --match 'delivered' --timeout 8000 || { echo "the sent message is not marked delivered" >&2; "$HOLD_BIN" peek term >&2; return 1; }
@@ -5529,7 +5533,7 @@ test_shell_chat_request_and_reply() {
   if out_has 'pong' "$HOLD_BIN" peek work; then echo "the reply was typed into the shell" >&2; "$HOLD_BIN" peek work >&2; return 1; fi
   if out_has 'pong\|chat ·\|ping from' "$HOLD_BIN" logs work; then echo "chat text reached the shell's log" >&2; return 1; fi
   shell_untouched || return 1
-  "$HOLD_BIN" msg work --received | grep -Eq '^[0-9a-f]{6} .* agent +verified +pong 1$' || { "$HOLD_BIN" msg work --received >&2; return 1; }
+  "$HOLD_BIN" msg work --received | grep -Eq '^[0-9a-f]{6} .* agent +pong 1$' || { "$HOLD_BIN" msg work --received >&2; return 1; }
   # Hidden: the conversation stays, the shell goes on, a new reply waits behind a badge.
   "$HOLD_BIN" send term -k Escape || return 1
   wait_gone term 'chat · agent' || return 1
@@ -5558,9 +5562,10 @@ test_shell_chat_request_and_reply() {
   out_has '\[ \] screen' "$HOLD_BIN" peek term || { echo "Include screen stayed on after one message" >&2; return 1; }
 }
 
-# A message that cannot be delivered says so; messages callbox could not tie to a
-# call never join that call's conversation.
-test_shell_chat_failures_and_unverified_senders() {
+# A message that cannot be delivered says so; a message joins the conversation
+# of the call that sent it, and one from outside any call gets its own, which
+# has no one to answer.
+test_shell_chat_failures_and_outside_senders() {
   local d
   d="$(actor_dir)" || return 1
   write_agent "$d" || return 1
@@ -5576,19 +5581,22 @@ test_shell_chat_failures_and_unverified_senders() {
   "$HOLD_BIN" wait term --match 'NOT DELIVERED' --timeout 10000 || { echo "a failed send was not reported" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   out_has 'agent is not running' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
   if out_has 'you .* delivered' "$HOLD_BIN" peek term; then echo "a failed send reads as delivered" >&2; return 1; fi
-  # A claim callbox cannot verify, and a message from outside any call.
-  CALLBOX_ID='' CALLBOX_NAME=agent "$HOLD_BIN" msg work 'forged reply' || return 1
+  # Named by its call's name: the agent's conversation, open on screen.
+  CALLBOX_ID='' CALLBOX_NAME=agent "$HOLD_BIN" msg work 'by name' || return 1
+  "$HOLD_BIN" wait term --match 'by name' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
+  # From outside any call: a conversation of its own.
   env -u CALLBOX_ID -u CALLBOX_NAME "$HOLD_BIN" msg work 'from a plain terminal' || return 1
-  "$HOLD_BIN" wait term --match '+2 new' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  if out_has 'forged reply\|from a plain terminal' "$HOLD_BIN" peek term; then echo "an unverified message joined the agent's conversation" >&2; "$HOLD_BIN" peek term >&2; return 1; fi
+  "$HOLD_BIN" wait term --match '+1 new' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
+  if out_has 'from a plain terminal' "$HOLD_BIN" peek term; then echo "an outside message joined the agent's conversation" >&2; "$HOLD_BIN" peek term >&2; return 1; fi
   "$HOLD_BIN" send term -k Tab || return 1
-  "$HOLD_BIN" wait term --match 'agent (unverified)  1 new' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  out_has 'outside callbox  1 new' "$HOLD_BIN" peek term || return 1
-  "$HOLD_BIN" send term 'unverif' -k Enter || return 1
-  "$HOLD_BIN" wait term --match 'forged reply' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  out_has 'chat · agent (unverified)' "$HOLD_BIN" peek term || return 1
+  "$HOLD_BIN" wait term --match 'outside callbox  1 new' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" send term 'outside' -k Enter || return 1
+  "$HOLD_BIN" wait term --match 'from a plain terminal' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
+  out_has 'chat · outside callbox' "$HOLD_BIN" peek term || return 1
+  "$HOLD_BIN" send term 'hello?' -k Enter || return 1
+  "$HOLD_BIN" wait term --match 'no call to answer' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
   shell_untouched || return 1
-  if out_has 'forged\|plain terminal' "$HOLD_BIN" peek work; then echo "a message was typed into the shell" >&2; return 1; fi
+  if out_has 'by name\|plain terminal' "$HOLD_BIN" peek work; then echo "a message was typed into the shell" >&2; return 1; fi
 }
 
 # Chat over a continuously redrawing full-screen program: the shell is live
@@ -6421,7 +6429,7 @@ run_test "initial size: --size, saved detach-size, invoking terminal, 80x24" tes
 run_test "an invalid size starts nothing and replaces nothing" test_invalid_sizes_start_nothing
 run_test "callbox shell: options end at the shell's name; never detached or headless" test_shell_launch_grammar
 run_test "callbox shell: a chat request, a callbox msg reply, unread while hidden" test_shell_chat_request_and_reply
-run_test "callbox shell: failed sends say so; unverified senders stay apart" test_shell_chat_failures_and_unverified_senders
+run_test "callbox shell: failed sends say so; outside senders get their own conversation" test_shell_chat_failures_and_outside_senders
 run_test "callbox shell: the window over a live program uncovers current cells" test_shell_overlay_over_live_program
 run_test "callbox shell: a window resize reaches the program, the chat window's does not" test_shell_resize_reaches_program_overlay_does_not
 run_test "callbox shell: chat keystrokes and drags never reach the program" test_shell_chat_input_never_reaches_program
@@ -6440,7 +6448,7 @@ run_test "screen verbs refuse calls without a TTY" test_screen_verbs_need_a_tty
 run_test "send --mouse to a program without mouse reporting exits 9" test_send_mouse_off_is_reported
 run_test "calls see CALLBOX_ID, CALLBOX_NAME, CALLBOX_PARENT" test_call_identity_environment
 run_test "attach repaints the live screen" test_attach_repaints_live_screen
-run_test "msg delivers between calls and verifies the sender" test_msg_between_calls
+run_test "msg delivers between calls and names the sender" test_msg_between_calls
 run_test "TTY calls default TERM when the launcher has none" test_tty_call_defaults_term
 run_test "arrow keys and mouse move a real program's cursor" test_cursor_control_keys_and_mouse
 run_test "keys arrive as exact xterm bytes, one write each" test_keys_exact_bytes_one_write_each

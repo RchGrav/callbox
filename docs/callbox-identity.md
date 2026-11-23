@@ -15,7 +15,7 @@ operate. Those are the tool's three jobs:
   durable record, identity checks before any signal, and an exit code for CI
   (from a foreground, `-dw`, `--rm`, `--restart`, or TTY call; a plain `-d`
   call leaves no process behind to record one);
-- messaging between agents, with a verified sender;
+- messaging between agents, with the sender's name and how to reply;
 - a headless screen for every TTY call that scripts and agents read and
   type into (`peek`, `send`, `wait`, `resize`, `msg`).
 
@@ -60,7 +60,7 @@ callbox peek <target>            # the screen: text, --json, or --image PNG
 callbox send <target> TEXT       # type and press keys (-k, --paste, --mouse)
 callbox wait <target>            # until --idle, --match, --regex, or exit
 callbox resize <target> C R      # change its terminal size (SIGWINCH)
-callbox msg <target> TEXT        # message an agent; --received verifies one
+callbox msg <target> TEXT        # message an agent; --received lists its history
 
 # manage calls
 callbox list                     # your ledger: your calls, live and past
@@ -105,11 +105,11 @@ What the short lines leave out:
   elsewhere), and 10 when the call has no console - so a script that
   attached knows what it came back to.
 - **`msg`** reaches a running TTY call. The receiver is told who sent it
-  (the sender's `$CALLBOX_ID`, verified by the receiving broker) and how to
-  reply. A header is only text, so `msg --received ID` is how an agent tells
-  a delivered message from a forged one. `msg` prints the delivered
-  message's id on stdout, so a sender can match a later check to what it
-  sent. Delivery is capped at 20 messages a minute per receiver.
+  (the sender's `$CALLBOX_ID`, shown as that call's name) and how to reply -
+  addressing, not proof, since anything running as the user could type the
+  same text with `send`. `msg` prints the delivered message's id on stdout,
+  and `msg --received [ID]` is the receiving call's message history.
+  Delivery is capped at 20 messages a minute per receiver.
 - **`inspect`** prints the stored record as a one-element JSON array, as
   `docker inspect` does: id, name, state, pids, times, argv, mode, and
   `log_path`. `state` is the evaluated state; a differing stored value is

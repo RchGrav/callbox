@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Changed
+
+- `msg` headers say who sent a message and how to reply, and nothing more:
+  `[msg from lead; reply: callbox msg lead "..."]`, or `[msg from outside
+  callbox]`. The sender is named by its call's record as it is now (a renamed
+  call shows its new name). Removed: the session and process-ancestry check
+  on the sender, the `(unverified)` label and chat conversations, and the
+  `verify:` step in the header. `msg --received [ID]` stays, as the call's
+  message history. Why: only the console's own user can reach it, and anything
+  running as that user can type the same text with `callbox send`, so the
+  check guarded nothing; it cost every agent a longer header and a verify
+  instruction, and "verified" read as "safe" when it meant only "from".
+
 ### Fixed
 
 - `callbox help` keeps its first line within 80 columns when the version is
