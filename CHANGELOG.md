@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.10 - 2026-11-23
+
+### Added
+
+- `callbox help tui`: troubleshoot a terminal UI - a fixed size, peek with
+  coordinates or as a picture, exact keys with send --seq and wait --since,
+  the raw bytes in the log, the last full-screen frame, and TERM.
+- `callbox help comms`: agents in different harnesses (Claude Code, Codex,
+  opencode, ...) talking through callbox msg, and what to put in each
+  harness's instructions file.
+
+### Changed
+
+- The main help ends with TUTORIALS (examples, tui, comms, features) and
+  REFERENCE (all, launch, scripting and system, one command's -h).
+- The README is a short synopsis: what callbox is, install, three things to
+  try, and where to learn more. Its former body is `docs/guide.md`.
+
 ## 0.9.9 - 2026-11-23
 
 ### Added

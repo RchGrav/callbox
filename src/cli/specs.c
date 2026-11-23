@@ -650,6 +650,8 @@ static int help_page_all(void) {
            "  callbox help service        services and background processes\n"
            "  callbox help examples       workflows, start to finish\n"
            "  callbox help features       what callbox does under the hood\n"
+           "  callbox help tui            troubleshoot a terminal UI\n"
+           "  callbox help comms          agents in different harnesses, talking\n"
            "\n"
            "REFERENCE\n"
            "  callbox help launch         every flag for starting a call\n"
@@ -945,6 +947,99 @@ static int help_page_features(void) {
     return 0;
 }
 
+/* Troubleshooting a terminal UI with callbox. */
+static int help_page_tui(void) {
+    printf(
+           "callbox help tui\n"
+           "\n"
+           "Troubleshoot a terminal UI: reproduce what a user saw, read exactly what the\n"
+           "program drew, and drive it with exact keys and mouse events.\n"
+           "\n"
+           "Run it on a headless terminal at a fixed size, so every run is the same:\n"
+           "\n"
+           "    callbox -dt --size 80 24 --name app ./my-tui\n"
+           "\n"
+           "Read what is on its screen, with coordinates, or as a picture:\n"
+           "\n"
+           "    callbox peek app --ruler            text, with column and row numbers\n"
+           "    callbox peek app --image s.png      colors, attributes, and the cursor\n"
+           "    callbox peek app --json             plus the cursor, the terminal modes\n"
+           "                                        (mouse, bracketed paste, keypad),\n"
+           "                                        the title, and the output counter\n"
+           "\n"
+           "Send exact keys, then wait only for output that comes after them, so you\n"
+           "never read the screen from before the program answered:\n"
+           "\n"
+           "    seq=$(callbox send app -k Down -k Enter --seq)\n"
+           "    callbox wait app --since \"$seq\" --idle 300\n"
+           "    callbox peek app\n"
+           "\n"
+           "Try other sizes, and the mouse:\n"
+           "\n"
+           "    callbox resize app 40 12\n"
+           "    callbox send app --mouse click,10,5   exits 9 if mouse reporting is off\n"
+           "\n"
+           "When it drew something wrong, read the bytes it actually wrote. The log\n"
+           "keeps them, escape sequences included:\n"
+           "\n"
+           "    callbox logs app | cat -v | tail -40\n"
+           "\n"
+           "A full-screen program takes its screen with it when it exits; callbox keeps\n"
+           "the last frame:\n"
+           "\n"
+           "    callbox peek app --last-alt\n"
+           "\n"
+           "Use it yourself while a script drives it:\n"
+           "\n"
+           "    callbox attach app                  Ctrl-P Ctrl-Q leaves it running\n"
+           "\n"
+           "A call started with no TERM gets TERM=xterm-256color. To test another\n"
+           "terminal type, set it: callbox -dt -e TERM=vt100 --name app ./my-tui\n");
+    return 0;
+}
+
+/* Agents in different harnesses messaging each other. */
+static int help_page_comms(void) {
+    printf(
+           "callbox help comms\n"
+           "\n"
+           "Agents in different harnesses talk to each other through callbox. Claude\n"
+           "Code, Codex, opencode, agy, pi: anything that can run a shell command can\n"
+           "send a message, and anything started in callbox can receive one.\n"
+           "\n"
+           "Start each harness as a call, named for its role:\n"
+           "\n"
+           "    callbox -it --name lead claude          the one you work with\n"
+           "    callbox -dt --name reviewer codex       a second harness, in the background\n"
+           "    callbox -dt --name tester opencode      and a third\n"
+           "\n"
+           "Any of them messages any other by name. The message is typed into the\n"
+           "receiver's prompt after a header that says who sent it and how to answer,\n"
+           "so the receiver needs no setup:\n"
+           "\n"
+           "    callbox msg reviewer \"review the diff in src/net.c\"\n"
+           "\n"
+           "    [msg from lead; reply: callbox msg lead \"...\"] review the diff in ...\n"
+           "\n"
+           "Tell each harness about callbox once, in its instructions file (CLAUDE.md,\n"
+           "AGENTS.md, ...). For example:\n"
+           "\n"
+           "    You run inside callbox as $CALLBOX_NAME. To ask another agent, run\n"
+           "    callbox msg <name> \"<text>\"; its answer is typed into your prompt.\n"
+           "    callbox ps lists the agents that are running.\n"
+           "\n"
+           "Watch the conversation, or step in:\n"
+           "\n"
+           "    callbox peek reviewer                   what it is doing now\n"
+           "    callbox msg reviewer --received         what it has been told\n"
+           "    callbox attach reviewer                 take its terminal yourself\n"
+           "    callbox msg tester \"stop; lead takes over\"\n"
+           "\n"
+           "A harness started outside callbox can send messages, but has no call to\n"
+           "receive the answer in. Start it with callbox -it, and it can.\n");
+    return 0;
+}
+
 int hold_show_help(const char *topic) {
     if (!topic || !*topic) {
         hold_usage();
@@ -957,6 +1052,8 @@ int hold_show_help(const char *topic) {
     if (!strcmp(topic, "service")) return help_page_service();
     if (!strcmp(topic, "examples")) return help_page_examples();
     if (!strcmp(topic, "features")) return help_page_features();
+    if (!strcmp(topic, "tui")) return help_page_tui();
+    if (!strcmp(topic, "comms")) return help_page_comms();
     if (!strcmp(topic, "targets")) return help_targets();
     if (!strcmp(topic, "system")) return help_system();
     if (!strcmp(topic, "scripting")) return help_scripting();

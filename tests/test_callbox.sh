@@ -5945,7 +5945,7 @@ EOF
 # callbox help launch lists the flags for placing a call.
 test_help_pages_fit_and_say_it() {
   local topic wide
-  for topic in "" all users agents messaging service examples features launch targets system scripting list ps end stop kill tail logs inspect ports stats peek send wait msg resize config shell attach console purge save rename; do
+  for topic in "" all users agents messaging service examples features tui comms launch targets system scripting list ps end stop kill tail logs inspect ports stats peek send wait msg resize config shell attach console purge save rename; do
     # shellcheck disable=SC2086
     "$HOLD_BIN" help $topic > "$TEST_ROOT/help.out" 2> "$TEST_ROOT/help.err" || { echo "callbox help $topic failed" >&2; return 1; }
     [ -s "$TEST_ROOT/help.out" ] || { echo "callbox help $topic printed nothing" >&2; return 1; }

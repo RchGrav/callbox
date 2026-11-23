@@ -20,6 +20,7 @@ carry a live headless screen that `callbox peek`, `send`, `wait`, `resize`, and
 | --- | --- |
 | Install Callbox | [Installing Callbox](install.md) |
 | Learn the workflow | [Repository README](../README.md) |
+| Every feature, in depth (screenshots, keys and mouse, waiting, CI, comparisons, FAQ) | [The full guide](guide.md) |
 | Understand how signals stay safe | [Identity](identity.md) |
 
 ## Technical references
