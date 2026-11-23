@@ -101,7 +101,7 @@ curl -LsSf https://github.com/RchGrav/callbox/releases/download/vX.Y.Z/install.s
 Or pass a version to any installer, as an argument or as `CALLBOX_VERSION`. Values with and without the leading `v` are equivalent:
 
 ```sh
-curl -LsSf https://github.com/RchGrav/callbox/releases/latest/download/install.sh | sh -s -- 0.9.3
+curl -LsSf https://github.com/RchGrav/callbox/releases/latest/download/install.sh | sh -s -- 0.9.4
 ```
 
 ## Environment reference
