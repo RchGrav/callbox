@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- `callbox help` keeps its first line within 80 columns when the version is
+  long (a development build's `0.9.0-1e6e4c4-dirty`, or a packager's): the
+  description then goes on its own line, with the same words. Why: every help
+  line is meant to fit 80 columns, and the suite's check of that failed on any
+  build from uncommitted work.
 - A redial keeps the call's saved flag and name. Why: it rewrote the record
   from the new run alone, so a saved call lost its protection and the next
   plain `callbox purge` deleted it.

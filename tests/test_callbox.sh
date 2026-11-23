@@ -2600,19 +2600,29 @@ test_redial_keeps_saved_and_name() {
 # A burst of redials of one ended call starts it once: the rest find it
 # running (6), and ending it leaves nothing running.
 test_concurrent_redials_start_once() {
-  local i starts rc
+  local i starts rc launched
   "$HOLD_BIN" -d --name burst -- sh -c 'echo x >> "$0"; sleep 30' "$TEST_ROOT/starts" >/dev/null || return 1
   "$HOLD_BIN" end burst >/dev/null 2>&1 || return 1
   : > "$TEST_ROOT/starts"
+  # A loser that sees the call running before it takes the claim reports it
+  # the -d way (the id, "already running", exit 0); one that loses the claim
+  # itself exits 6. Either way it says "already running"; one launch does not.
   for i in $(seq 1 16); do
-    ( rc=0; "$HOLD_BIN" -d burst >/dev/null 2>&1 || rc=$?; echo "$rc" > "$TEST_ROOT/burst.$i" ) &
+    ( rc=0; "$HOLD_BIN" -d burst >/dev/null 2>"$TEST_ROOT/burst.$i.err" || rc=$?; echo "$rc" > "$TEST_ROOT/burst.$i" ) &
   done
   wait
   sleep 0.5
   starts=$(wc -l < "$TEST_ROOT/starts")
-  [ "$starts" -eq 1 ] || { echo "16 redials started $starts programs" >&2; cat "$TEST_ROOT"/burst.* >&2; return 1; }
-  [ "$(cat "$TEST_ROOT"/burst.* | grep -c '^0$')" -eq 1 ] || { echo "want one success:" >&2; cat "$TEST_ROOT"/burst.* >&2; return 1; }
-  [ "$(cat "$TEST_ROOT"/burst.* | grep -c '^6$')" -eq 15 ] || { echo "want fifteen 6s:" >&2; cat "$TEST_ROOT"/burst.* >&2; return 1; }
+  [ "$starts" -eq 1 ] || { echo "16 redials started $starts programs" >&2; cat "$TEST_ROOT"/burst.? "$TEST_ROOT"/burst.?? >&2; return 1; }
+  launched=0
+  for i in $(seq 1 16); do
+    rc=$(cat "$TEST_ROOT/burst.$i")
+    case "$rc" in 0|6) ;; *) echo "redial $i exited $rc" >&2; cat "$TEST_ROOT/burst.$i.err" >&2; return 1 ;; esac
+    grep -q 'already running' "$TEST_ROOT/burst.$i.err" && continue
+    [ "$rc" -eq 0 ] || { echo "redial $i exited $rc without saying why" >&2; cat "$TEST_ROOT/burst.$i.err" >&2; return 1; }
+    launched=$((launched + 1))
+  done
+  [ "$launched" -eq 1 ] || { echo "want one launching redial, got $launched" >&2; return 1; }
   "$HOLD_BIN" end burst >/dev/null || return 1
   name_ended_soon burst || return 1
   if ls -a "$HOME/.local/state/callbox/" | grep -q '\.reserve$'; then echo "a redial claim was left behind" >&2; return 1; fi

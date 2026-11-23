@@ -229,7 +229,13 @@ int hold_cmd_console_action(const struct hold_invocation *inv,
 }
 
 void hold_usage(void) {
-    printf("callbox %s - see, drive, and test TUIs from scripts and AI agents\n\n"
+    /* The banner keeps to 80 columns like every help line. A dev build's
+     * version (0.9.0-1e6e4c4-dirty) or a packager's longer one would push
+     * the description past it, so then the description takes its own line. */
+    static const char tagline[] = "see, drive, and test TUIs from scripts and AI agents";
+    bool fits = strlen("callbox ") + strlen(HOLD_VERSION) + strlen(" - ") + strlen(tagline) <= 80;
+    printf("callbox %s%s%s\n\n", HOLD_VERSION, fits ? " - " : "\n", tagline);
+    printf(
            "Place a command as a durable call: see its screen, type into it, wait on\n"
            "it, list it, pick it back up, end it politely. No daemon, no config server.\n\n"
            "PLACE A CALL\n"
@@ -268,6 +274,5 @@ void hold_usage(void) {
            "  callbox help scripting          exit codes, --print, --quiet, stdout\n"
            "  callbox config set detach-size 120 40   the size detached TTY calls start at\n"
            "  callbox <command> -h            help for one command\n\n"
-           "  callbox --version\n",
-           HOLD_VERSION);
+           "  callbox --version\n");
 }
