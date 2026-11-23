@@ -20,6 +20,8 @@ carry a live headless screen that `callbox peek`, `send`, `wait`, `resize`, and
 | --- | --- |
 | Install Callbox | [Installing Callbox](install.md) |
 | Learn the workflow | [Repository README](../README.md) |
+| Choose a terminal workflow | `callbox help`, then `help tui`, `agents`, `comms`, `users`, or `service` |
+| Look up command syntax and options | `callbox COMMAND --help` or the complete `callbox help all` reference |
 | Every feature, in depth (screenshots, keys and mouse, waiting, CI, comparisons, FAQ) | [The full guide](guide.md) |
 | Understand how signals stay safe | [Identity](identity.md) |
 

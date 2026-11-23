@@ -4,9 +4,10 @@
 
 `callbox shell` opens your shell on a PTY with a floating chat window for
 talking to the agents you run under callbox. It is user mode for a shell:
-`callbox <cmd>` (or `callbox -it <cmd>`) does the same for any program, and
-redial brings that program back - a shell's redial can only bring back the
-shell, not what you ran in it. The shell
+`callbox <cmd>` does the same for any program at a terminal. `callbox -it
+<cmd>` runs attached without chat, so messages are typed into the program.
+Redial brings that program back; a shell's redial brings back the shell,
+not what you ran in it. The shell
 is an ordinary call: it has a name, a log, and a screen that `callbox peek`
 reads. What differs is how its display is produced, and where a message for
 it goes. Both are fixed by the launch command — the record carries

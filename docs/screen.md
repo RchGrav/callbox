@@ -84,10 +84,11 @@ The broker opens the PTY and creates the headless screen at that size before
 it forks the program, so a TUI that asks for its dimensions the moment it
 starts gets the right answer. `--size` is where the call starts, not a lock:
 `callbox resize`, and an attached terminal's window, change it afterwards.
-`--size` without `-t` is refused (a PTY is never allocated just because a
-size was given), a saved default never touches a call that is already
-running, and a saved value that no longer reads as a size is not guessed at:
-the launch stops and says how to set or clear it.
+`--size` requires a terminal launch: `-t` supplies one explicitly, and a
+switchless launch or `callbox shell` already uses a PTY. A plain `-d` process
+or `-i` pipe call cannot use it. A saved default never touches a call that
+is already running. If the saved value is invalid, the launch reports how
+to set or clear it.
 
 ## Query replies and attached terminals
 
@@ -131,15 +132,15 @@ screen is active; a sequence split across two reads is missed.
 
 ## Messages between calls
 
-(A `callbox shell` call is the exception to what follows about typing: the
-launch command sets its delivery mode, and a message for it goes to its chat
-inbox, at once, and is never typed. See [shell.md](shell.md).)
+(`callbox shell` and switchless launches at a terminal use chat delivery:
+messages go to their chat inbox, never to the program's input. The launch
+mode determines delivery; attaching later does not change it. See
+[shell.md](shell.md).)
 
 `callbox msg` hands text to the *receiver's* broker, which types it in at
-once. Waiting for a quiet screen would only block the sender until the
-receiver's turn ends: an agent harness queues what is typed while it works,
-and a busy agent's spinner never goes quiet. Two things can hold a message
-back. A sender whose call has no record yet gets up to 2 s, because a call
+once. It does not wait for a ready prompt or quiet screen. How input is
+handled while an agent is busy depends on its harness. Two things can hold
+a message back. A sender whose call has no record yet gets up to 2 s, because a call
 that messages the instant it starts can beat its own record, and the
 header's name comes from that record. And
 messages go in oldest first, one per broker pass, with at most 16 pending.
@@ -175,6 +176,8 @@ when it meant only "from".
 Each delivered message is appended to `<id>.msgs` as `ID UNIXTIME FROMCALL
 SENDER HEXTEXT` (FROMCALL is 1 when the sender is a call; it is where that
 earlier version wrote its verified flag, so older logs read the same).
-`callbox msg --received` reads it: the call's message history. Delivery is
+`callbox msg --received` lists incoming message IDs and text previews;
+adding an ID returns that message's sender and full text. Delivery is
 capped at 20 messages a minute per receiver, counted when a request is
-accepted, to stop two agents replying to each other in a loop.
+accepted. The delivered ID confirms receipt, not completion of the work.
+For replies to a harness outside Callbox, see `callbox help comms`.

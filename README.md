@@ -63,15 +63,20 @@ callbox peek mon --image mon.png  # ...or look at it
 callbox end mon
 ```
 
-**Let two agents talk.** Start one with `-it` and work with it; it can
-start another and message it, and the reply is typed back into its prompt:
+**Let two agents talk.** With your agent CLIs installed and configured,
+start one with `-it`. It can start a second harness and ask it to report back:
 
 ```sh
 callbox -it --name lead claude
 # then, from lead:
 callbox -dt --name reviewer codex
-callbox msg reviewer "review src/main.c"
+callbox peek reviewer             # check its prompt and complete any setup
+callbox msg reviewer "Review src/main.c; report with callbox msg lead."
 ```
+
+The report is typed into `lead` when the reviewer sends it. Screen silence
+alone does not mean the review is complete. For a harness already running
+outside Callbox, see `callbox help comms`.
 
 **Keep something running.** A background process with a name and a log,
 that you can stop and start again:
@@ -85,19 +90,23 @@ callbox web                       # start it again, as before
 
 ## Learn more
 
-`callbox help` lists every command by what it is for. Each use has a page
-with examples:
+Start with `callbox help` for the main commands and launch modes. Choose a
+focused guide for an end-to-end workflow:
 
-| `callbox help ...` | |
+| Guide | Use it to |
 | --- | --- |
-| `users` | run agents and programs yourself |
-| `agents` | orchestrate agents, drive terminal apps |
-| `messaging`, `comms` | how messages work; agents in different harnesses |
-| `service` | background processes: more than nohup, less than systemd |
-| `tui` | troubleshoot a terminal UI |
-| `examples` | whole workflows, start to finish |
-| `features` | what callbox does under the hood |
-| `all` | every command and flag |
+| `callbox help tui` | inspect and troubleshoot a terminal UI with keys, mouse, and screenshots |
+| `callbox help agents` | start another agent, give it work, and check its progress |
+| `callbox help comms` | send work and receive replies from a harness outside Callbox |
+| `callbox help users` | ask your coding agent for help while you keep the TUI visible |
+| `callbox help service` | run background jobs and services, including CI checks and cleanup |
+
+For exact syntax, use `callbox <command> --help` or `callbox help <command>`.
+`callbox help all` contains the full command and flag reference; `callbox help
+launch` covers starting calls, and `callbox help scripting` covers exit statuses
+and script output. `callbox help examples` links the workflows and adds backup
+and VM recipes. The existing `messaging` and `features` pages remain available
+for delivery details and how Callbox works.
 
 In depth: [the full guide](docs/guide.md) (screenshots, keys and mouse,
 waiting, CI, comparisons, FAQ), [docs index](docs/index.md),
