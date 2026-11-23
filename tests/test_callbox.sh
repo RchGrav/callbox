@@ -2242,6 +2242,175 @@ EOF
   "$HOLD_BIN" end resp >/dev/null 2>&1 || true
 }
 
+# The short monitor command and its original spelling share unread progress.
+# A monitor prints queued replies, then new ones, until its deadline; a
+# later inbox listing still shows the retained history.
+test_operator_monitor_stream_and_seen() {
+  local name mode monitor_pid rc i
+  "$HOLD_BIN" -dt --name receiver -- sh -c 'echo ready; while IFS= read -r line; do :; done' >/dev/null || return 1
+  "$HOLD_BIN" wait receiver --match ready --timeout 5000 || return 1
+  CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg receiver hello >/dev/null 2>"$TEST_ROOT/identity.err" || return 1
+  name=$(sed -n 's/^callbox: you are \([^,]*\),.*/\1/p' "$TEST_ROOT/identity.err")
+  [ -n "$name" ] || { cat "$TEST_ROOT/identity.err" >&2; return 1; }
+
+  for mode in monitor legacy; do
+    CALLBOX_ID=receiver CALLBOX_NAME=receiver "$HOLD_BIN" msg "$name" "$mode queued" >/dev/null || return 1
+    if [ "$mode" = monitor ]; then
+      CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" monitor --timeout 2000 >"$TEST_ROOT/monitor.out" 2>"$TEST_ROOT/monitor.err" &
+    else
+      CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" inbox "$name" --monitor --timeout=2000 >"$TEST_ROOT/monitor.out" 2>"$TEST_ROOT/monitor.err" &
+    fi
+    monitor_pid=$!
+    for i in $(seq 1 40); do
+      grep -q "$mode queued" "$TEST_ROOT/monitor.out" && break
+      sleep 0.025
+    done
+    grep -q "$mode queued" "$TEST_ROOT/monitor.out" || { echo "$mode missed an unread reply" >&2; cat "$TEST_ROOT/monitor.err" >&2; kill "$monitor_pid" 2>/dev/null || true; return 1; }
+    CALLBOX_ID=receiver CALLBOX_NAME=receiver "$HOLD_BIN" msg "$name" "$mode arriving" >/dev/null || return 1
+    rc=0; wait "$monitor_pid" || rc=$?
+    [ "$rc" -eq 7 ] || { echo "$mode timeout: rc=$rc (want 7)" >&2; return 1; }
+    grep -q "$mode arriving" "$TEST_ROOT/monitor.out" || { cat "$TEST_ROOT/monitor.out" >&2; return 1; }
+    [ "$(grep -c 'from receiver]' "$TEST_ROOT/monitor.out")" -eq 2 ] || { echo "$mode replayed a read reply" >&2; cat "$TEST_ROOT/monitor.out" >&2; return 1; }
+    grep -q "monitoring $name ended" "$TEST_ROOT/monitor.err" || { cat "$TEST_ROOT/monitor.err" >&2; return 1; }
+    rc=0; CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" inbox --wait --timeout 200 >/dev/null 2>&1 || rc=$?
+    [ "$rc" -eq 7 ] || { echo "monitor did not advance the unread position" >&2; return 1; }
+  done
+  CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" inbox >"$TEST_ROOT/history.out" || return 1
+  [ "$(grep -c 'from receiver]' "$TEST_ROOT/history.out")" -eq 4 ] || { cat "$TEST_ROOT/history.out" >&2; return 1; }
+  rc=0; CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" monitor --wait >/dev/null 2>"$TEST_ROOT/invalid.err" || rc=$?
+  [ "$rc" -eq 1 ] || { echo "monitor --wait: rc=$rc (want 1)" >&2; return 1; }
+  "$HOLD_BIN" end receiver >/dev/null 2>&1 || return 1
+}
+
+# Parsing an inbox timeout must reject overflow, and a representable long
+# wait must not wrap its deadline and time out before a delayed reply.
+test_operator_inbox_timeout_bounds() {
+  local verb value rc name timeout_ms max_timeout reply_pid monitor_pid i
+  local args=()
+  "$HOLD_BIN" -dt --name receiver -- sh -c 'echo ready; while IFS= read -r line; do :; done' >/dev/null || return 1
+  "$HOLD_BIN" wait receiver --match ready --timeout 5000 || return 1
+  CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg receiver hello >/dev/null 2>"$TEST_ROOT/identity.err" || return 1
+  name=$(sed -n 's/^callbox: you are \([^,]*\),.*/\1/p' "$TEST_ROOT/identity.err")
+  [ -n "$name" ] || return 1
+  for verb in inbox monitor msg; do
+    case "$verb" in
+      inbox) args=(inbox --wait) ;;
+      monitor) args=(monitor) ;;
+      msg) args=(msg receiver hello --wait-reply) ;;
+    esac
+    for value in '' -1 invalid 99999999999999999999999999999999; do
+      rc=0; CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" "${args[@]}" --timeout "$value" >/dev/null 2>"$TEST_ROOT/timeout.err" || rc=$?
+      [ "$rc" -eq 1 ] || { echo "$verb --timeout '$value': rc=$rc (want 1)" >&2; cat "$TEST_ROOT/timeout.err" >&2; return 1; }
+      grep -q -- '--timeout takes milliseconds' "$TEST_ROOT/timeout.err" || { cat "$TEST_ROOT/timeout.err" >&2; return 1; }
+    done
+    rc=0; CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" "${args[@]}" --timeout= >/dev/null 2>&1 || rc=$?
+    [ "$rc" -eq 1 ] || { echo "$verb --timeout=: rc=$rc (want 1)" >&2; return 1; }
+    rc=0; CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" "${args[@]}" --timeout >/dev/null 2>&1 || rc=$?
+    [ "$rc" -eq 1 ] || { echo "$verb --timeout without a value: rc=$rc (want 1)" >&2; return 1; }
+  done
+  max_timeout=$(python3 -c 'import ctypes; print((1 << (8 * ctypes.sizeof(ctypes.c_long) - 1)) - 1)') || return 1
+  for timeout_ms in 0 "$max_timeout"; do
+    for verb in inbox msg; do
+      if [ "$verb" = inbox ]; then args=(inbox --wait); else args=(msg receiver hello --wait-reply); fi
+      ( sleep 0.3; CALLBOX_ID=receiver CALLBOX_NAME=receiver "$HOLD_BIN" msg "$name" "$verb delayed $timeout_ms" >/dev/null ) &
+      reply_pid=$!
+      CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" "${args[@]}" --timeout="$timeout_ms" >"$TEST_ROOT/reply.out" 2>"$TEST_ROOT/reply.err" || { cat "$TEST_ROOT/reply.err" >&2; return 1; }
+      wait "$reply_pid" || return 1
+      grep -q "$verb delayed $timeout_ms" "$TEST_ROOT/reply.out" || { cat "$TEST_ROOT/reply.out" >&2; return 1; }
+    done
+    CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" monitor "$name" --timeout "$timeout_ms" >"$TEST_ROOT/long-monitor.out" 2>"$TEST_ROOT/long-monitor.err" &
+    monitor_pid=$!
+    sleep 0.3
+    CALLBOX_ID=receiver CALLBOX_NAME=receiver "$HOLD_BIN" msg "$name" "monitor delayed $timeout_ms" >/dev/null || return 1
+    for i in $(seq 1 40); do
+      grep -q "monitor delayed $timeout_ms" "$TEST_ROOT/long-monitor.out" && break
+      sleep 0.025
+    done
+    if ! grep -q "monitor delayed $timeout_ms" "$TEST_ROOT/long-monitor.out" || ! kill -0 "$monitor_pid" 2>/dev/null; then
+      cat "$TEST_ROOT/long-monitor.out" "$TEST_ROOT/long-monitor.err" >&2
+      kill "$monitor_pid" 2>/dev/null || true
+      return 1
+    fi
+    kill "$monitor_pid" || return 1
+    wait "$monitor_pid" 2>/dev/null || true
+  done
+  "$HOLD_BIN" end receiver >/dev/null 2>&1 || return 1
+}
+
+# A sender's address shares the call-name namespace: otherwise msg NAME can
+# silently reach the inbox when the user intended the call with that name.
+test_operator_inbox_names_do_not_shadow_calls() {
+  local name next_name rc
+  "$HOLD_BIN" -dt --name receiver -- sh -c 'echo ready; while IFS= read -r line; do :; done' >/dev/null || return 1
+  "$HOLD_BIN" wait receiver --match ready --timeout 5000 || return 1
+  CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg receiver hello >/dev/null 2>"$TEST_ROOT/identity.err" || return 1
+  name=$(sed -n 's/^callbox: you are \([^,]*\),.*/\1/p' "$TEST_ROOT/identity.err")
+  [ -n "$name" ] || return 1
+  rc=0; "$HOLD_BIN" -dt --name "$name" -- sleep 30 >/dev/null 2>"$TEST_ROOT/collision.err" || rc=$?
+  [ "$rc" -eq 11 ] || { echo "launch over a live inbox: rc=$rc (want 11)" >&2; cat "$TEST_ROOT/collision.err" >&2; return 1; }
+  rc=0; "$HOLD_BIN" rename receiver "$name" >/dev/null 2>"$TEST_ROOT/collision.err" || rc=$?
+  [ "$rc" -eq 11 ] || { echo "rename over a live inbox: rc=$rc (want 11)" >&2; cat "$TEST_ROOT/collision.err" >&2; return 1; }
+  out_has '"name": "receiver"' "$HOLD_BIN" inspect receiver || return 1
+
+  # Age only this test's inbox fixture: its expired name can become a call,
+  # and the next outside send must choose a different address.
+  python3 - "$HOME/.local/state/callbox/inbox/$name.who" <<'PY' || return 1
+import os, sys, time
+old = time.time() - 7200
+os.utime(sys.argv[1], (old, old))
+PY
+  "$HOLD_BIN" -dt --name "$name" -- sh -c 'echo ready; while IFS= read -r line; do echo "typed:$line"; done' >/dev/null || return 1
+  "$HOLD_BIN" wait "$name" --match ready --timeout 5000 || return 1
+  CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg receiver again >/dev/null 2>"$TEST_ROOT/new-identity.err" || return 1
+  next_name=$(sed -n 's/^callbox: you are \([^,]*\),.*/\1/p' "$TEST_ROOT/new-identity.err")
+  [ -n "$next_name" ] && [ "$next_name" != "$name" ] || { cat "$TEST_ROOT/new-identity.err" >&2; return 1; }
+  CALLBOX_ID=receiver CALLBOX_NAME=receiver "$HOLD_BIN" msg "$name" reaches-the-call >/dev/null || return 1
+  "$HOLD_BIN" wait "$name" --match reaches-the-call --timeout 5000 || return 1
+  "$HOLD_BIN" end receiver "$name" >/dev/null 2>&1 || return 1
+}
+
+# Simultaneous first sends from one harness must reuse one inbox, including
+# when another launch holds the shared name lock while the sends begin.
+test_operator_inbox_parallel_registration() {
+  python3 - "$HOLD_BIN" "$HOME/.local/state/callbox/inbox" <<'PY' || return 1
+from pathlib import Path
+import fcntl
+import os
+import subprocess
+import sys
+import time
+
+binary, inbox = sys.argv[1], Path(sys.argv[2])
+env = dict(os.environ, CALLBOX_ID="", CALLBOX_NAME="")
+for trial in range(2):
+    name = "receiver" + str(trial)
+    subprocess.run([binary, "-dt", "--name", name, "--", "sh", "-c",
+                    "echo ready; while IFS= read -r line; do :; done"], check=True,
+                   stdout=subprocess.DEVNULL, env=env)
+    subprocess.run([binary, "wait", name, "--match", "ready", "--timeout", "5000"], check=True, env=env)
+    for path in inbox.glob("*.who"):
+        for suffix in (".who", ".msgs", ".seen"):
+            sibling = path.with_suffix(suffix)
+            if sibling.exists():
+                sibling.unlink()
+    lock = os.open(inbox.parent, os.O_RDONLY)
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    try:
+        workers = [subprocess.Popen([binary, "msg", name, "hello"], env=env,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(12)]
+        time.sleep(0.5)
+    finally:
+        os.close(lock)
+    for worker in workers:
+        out, err = worker.communicate(timeout=10)
+        assert worker.returncode == 0, (worker.returncode, out, err)
+    identities = [(p.name, p.read_text()) for p in inbox.glob("*.who")]
+    assert len(identities) == 1, (trial, "one harness received multiple inbox names", identities)
+    subprocess.run([binary, "end", name], check=True, stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL, env=env)
+PY
+}
+
 # User mode at a terminal (a switchless launch): a message for the call goes
 # to its chat window and is never typed into the program; send still types
 # into it; redial brings the program back the same way.
@@ -3453,7 +3622,8 @@ test_usage_errors_go_to_stderr_and_help_names_both_views() {
   [ -z "$out" ] || { echo "usage error leaked to stdout" >&2; printf '%s\n' "$out" >&2; return 1; }
   grep -q '^usage: callbox' "$TEST_ROOT/flags-only.err" || { cat "$TEST_ROOT/flags-only.err" >&2; return 1; }
   out=$("$HOLD_BIN" 2>/dev/null)
-  printf '%s\n' "$out" | grep -q 'callbox ps ' || { echo "help missing a distinct callbox ps line" >&2; return 1; }
+  printf '%s\n' "$out" | grep -Fq 'WORK WITH CALLS (callbox COMMAND)' || { echo "help does not explain command syntax" >&2; return 1; }
+  printf '%s\n' "$out" | grep -Eq '^  ps[[:space:]]+list running calls' || { echo "help missing a distinct ps line" >&2; return 1; }
   printf '%s\n' "$out" | grep -q 'ps is an alias' && { echo "help still claims ps is an alias" >&2; return 1; }
   return 0
 }
@@ -4219,7 +4389,7 @@ test_global_plain_d_seen_live_by_users() {
   pid=$(sed -n 's/.*"pid": \([0-9]*\).*/\1/p' "$public" | head -n1)
   [ -n "$pid" ] || { cat "$public" >&2; return 1; }
   parent=$(ps -o ppid= -p "$pid" | tr -d ' ')
-  ! ps -o args= -p "$parent" | grep -q callbox || { echo "root -d left a callbox process" >&2; return 1; }
+  ! is_callbox_process "$parent" || { echo "root -d left a callbox process" >&2; return 1; }
   "$HOLD_BIN" list -s | grep -Eq "Up .* globald$" || { "$HOLD_BIN" list -s >&2; return 1; }
   as_root kill -KILL "$pid" || return 1
   sleep 0.3
@@ -5190,6 +5360,16 @@ except OSError:
     print("held")' "$1"
 }
 
+# An orphan may be adopted by a sandbox whose arguments mention the
+# repository. Check its executable name, with Linux's 15-byte comm limit
+# (the root lane can copy our binary to the longer callbox-under-test name).
+is_callbox_process() {
+  local comm expected="${HOLD_REAL_BIN##*/}"
+  comm=$(ps -o comm= -p "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//') || return 1
+  [ "$(uname -s)" != Linux ] || expected=${expected:0:15}
+  [ "${comm##*/}" = "$expected" ]
+}
+
 test_plain_d_leaves_nothing_behind_dw_waits() {
   local fallback=0 want=free name pid parent id log
   if [ "${CALLBOX_CONSOLE_TRANSPORT:-}" = fifo ] || [ -n "${HOLD_TEST_SOCKETS_DENIED:-}" ]; then fallback=1; want=held; fi
@@ -5204,9 +5384,9 @@ test_plain_d_leaves_nothing_behind_dw_waits() {
     [ ! -e "$(dirname "$log")/console/$id.ctl" ] || { echo "$name: a control FIFO appeared" >&2; return 1; }
     [ "$(log_lock_state "$log")" = "$want" ] || { echo "$name: log lock is not $want (fallback=$fallback)" >&2; return 1; }
     if [ "$name" = plainwait ]; then
-      ! ps -o args= -p "$parent" | grep -q callbox || { echo "plain -d left a callbox process: $(ps -o args= -p "$parent")" >&2; return 1; }
+      ! is_callbox_process "$parent" || { echo "plain -d left a callbox process: $parent" >&2; return 1; }
     else
-      ps -o args= -p "$parent" | grep -q callbox || { echo "-dw has no waiter" >&2; return 1; }
+      is_callbox_process "$parent" || { echo "-dw has no waiter (parent: $parent)" >&2; return 1; }
       if [ "$(uname -s)" = Linux ] && [ -r "/proc/$parent/wchan" ]; then
         [ "$(cat "/proc/$parent/wchan")" = do_wait ] || { echo "waiter not blocked in waitpid: $(cat "/proc/$parent/wchan")" >&2; return 1; }
       fi
@@ -5983,47 +6163,76 @@ EOF
   "$HOLD_BIN" kill eqname >/dev/null 2>&1 || return 1
 }
 
-# Every help page fits an 80-column terminal, says what the command does, and
-# callbox help launch lists the flags for placing a call.
+# Help remains a short entry point with task guides and a complete reference.
+# Read the actual page and command inventory so a new page or alias cannot be
+# left out of the checks. Comparing bytes also checks the compiled-in text.
 test_help_pages_fit_and_say_it() {
-  local topic wide verb
-  # every page: the overview, the guides, the reference and extra pages, the
-  # old topic names that redirect, and every command's -h (aliases too)
-  for topic in "" tui share agents messaging service all launch targets scripting system examples features users comms services run; do
-    # shellcheck disable=SC2086
-    "$HOLD_BIN" help $topic > "$TEST_ROOT/help.out" 2> "$TEST_ROOT/help.err" || { echo "callbox help $topic failed" >&2; return 1; }
-    [ -s "$TEST_ROOT/help.out" ] || { echo "callbox help $topic printed nothing" >&2; return 1; }
-    wide=$(awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }' "$TEST_ROOT/help.out")
-    [ "$wide" -le 80 ] || { echo "callbox help $topic: a line is $wide columns wide" >&2; return 1; }
-  done
-  for verb in $(sed -n 's/^    {"\([a-z]*\)", \(NULL\|"[a-z]*"\),.*/\1/p' src/cli/specs.c); do
-    [ "$verb" = help ] && continue
-    "$HOLD_BIN" "$verb" -h > "$TEST_ROOT/help.out" 2>&1 || true
-    grep -q '^usage: callbox' "$TEST_ROOT/help.out" || { echo "callbox $verb -h shows no usage" >&2; head -3 "$TEST_ROOT/help.out" >&2; return 1; }
-    wide=$(awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }' "$TEST_ROOT/help.out")
-    [ "$wide" -le 80 ] || { echo "callbox $verb -h: a line is $wide columns wide" >&2; return 1; }
-  done
-  for topic in peek send wait msg; do
-    "$HOLD_BIN" "$topic" x --bogus > /dev/null 2> "$TEST_ROOT/help.err" || true
-    wide=$(awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }' "$TEST_ROOT/help.err")
-    [ "$wide" -le 80 ] || { echo "callbox $topic usage: a line is $wide columns wide" >&2; return 1; }
-  done
-  # help all names every canonical command in the command table
-  "$HOLD_BIN" help all > "$TEST_ROOT/all.out" || return 1
-  for verb in $(sed -n 's/^    {"\([a-z]*\)", NULL,.*/\1/p' src/cli/specs.c); do
-    grep -Eq "^  $verb( |$)" "$TEST_ROOT/all.out" || { echo "callbox help all does not list $verb" >&2; return 1; }
-  done
-  "$HOLD_BIN" help launch > "$TEST_ROOT/help.out" || return 1
-  for topic in '-d, --detach' '-w, --wait' '-t, --tty' '--size COLS ROWS' '--name NAME' '--env-file' '--rm' '--restart POLICY' '--detach-keys'; do
-    grep -q -- "$topic" "$TEST_ROOT/help.out" || { echo "callbox help launch does not list $topic" >&2; return 1; }
-  done
-  out_has 'callbox help launch' "$HOLD_BIN" help || { echo "callbox help does not point at the launch page" >&2; return 1; }
+  python3 - "$HOLD_BIN" <<'PY' || return 1
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+binary = sys.argv[1]
+pages = Path("src/cli/help")
+specs = Path("src/cli/specs.c").read_text()
+
+def help_output(*args):
+    result = subprocess.run([binary, *args], capture_output=True, check=False)
+    assert result.returncode == 0, (args, result.returncode, result.stderr)
+    assert not result.stderr, (args, result.stderr)
+    assert result.stdout, (args, "empty help")
+    for number, line in enumerate(result.stdout.decode().splitlines(), 1):
+        assert len(line) <= 80, (args, number, len(line), line)
+    return result.stdout
+
+overview = help_output("help")
+assert len(overview.splitlines()) <= 50, "the overview should remain a short entry point"
+assert overview.split(b"\n", 1)[1] == (pages / "overview.txt").read_bytes()
+for args in [("-h",), ("--help",), ("help", "-h"), ("help", "--help")]:
+    assert help_output(*args) == overview, args
+
+complete = help_output("help", "all")
+assert complete.startswith((pages / "reference/all.txt").read_bytes())
+for section in ("guides", "reference", "extra", "commands"):
+    for path in sorted((pages / section).glob("*.txt")):
+        if path.stem == "all" and section == "reference":
+            continue
+        rendered = help_output("help", path.stem)
+        assert rendered == path.read_bytes(), (path, "rendered text differs from source")
+        if section in ("reference", "commands"):
+            assert rendered in complete, (path, "missing from the complete reference")
+        if section == "guides":
+            assert ("callbox help " + path.stem).encode() in overview, (path, "undiscoverable guide")
+
+commands = re.findall(r'^\s+\{"([a-z][a-z0-9_-]*)", (NULL|"[a-z][a-z0-9_-]*"),', specs, re.M)
+assert commands, "no command specs found"
+for name, alias in commands:
+    canonical = name if alias == "NULL" else alias.strip('"')
+    page = pages / "commands" / (canonical + ".txt")
+    assert page.is_file(), (name, "missing command page")
+    expected = page.read_bytes()
+    assert help_output("help", name) == expected, name
+    assert expected in complete, (name, "missing command reference")
+    if alias != "NULL":
+        assert re.search(rb"(?m)^\s+" + name.encode() + rb"\s+.*\b" + canonical.encode() + rb"\b", complete), (name, "missing alias")
+    if name != "help":
+        for flag in ("-h", "--help"):
+            assert help_output(name, flag) == expected, (name, flag)
+
+renamed = specs.split("help_renamed[][2]", 1)[1].split("};", 1)[0]
+for old, new in re.findall(r'\{"([a-z]+)", "([a-z]+)"\}', renamed):
+    assert help_output("help", old) == help_output("help", new), (old, new)
+
+for command in ("peek", "send", "wait", "msg", "inbox", "monitor"):
+    result = subprocess.run([binary, command, "x", "--bogus"], capture_output=True)
+    assert result.returncode != 0, (command, "invalid flag accepted")
+    assert all(len(line) <= 80 for line in result.stderr.decode().splitlines()), command
+PY
   out_has 'from now on' "$HOLD_BIN" help tail || return 1
   out_has 'log_path' "$HOLD_BIN" help inspect || return 1
   if out_has '--plain' "$HOLD_BIN" help inspect; then echo "help inspect still names --plain" >&2; return 1; fi
   out_has 'usage error' "$HOLD_BIN" help scripting || return 1
-  out_has 'callbox help share - ' "$HOLD_BIN" help users || { echo "help users does not lead to share" >&2; return 1; }
-  out_has 'callbox help messaging - ' "$HOLD_BIN" help comms || { echo "help comms does not lead to messaging" >&2; return 1; }
 }
 
 # The lead key (Ctrl-P) waits for the key after it, however long that takes,
@@ -6455,6 +6664,10 @@ run_test "foreground: Ctrl-C goes to the program, Ctrl-P Ctrl-Q detaches" test_f
 run_test "foreground without a terminal: SIGINT goes to the program" test_foreground_sigint_reaches_the_program
 run_test "a bare launch runs attached on a PTY, streamed to a script" test_bare_launch_runs_on_a_pty
 run_test "an agent outside callbox gets a name, an inbox, and replies" test_operator_inbox_round_trip
+run_test "monitor streams queued and new replies and shares unread progress" test_operator_monitor_stream_and_seen
+run_test "inbox timeouts reject overflow and keep long waits alive" test_operator_inbox_timeout_bounds
+run_test "inbox names cannot shadow calls, and expire for reuse" test_operator_inbox_names_do_not_shadow_calls
+run_test "parallel first sends share one harness inbox" test_operator_inbox_parallel_registration
 run_test "user mode: messages go to chat, redial comes back in user mode" test_user_mode_messages_go_to_chat
 run_test "-it has no chat window; its messages are typed" test_it_launch_messages_are_typed
 run_test "-i: piped input streams in and ends; no PTY" test_pipe_input_streams_and_ends
@@ -6534,7 +6747,7 @@ run_test "the lead key waits for the next key and shows what it offers" test_lea
 run_test "callbox -it exits as its command did and leaves its last screen" test_tty_foreground_exit_status_and_last_screen
 run_test "however an attach ends, the last screen stays and callbox says how" test_attach_endings_leave_the_last_screen
 run_test "a mistyped command line is a usage error and acts on nothing" test_cli_mistakes_are_usage_errors
-run_test "every help page fits 80 columns; help launch lists the flags" test_help_pages_fit_and_say_it
+run_test "help stays concise, matches its source, and exposes the full reference" test_help_pages_fit_and_say_it
 run_test "callbox shell: the draft takes any script and whole pastes" test_shell_chat_draft_editing
 run_test "callbox shell: detach, attach and redial keep the shell a shell" test_shell_detach_attach_and_redial
 run_test "a console is free again once its attach client is gone" test_attach_again_after_client_vanishes

@@ -1,9 +1,9 @@
 usage: callbox wait <target> [--idle [MS]] [--match TEXT | --regex RE]
                  [--since SEQ] [--exit] [--timeout MS]
 
-Block until a condition holds, so a script or agent never has to guess with
-sleep. Wait before you peek: right after a send, the screen may be only half
-drawn (callbox send --wait MS sends and waits in one step).
+Wait for screen content, quiet output, or process exit. After input, the
+screen may still be drawing; callbox send --wait MS sends and waits in one
+step. For messages in an outside inbox, use inbox --wait or monitor.
 
   --idle [MS]      the program has drawn something and the screen then stays
                    quiet for MS (500 if MS is left out), counted from when the
@@ -12,7 +12,7 @@ drawn (callbox send --wait MS sends and waits in one step).
                    --idle runs to the timeout, with or without --since 0. Use
                    --match, --exit or peek there.
   --match TEXT     the text is on the screen (already there counts)
-  --regex RE       ...as a regular expression
+  --regex RE       match a POSIX extended regular expression on the screen
   --since SEQ      for a running call, require output past SEQ before
                    testing --idle, --match, or --regex
   --exit           the call ends. Also what a wait with no condition means.
@@ -23,7 +23,8 @@ drawn (callbox send --wait MS sends and waits in one step).
 
 If several conditions are given, any one can finish the wait. --idle means
 quiet output, not that an agent's task is complete. Durations accept
-milliseconds or suffixes ms, s, m. Screen waits require a console.
+milliseconds or suffixes ms, s, m, up to 24 hours. Screen waits require a
+terminal or -i pipe-input console.
 A text match can also succeed on an ended call's saved final screen.
 
 To wait for a redraw after input:

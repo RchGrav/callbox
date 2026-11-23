@@ -60,6 +60,7 @@ static int run_name_exists_in_store(const struct hold_store *store, const char *
     struct name_exists_walk w = { name, ignore_id };
     int rc = hold_for_each_record(store->record_dir, name_exists_cb, &w);
     if (rc == 0 && name_reserved_in_store(store, name, ignore_id)) rc = 1;
+    if (rc == 0 && hold_inbox_live(store, name)) rc = 1;
     return rc;
 }
 
@@ -392,7 +393,8 @@ int hold_cmd_save_action(const struct hold_invocation *inv,
     return protect_record_action(inv, user_store, system_store, target_token, NULL);
 }
 
-static int pick_run_name(const struct hold_store *store, const char *id, const char *requested, char out[ALIAS_MAX_LEN + 1]) {
+int hold_pick_run_name_locked(const struct hold_store *store, const char *id, const char *requested,
+                              char out[ALIAS_MAX_LEN + 1]) {
     if (requested && *requested) {
         if (!hold_valid_alias(requested)) {
             fprintf(stderr, "callbox: error: invalid call name '%s'\n", requested);
@@ -441,7 +443,7 @@ static int pick_run_name(const struct hold_store *store, const char *id, const c
  * once cannot both take one name. */
 int hold_generate_run_name_for_id(const struct hold_store *store, const char *id, const char *requested, char out[ALIAS_MAX_LEN + 1]) {
     int lock_fd = store ? hold_store_lock(store->record_dir) : -1;
-    int rc = pick_run_name(store, id, requested, out);
+    int rc = hold_pick_run_name_locked(store, id, requested, out);
     if (rc == 0 && store) reserve_run_name(store, id, out);
     hold_store_unlock(lock_fd);
     return rc;

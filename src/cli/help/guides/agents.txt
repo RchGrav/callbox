@@ -1,54 +1,54 @@
-callbox help agents - start another agent and give it work
+callbox help agents - start an agent and give it work
 
-USE THIS WHEN
-  You have work to hand off: a review, a test run, a second opinion. The
-  other agent runs in a call of its own, in any harness that runs in a
-  terminal (Claude Code, Codex, opencode, ...). The harness must already
-  be installed and set up for your project.
+Use this to delegate a review, investigation, or test run to another
+terminal-based agent. Each agent gets its own call and screen. Its harness
+must already be installed, configured, and able to work on your project.
 
-EXAMPLE
-  You, in your terminal:
+START THE TWO AGENTS
+  In your terminal, start the agent you work with:
 
-    callbox -it --name lead claude          # the agent you work with
+    callbox -it --name lead claude
 
-  lead, through its command tool:
+  From lead's command tool, start a reviewer and check its prompt:
 
-    callbox -dt --name reviewer codex       # start the second agent
-    callbox wait reviewer --idle 2000       # let it draw its prompt
-    callbox peek reviewer                   # ready for input?
-    callbox msg reviewer "review src/main.c; send me what you find"
-    callbox peek reviewer                   # follow its progress
-    callbox end reviewer                    # stop it when you are done
-    callbox purge reviewer                  # remove it, free the name
+    callbox -dt --name reviewer codex
+    callbox wait reviewer --idle 1000
+    callbox peek reviewer
 
-  reviewer answers with callbox msg lead "...", which is typed into lead's
-  prompt like anything you type. Neither agent has to poll.
+  -it keeps lead attached; -dt gives reviewer a detached terminal. Both
+  accept messages as input. Complete any login or trust prompt before
+  assigning work; callbox attach reviewer lets you operate it yourself.
 
-WHAT THE COMMANDS DO
-  callbox -dt --name <name> <agent>
-      Starts the agent detached, on a terminal of its own. It prints the
-      call's id on stdout and its name on stderr, then returns.
-  callbox msg <call> <text>
-      Types the text into the agent's prompt and presses Enter, after a
-      header that names the sender and how to reply.
-  callbox peek <call>
-      Prints the agent's screen: its progress, its questions, its answer.
-  callbox wait <call> --idle <ms>
-      Blocks until the screen has been quiet that long. Quiet is not done:
-      judge completion from the agent's reply and its screen. callbox wait
-      with no condition waits for the agent to exit, which an interactive
-      agent does only when it is closed.
-  callbox end <call>
-      Stops the agent: TERM, then KILL after 5 seconds. It keeps its name
-      and its log until you purge it.
+ASSIGN WORK AND CHECK PROGRESS
+  Once reviewer is ready, lead sends a specific task:
 
-MORE WAYS TO CHECK AND STEER
-    callbox ps                              # the agents that are running
-    callbox msg lead --received             # what lead has been sent
-    callbox send reviewer -k Escape         # interrupt it
-    callbox logs reviewer -n 50             # its newest output
-    callbox attach reviewer                 # take its terminal yourself
+    callbox msg reviewer \
+      "Review src/main.c. Reply with findings using callbox msg lead."
+    callbox peek reviewer
 
-SEE ALSO
-  callbox help messaging          how messages arrive; agents outside callbox
-  callbox help tui                drive any terminal app the same way
+  reviewer can answer from its command tool:
+
+    callbox msg lead "Review complete: no issues found in src/main.c."
+
+  msg adds a sender name and reply command, then submits the text. Delivery
+  means the input reached the call, not that the task finished. Whether a
+  busy harness queues input depends on that harness. Judge progress from
+  its screen and completion from its report; --idle only measures quiet
+  output. wait with no condition waits for the agent process to exit.
+
+STOP THE REVIEWER WHEN ITS WORK IS FINISHED
+    callbox logs reviewer -n 50
+    callbox end reviewer
+    callbox purge reviewer
+
+  end sends TERM, then KILL after five seconds if needed. It retains the
+  record and log; purge removes them and frees the name. Keep the call
+  instead if you want to inspect it later or restart it with callbox reviewer.
+
+  Use callbox ps to find running calls. To read delivered messages without
+  disturbing a prompt, use callbox msg lead --received. Agent-specific keys
+  such as Escape can be sent with callbox send; their effect belongs to
+  that harness.
+
+Next: callbox help messaging for a lead outside Callbox.
+Details: callbox help msg, peek, attach, end.

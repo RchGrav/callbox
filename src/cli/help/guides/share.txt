@@ -1,56 +1,64 @@
-callbox help share - fix a terminal app with your agent, on one screen
+callbox help share - fix a TUI while a person watches and tests
 
-USE THIS WHEN
-  You want your coding agent to debug or fix a terminal app while the app
-  stays on your screen. You and the agent use the same call: you see each
-  key the agent sends, and the agent reads the screen you see.
+Use this when you want your coding agent to reproduce and fix an issue
+without losing sight of the app. You stay attached; the agent inspects and
+drives the same screen. Take turns providing input to avoid overlapping keys.
 
-EXAMPLE: YOU RUN THE APP
-  Start your agent as a call, check it is ready, then start the app with
-  no switches:
+OPEN YOUR AGENT AND APP
+  This example assumes Codex is installed and configured, and ./my-tui is
+  your built application. Use your own terminal agent and app as needed.
 
-    callbox -dt --name coder codex          # your agent, detached
-    callbox peek coder                      # ready for input?
-    callbox --name app -- ./my-tui          # the app, on your terminal
+    callbox -dt --name coder codex
+    callbox peek coder
+    callbox --name app -- ./my-tui
 
-  Without switches the app has a chat window. Reproduce the bug, then press
-  Ctrl-P Ctrl-T, Tab to choose coder, and say what is wrong. Ctrl-S adds a
-  clean snapshot of the app's screen to the message; Enter sends it; Esc
-  hides chat and leaves the app as it was.
+  Check that coder is ready for a prompt before starting the app. The bare
+  app launch keeps it on your terminal and adds a separate chat window.
+  Messages to app appear in chat; they are not typed into the application.
 
-  The agent reads and drives the app while you watch:
+DESCRIBE AND REPRODUCE THE ISSUE
+  Press Ctrl-P Ctrl-T to open chat, then Tab to choose coder. For example:
+
+    In call app, Down skips a menu item. Reproduce it with peek and send,
+    fix the navigation code, and tell me when to restart and test it.
+
+  Ctrl-S adds a snapshot of the app's screen to the message. Enter sends
+  it; Esc hides chat. The agent can now use its command tool while you watch:
 
     callbox peek app --image bug.png --cursor-ring
     callbox send app -k Down --wait 300
-    callbox msg app "try Down again now"    # shows in your chat window
+    callbox peek app --json
+    callbox msg app "I reproduced it; please quit the app for the rebuild."
 
-  After the agent rebuilds, quit the app and start it again by its name.
-  It comes back as you started it: attached, with its chat window.
+REBUILD AND TEST TOGETHER
+  Quit the app normally so the agent can rebuild it. The app's chat is
+  unavailable while it is stopped; check the agent's own screen instead:
+
+    callbox peek coder
+
+  You can attach to coder to talk directly; Ctrl-P Ctrl-Q detaches again.
+  Once its report confirms the new build is ready, run this in your terminal:
 
     callbox app
 
-EXAMPLE: THE AGENT RUNS THE APP
-  If the agent started the app detached (callbox -dt --name app ./my-tui),
-  join it on your terminal to try it, and leave it running for the agent:
+  An ended call reuses its recorded command and launch mode, so the rebuilt
+  executable opens attached with chat again. Test the reported fix and send
+  your result to coder. This restarts the app; it does not rebuild it.
 
-    callbox attach app                      # Ctrl-P Ctrl-Q detaches
+  When finished, quit the app and release both names:
 
-  A call started with -dt has no chat window, even while you are attached.
+    callbox end coder
+    callbox purge app
+    callbox purge coder
 
-WHAT THE COMMANDS DO
-  callbox --name <name> <program>
-      Runs the app attached to your terminal, at your terminal's size, with
-      a chat window. Messages for it go to the window, never into the app.
-  callbox peek, callbox send, callbox resize
-      Work on the call while you are attached to it; see callbox help tui.
-  callbox <call>
-      Starts an ended call again, with the same command and the same mode.
-  callbox attach <call>
-      Joins a running call. One terminal holds a call at a time: a second
-      attach is refused (exit 3).
+JOIN AN APP YOUR AGENT ALREADY STARTED
+  If the agent launched a detached terminal with -dt, use this instead:
 
-  You and the agent type into the same program: take turns.
+    callbox attach app
 
-SEE ALSO
-  callbox help tui                the agent's side: read, type, wait, check
-  callbox shell -h                the same chat window, on your shell
+  Ctrl-P Ctrl-Q detaches and leaves it running. A -dt call keeps its
+  original message mode, so attaching does not add a chat window. Use your
+  existing conversation with the agent. Only one interactive attach is
+  allowed at a time; peek, send, and resize still work while you are attached.
+
+Next: callbox help tui. Details: callbox help attach, shell, launch.

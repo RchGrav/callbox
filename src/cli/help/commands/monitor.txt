@@ -1,0 +1,23 @@
+usage: callbox monitor [NAME] [--timeout MS]
+
+Follow an outside sender's inbox: print unread messages, then keep printing
+new ones until stopped. This is equivalent to callbox inbox --monitor.
+It follows messages, not a call's screen, output log, or task completion.
+
+Your first callbox msg from outside a call creates an inbox and prints its
+name. With no NAME, monitor uses the inbox for the current harness. Use the
+printed name when monitoring from a different terminal or harness.
+
+  --timeout MS     stop after this many milliseconds (0 = no limit, default)
+  -h, --help       show this page
+
+Each message is flushed to stdout as [HH:MM from NAME] TEXT; text can span
+multiple lines. Run this as a long-running command in your harness's
+background facility and use its tools to wait for output. Ctrl-C stops it.
+
+Reading advances the same unread position used by inbox --wait. Plain
+inbox prints retained history and marks it read. To return after just one
+unread message, use callbox inbox --wait instead.
+
+Exit status: 5 no such inbox, 7 monitoring timed out, 8 inbox expired.
+An inbox is created by sending, not by monitoring. See callbox help messaging.

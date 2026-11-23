@@ -1,70 +1,66 @@
-callbox help service - run a service or a job in the background
+callbox help service - run background services and CI jobs
 
-USE THIS WHEN
-  A server, a worker, a VM, or a CI job must run while something else
-  happens: a test run, your own work, or the time after you log out. A
-  background call needs no unit file, no root, and no daemon. Callbox keeps
-  its output in a log, and you manage it by name.
+Use this when a job or service must keep running while a script tests it or
+you do other work. Background calls capture output without a terminal.
+Choose -dw when you need the program's exit code; plain -d keeps no waiter.
 
-EXAMPLE: RUN A CI JOB AND PASS ON ITS RESULT
+RUN A JOB AND RETURN ITS RESULT
+  In a project with a make test target:
+
     set -e
     callbox -dw --name checks -- make test
-    code=$(callbox wait checks)             # blocks; prints its exit code
+    code=$(callbox wait checks)
     callbox logs checks -n 100
     callbox purge checks
     exit "$code"
 
-EXAMPLE: KEEP A SERVICE UP WHILE CI TESTS RUN
+  -dw returns immediately and records the eventual exit code. wait prints
+  that code; its own successful status is 0, even if the job failed. Capture
+  the printed value to pass the job's result to CI. Plain -d prints -1 here
+  because it cannot record the exit code.
+
+KEEP A SERVICE UP WHILE TESTS RUN
+  This example needs Python 3, curl, a free port 8080, and your test script.
+  Run it from the directory you want to serve.
+
     set -e
     callbox -d --name web -- python3 -u -m http.server 8080
     trap 'callbox end web; callbox purge web' EXIT
     curl --retry 10 --retry-connrefused --retry-delay 1 \
       --fail --silent --show-error http://127.0.0.1:8080/ >/dev/null
+    callbox inspect web
     ./run-tests.sh || { callbox logs web -n 200; exit 1; }
+    callbox logs web -n 20
 
-  The curl is the readiness check: a -d service has no screen to watch.
-  Port 8080 must be free, or curl reaches whatever already listens there.
+  The HTTP request checks readiness; a background service has no screen
+  for wait --match. inspect shows the recorded state and log path. The trap
+  stops the service and removes its record when the script exits. Without
+  purge, the name remains taken. Use distinct names for concurrent CI runs.
 
-WHAT THE COMMANDS DO
-  callbox -dw --name <name> <program>
-      Starts the job in the background and records its exit code.
-  callbox wait <call>
-      Blocks until the call ends and prints its exit code. wait itself
-      exits 0 when that works, so pass the job's code on: exit "$code".
-  callbox -d --name <name> <program>
-      Starts it in the background: its output goes to a log, and no
-      callbox process stays with it. No exit code is kept (wait prints -1).
-  trap '...' EXIT
-      Stops and removes the service however the script ends. Without the
-      purge, the name stays taken and the next run exits 11.
-  callbox logs <call> -n <lines>
-      Prints the newest lines of its log; -f follows it.
+  A successful request alone cannot identify the server: port 8080 must be
+  free before launch. Replace the URL with your service's readiness endpoint
+  and ./run-tests.sh with the tests that exercise it.
 
-CHOOSE HOW IT RUNS
-    -d       in the background, with a log and no terminal: peek, send,
-             and msg refuse it (exit 10)
-    -dw      as -d, and callbox wait prints its exit code
-    -dt      detached on a terminal: wait --match can watch for a line
-             such as "listening", and peek and send work; its log keeps
-             terminal output (\r\n line ends, colors)
-    --restart on-failure
-             start it again when it fails (not with -t)
+CHECK A SERVICE WHILE IT RUNS
+    callbox ps
+    callbox logs web -f
 
-KEEP A SERVICE RUNNING
+  logs -f follows captured output; Ctrl-C stops following. Linux also
+  provides callbox ports web and callbox stats web --no-stream. Reading
+  logs and checking process state do not establish application health.
+
+CHOOSE THE MODE YOU NEED
+  -d       background program, log only; no screen or input, no exit code
+  -dw      background program with an exit code for callbox wait
+  -dt      detached terminal; peek, send, and screen waits work
+
+  For restart-on-failure behavior, use a non-terminal call:
+
     callbox -d --restart on-failure --name api -- ./server --port 8080
-    callbox ps                              # is it running?
-    callbox stats api                       # CPU and memory (Linux)
-    callbox ports api                       # its sockets (Linux)
-    callbox end api                         # stop it
-    callbox api                             # start it again, as before
-    callbox save api                        # keep it through a purge
 
-  To have it running whenever you are, add this to ~/.bashrc. The first
-  shell starts it; later shells leave it running, or start it if it ended:
+  end stops it; callbox api starts the recorded command again. save api
+  protects its record from ordinary purge. Restart policies do not install
+  a boot service; see callbox help launch for policies and retry timing.
 
-    callbox -d --name api ./server >/dev/null 2>&1 ||
-        callbox -d api >/dev/null 2>&1
-
-SEE ALSO
-  callbox help launch             --restart policies and every start flag
-  callbox help scripting          exit codes, stdout and stderr
+Next: callbox help scripting for exit codes and output conventions.
+Details: callbox help launch, wait, logs, inspect, purge.

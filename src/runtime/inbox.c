@@ -4,6 +4,7 @@
 #include "callbox/platform.h"
 #include "callbox/store.h"
 #include "callbox/runtime.h"
+#include "callbox/runtime_internal.h"
 
 /* An agent outside any call (Claude Code in a plain terminal, a script) can
  * message a call, but has no call to type the reply into. It gets a name, made
@@ -53,9 +54,14 @@ int hold_operator_name(const struct hold_store *store, bool create, char *name, 
     char key[128], comm[32] = "";
     if (!harness_key(key, sizeof(key), comm, sizeof(comm)))
         snprintf(key, sizeof(key), "operator uid %ld", (long)getuid());
-    int found = hold_inbox_find(store, key, name, n);
-    if (found <= 0) return found; /* 0: it has one; -1: error */
-    if (!create) return 1;
+    /* One namespace with calls: keep lookup and claim together, so parallel
+     * first sends share an inbox and a launch cannot take its name. Root's
+     * personal store may not exist yet; make it before taking its lock. */
+    char dir[HOLD_PATH_MAX];
+    if (hold_inbox_dir(store, dir, sizeof(dir)) != 0) return -1;
+    int lock_fd = hold_store_lock(store->record_dir);
+    int rc = hold_inbox_find(store, key, name, n), saved;
+    if (rc <= 0 || !create) goto out; /* 0: it has one; -1: error; 1: none */
     /* A generated name, as a call gets: from a hash of the key, stepping on
      * while the name is taken by a call or another inbox. */
     for (unsigned salt = 0; salt < 64; salt++) {
@@ -69,15 +75,24 @@ int hold_operator_name(const struct hold_store *store, bool create, char *name, 
         hold_hex_encode(digest, sizeof(digest), hex, sizeof(hex));
         char cand[ALIAS_MAX_LEN + 1];
         const char *want = salt == 0 && !strncmp(key, "operator uid ", 13) ? "operator" : NULL;
-        if (hold_generate_run_name_for_id(store, hex, want, cand) != 0) continue;
+        if (hold_pick_run_name_locked(store, hex, want, cand) != 0) continue;
         if (hold_inbox_claim(store, cand, key) == 0) {
             if (made) *made = true;
-            return hold_checked_snprintf(name, n, "%s", cand) == 0 ? 0 : -1;
+            rc = hold_checked_snprintf(name, n, "%s", cand) == 0 ? 0 : -1;
+            goto out;
         }
-        if (errno != EEXIST) return -1;
+        if (errno != EEXIST) {
+            rc = -1;
+            goto out;
+        }
     }
     errno = EEXIST;
-    return -1;
+    rc = -1;
+out:
+    saved = errno;
+    hold_store_unlock(lock_fd);
+    errno = saved;
+    return rc;
 }
 
 void hold_operator_first_note(const char *name) {
@@ -86,8 +101,8 @@ void hold_operator_first_note(const char *name) {
             "for 60 minutes:\n"
             "  callbox inbox                    read them\n"
             "  callbox inbox --wait             wait for the next one\n"
-            "  callbox inbox --monitor          print each one as it arrives, until stopped\n"
-            "  callbox msg <call> TEXT --wait-reply   send, then wait for the answer\n",
+            "  callbox monitor                  print each one as it arrives, until stopped\n"
+            "  callbox msg <call> TEXT --wait-reply   wait for the next new message\n",
             name);
 }
 
@@ -113,10 +128,20 @@ static int64_t mono_ms(void) {
     return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
+int hold_parse_inbox_timeout_ms(const char *text, long *value) {
+    if (!text || !*text) return -1;
+    char *end = NULL;
+    errno = 0;
+    long ms = strtol(text, &end, 10);
+    if (end == text || *end || errno == ERANGE || ms < 0) return -1;
+    *value = ms;
+    return 0;
+}
+
 int hold_inbox_wait(const struct hold_store *store, const char *name, off_t from_off, bool forever_each,
                     long timeout_ms) {
     struct print_ctx p = {.stop_after_one = !forever_each};
-    int64_t deadline = timeout_ms > 0 ? mono_ms() + timeout_ms : 0;
+    int64_t started = mono_ms();
     off_t off = from_off;
     for (;;) {
         off_t next = off;
@@ -132,8 +157,11 @@ int hold_inbox_wait(const struct hold_store *store, const char *name, off_t from
             fprintf(stderr, "callbox: the inbox of %s has expired\n", name);
             return 8;
         }
-        if (deadline && mono_ms() >= deadline) {
-            fprintf(stderr, "callbox: no reply for %s within %ld ms\n", name, timeout_ms);
+        if (timeout_ms > 0 && mono_ms() - started >= timeout_ms) {
+            if (forever_each)
+                fprintf(stderr, "callbox: monitoring %s ended after %ld ms\n", name, timeout_ms);
+            else
+                fprintf(stderr, "callbox: no reply for %s within %ld ms\n", name, timeout_ms);
             return 7;
         }
         struct timespec sl = {.tv_sec = 0, .tv_nsec = INBOX_POLL_MS * 1000000L};
@@ -144,37 +172,36 @@ int hold_inbox_wait(const struct hold_store *store, const char *name, off_t from
 /* ---- callbox inbox ---------------------------------------------------------- */
 
 static const char inbox_usage[] = "usage: callbox inbox [<name>] [--wait | --monitor] [--timeout <ms>]\n";
+static const char monitor_usage[] = "usage: callbox monitor [<name>] [--timeout <ms>]\n";
 
-int hold_cmd_inbox_action(const struct hold_invocation *inv, const struct hold_store *user_store, int argc,
-                          char **argv) {
-    (void)inv;
+static int inbox_action_impl(const struct hold_store *user_store, int argc, char **argv, bool monitor_mode) {
+    const char *usage = monitor_mode ? monitor_usage : inbox_usage;
     const char *name_arg = NULL;
-    bool wait = false, monitor = false;
+    bool wait = false, monitor = monitor_mode;
     long timeout_ms = 0;
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
         if (!strcmp(a, "-h") || !strcmp(a, "--help")) return HOLD_RC_SHOW_HELP;
-        if (!strcmp(a, "--wait")) wait = true;
-        else if (!strcmp(a, "--monitor")) monitor = true;
+        if (!monitor_mode && !strcmp(a, "--wait")) wait = true;
+        else if (!monitor_mode && !strcmp(a, "--monitor")) monitor = true;
         else if (!strcmp(a, "--timeout") || !strncmp(a, "--timeout=", 10)) {
             const char *v = a[9] == '=' ? a + 10 : (i + 1 < argc ? argv[++i] : NULL);
-            char *end = NULL;
-            timeout_ms = v ? strtol(v, &end, 10) : -1;
-            if (!v || !*v || *end || timeout_ms < 0) {
-                fprintf(stderr, "callbox: error: --timeout takes milliseconds (0 = never)\n%s", inbox_usage);
+            if (hold_parse_inbox_timeout_ms(v, &timeout_ms) != 0) {
+                fprintf(stderr, "callbox: error: --timeout takes milliseconds (0..%ld; 0 = never)\n%s",
+                        LONG_MAX, usage);
                 return HOLD_EXIT_USAGE;
             }
         } else if (a[0] == '-') {
-            fprintf(stderr, "callbox: error: unknown flag '%s'\n%s", a, inbox_usage);
+            fprintf(stderr, "callbox: error: unknown flag '%s'\n%s", a, usage);
             return HOLD_EXIT_USAGE;
         } else if (!name_arg) name_arg = a;
         else {
-            fputs(inbox_usage, stderr);
+            fputs(usage, stderr);
             return HOLD_EXIT_USAGE;
         }
     }
     if (wait && monitor) {
-        fprintf(stderr, "callbox: error: --wait and --monitor do not go together\n%s", inbox_usage);
+        fprintf(stderr, "callbox: error: --wait and --monitor do not go together\n%s", usage);
         return HOLD_EXIT_USAGE;
     }
     char name[ALIAS_MAX_LEN + 1];
@@ -187,8 +214,8 @@ int hold_cmd_inbox_action(const struct hold_invocation *inv, const struct hold_s
     } else {
         const char *in_call = getenv("CALLBOX_ID");
         if (in_call && *in_call) {
-            fprintf(stderr, "callbox: you run inside a call: messages for you are typed into your prompt, "
-                            "not kept in an inbox\n");
+            fprintf(stderr, "callbox: you run inside a call: messages arrive as program input or chat,\n"
+                            "not in an outside inbox\n");
             return HOLD_EXIT_USAGE;
         }
         int rc = hold_operator_name(user_store, false, name, sizeof(name), NULL);
@@ -207,4 +234,16 @@ int hold_cmd_inbox_action(const struct hold_invocation *inv, const struct hold_s
     if (hold_inbox_read(user_store, name, 0, &end, print_one, &p) < 0) return 1;
     (void)hold_inbox_mark_seen(user_store, name, end);
     return 0;
+}
+
+int hold_cmd_inbox_action(const struct hold_invocation *inv, const struct hold_store *user_store, int argc,
+                          char **argv) {
+    (void)inv;
+    return inbox_action_impl(user_store, argc, argv, false);
+}
+
+int hold_cmd_monitor_action(const struct hold_invocation *inv, const struct hold_store *user_store, int argc,
+                            char **argv) {
+    (void)inv;
+    return inbox_action_impl(user_store, argc, argv, true);
 }

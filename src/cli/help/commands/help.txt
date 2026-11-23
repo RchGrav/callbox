@@ -1,0 +1,21 @@
+usage: callbox help [TOPIC]
+
+Show a help page without starting or changing a call. With no topic, show
+the overview. callbox -h and callbox --help show the same overview.
+
+  tui              troubleshoot a terminal app
+  share            fix a TUI while a person watches and tests
+  agents           start an agent and give it work
+  messaging        exchange messages from any harness
+  service          run background services and CI jobs
+  all              the complete command and option reference
+  launch           every launch option and mode
+  targets          names, IDs, prefixes, and lookup order
+  system           user and root-managed stores
+  scripting        stdout, stderr, and exit codes
+  examples         more application and automation examples
+  features         a closer look at Callbox's capabilities
+  COMMAND          that command's syntax and options
+
+Existing topic names still work: users = share, comms = messaging,
+services = service, run = launch. Command aliases share their command's help.

@@ -230,11 +230,7 @@ int hold_cmd_console_action(const struct hold_invocation *inv,
 }
 
 void hold_usage(void) {
-    /* The banner, then the overview page (src/cli/help/overview.txt, compiled
-     * in). The banner keeps to 80 columns like every help line: a long dev
-     * or packager version puts the description on its own line. */
-    static const char tagline[] = "see, drive, and test TUIs from scripts and AI agents";
-    bool fits = strlen("callbox ") + strlen(HOLD_VERSION) + strlen(" - ") + strlen(tagline) <= 80;
-    printf("callbox %s%s%s\n", HOLD_VERSION, fits ? " - " : "\n", tagline);
+    /* Keep the introduction in the compiled plain-text overview. */
+    printf("callbox %s\n", HOLD_VERSION);
     (void)hold_help_print("overview");
 }

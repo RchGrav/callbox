@@ -1,56 +1,56 @@
-callbox help examples
+callbox help examples - more ways to use Callbox
 
-A lead agent hands a review to a subagent:
+For the main workflows, start with help tui, share, agents, messaging, or
+service. The examples below assume the named programs, files, and project
+scripts already exist. Replace app-specific prompts with your app's output.
 
-    callbox -it --name lead claude              you, in your terminal
-    callbox -dt --name reviewer codex           lead starts a subagent
-    callbox msg reviewer "review src/main.c"    lead gives it work
-    callbox wait reviewer --idle 5000           lead waits for it to finish
-    callbox peek reviewer                       ...or reads its screen
-    callbox end reviewer                        lead ends it when done
-
-Test a terminal app from a script:
-
-    callbox -dt --size 100 30 --name app ./my-tui
+TEST A TERMINAL APP
+    callbox -dt --size 100 30 --name app -- ./my-tui
     callbox wait app --match "Main menu" --timeout 5000
-    callbox send app 2 -k Enter
+    callbox send app 2 --enter
     callbox wait app --match "Saved" --timeout 5000 ||
-        callbox peek app --image fail.png       a picture of what went wrong
+        callbox peek app --image fail.png
     callbox end app
+    callbox purge app
 
-Run a development server while you work:
-
-    callbox -d --name api npm run dev
+RUN A DEVELOPMENT SERVER
+    callbox -d --name api -- npm run dev
     callbox logs api -f
-    callbox end api && callbox api               restart it
+    # Ctrl-C stops following the log.
+    callbox end api
+    callbox api
+    # Later, stop it and release its name.
+    callbox end api
+    callbox purge api
 
-Run a VM in the background and check on it:
-
-    callbox -d --name vm qemu-system-x86_64 -m 4G disk.qcow2
-    callbox stats vm
+KEEP A VM RUNNING
+    callbox -d --name vm -- qemu-system-x86_64 -m 4G disk.qcow2
     callbox logs vm -n 50
+    callbox stats vm --no-stream
     callbox end vm
+    callbox purge vm
 
-Run a long job and collect its exit code:
+  stats reports process-group CPU and memory on Linux. Callbox keeps the
+  process running; VM disks and the VM's own shutdown procedure remain
+  QEMU's responsibility.
 
-    callbox -dw --name backup ./backup.sh
-    code=$(callbox wait backup); echo "backup exited $code"
+COLLECT A LONG JOB'S RESULT
+    callbox -dw --name backup -- ./backup.sh
+    code=$(callbox wait backup)
+    callbox logs backup -n 50
+    callbox purge backup
+    exit "$code"
 
-Test a network service in CI, and keep its log when the tests fail:
-
-    callbox -dt --name api ./server --port 8080
-    trap 'callbox end api; callbox purge api' EXIT
-    callbox wait api --match "listening" --timeout 30000
-    ./run-tests.sh || { callbox logs api -n 200; exit 1; }
-
-Bring up a mesh of QEMU nodes and drive each one's serial console:
-
+DRIVE SEVERAL SERIAL CONSOLES
     for i in 1 2 3 4; do
-        callbox -dt --name node$i qemu-system-x86_64 -nographic -m 512M \
+        callbox -dt --name node$i -- qemu-system-x86_64 -nographic -m 512M \
             -drive file=node$i.qcow2 -nic user,model=virtio
     done
     callbox wait node3 --match "login:" --timeout 120000
-    callbox send node3 root -k Enter
-    callbox send node3 "ip -br addr" -k Enter
-    callbox peek node3                          what it answered
-    callbox attach node3                        or take its console yourself
+    callbox send node3 root --enter
+    callbox peek node3
+    callbox attach node3
+
+  This assumes each disk boots a serial console and accepts that login.
+  Ctrl-P Ctrl-Q detaches. Shut down the guests normally before removing
+  their ended calls with callbox purge.

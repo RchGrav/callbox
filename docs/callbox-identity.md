@@ -63,6 +63,11 @@ callbox wait <target>            # until --idle, --match, --regex, or exit
 callbox resize <target> C R      # change its terminal size (SIGWINCH)
 callbox msg <target> TEXT        # message an agent; --received lists its history
 
+# receive replies outside a call
+callbox inbox [NAME]             # read retained inbox history
+callbox inbox [NAME] --wait      # return one unread message, waiting if needed
+callbox monitor [NAME]           # follow unread and new messages until stopped
+
 # manage calls
 callbox list                     # your ledger: your calls, live and past
 callbox ps                       # the Docker view: running calls
@@ -80,7 +85,7 @@ callbox purge [<target>]         # the removal verb (rm, prune, drop are aliases
 callbox config get|set|unset detach-size [C R]
 ```
 
-A target is a call id, a leading id prefix, or a call name
+A target is a call id, a leading id prefix, a call name, or a unique name prefix
 (`callbox help targets`). Exit codes are listed in `callbox help scripting`.
 
 What the short lines leave out:
@@ -105,20 +110,27 @@ What the short lines leave out:
   call has ended (before or while you were on it), 3 when refused (attached
   elsewhere), and 10 when the call has no console - so a script that
   attached knows what it came back to.
-- **`msg`** reaches a running TTY call. The receiver is told who sent it
+- **`msg`** reaches a running terminal or pipe-input call. The receiver is told who sent it
   (the sender's `$CALLBOX_ID`, shown as that call's name) and how to reply -
   addressing, not proof, since anything running as the user could type the
-  same text with `send`. `msg` prints the delivered message's id on stdout,
+  same text with `send`. Sending to a call prints the delivery ID on stdout,
   and `msg --received [ID]` is the receiving call's message history.
-  Delivery is capped at 20 messages a minute per receiver.
+  Delivery to calls is capped at 20 messages a minute per receiver.
+- **Outside senders** get an inbox name on their first `msg`. Replies to
+  that name are stored, without a delivery ID on stdout. `inbox --wait`
+  returns one unread message; `monitor` (also `inbox --monitor`) follows
+  unread and new messages. `msg --wait-reply` waits for the first new inbox
+  message from any sender, without request correlation. These commands
+  share unread progress. See `callbox help messaging` for the workflow.
 - **`inspect`** prints the stored record as a one-element JSON array, as
   `docker inspect` does: id, name, state, pids, times, argv, mode, and
   `log_path`. `state` is the evaluated state; a differing stored value is
   kept as `recorded_state`. A running call also gets `Stdio`, where fds
   0/1/2 point now.
 - **`ports` and `stats`** read the process group from `/proc`, so your own
-  calls need no root. They work on Linux only; on macOS they report
-  nothing. `ports` lists listening TCP and bound UDP sockets.
+  calls need no root. They work on Linux only; on macOS `ports` lists
+  nothing and `stats` reports zeros. `ports` lists listening TCP and bound
+  UDP sockets.
 - **`end` and `kill`** take several targets, and `--print` prints the
   equivalent `kill` command instead of sending a signal. Each target is
   acted on alone, as `docker stop a b c` does: one that does not resolve is
@@ -127,7 +139,8 @@ What the short lines leave out:
 - **Names** that are callbox verbs (`list`, `logs`, ...) are refused at
   `--name` and `rename`: the verb always wins at the top level, so such a
   call could never be redialed by name. Calls named so before keep their
-  names. A name taken by another call exits 11.
+  names. A name taken by another call or active inbox in the same store
+  exits 11. Outside inboxes are addressed by their complete names.
 - **`save`** has no inverse; `callbox purge <target> --force` removes a
   saved call.
 

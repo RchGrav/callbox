@@ -1,54 +1,71 @@
 # Callbox documentation
 
-Callbox is a daemonless host-process manager and a terminal for scripts and
-agents. `nohup` hangs up gracefully; Callbox keeps the line open. It places
-ordinary commands as durable **calls** — recorded, logged, listable,
-reattachable — and later ends, redials, saves, or purges them. TTY calls
-carry a live headless screen that `callbox peek`, `send`, `wait`, `resize`, and
-`msg` read and drive.
+Callbox runs named programs that you can return to, inspect, and stop.
+Terminal calls have a screen for people and agents to read and control;
+background calls keep output in a log. Agents can exchange messages even
+when their harnesses run outside Callbox.
 
-## The contract
+## Start with a task
 
-- [Callbox — identity](callbox-identity.md): what the tool is,
-  the full verb surface, and what deliberately does not exist.
-- [Docker familiarity contract](docker-familiarity-contract.md): the flags and
-  table appearance borrowed from Docker, exactly.
+New to Callbox? [Install it](install.md), then run the
+[README quickstart](../README.md#try-the-screen-and-input-loop).
 
-## Start here
+| Goal | Terminal help | Guide |
+| --- | --- | --- |
+| Troubleshoot a terminal UI | `callbox help tui` | [Drive a TUI](../src/cli/help/guides/tui.txt) |
+| Debug with your coding agent while using the app yourself | `callbox help share` | [Share a terminal app](../src/cli/help/guides/share.txt) |
+| Launch another agent and check its work | `callbox help agents` | [Work with another agent](../src/cli/help/guides/agents.txt) |
+| Send messages and receive replies across harnesses | `callbox help messaging` | [Exchange messages](../src/cli/help/guides/messaging.txt) |
+| Run a service or CI job, check it, and clean up | `callbox help service` | [Run in the background](../src/cli/help/guides/service.txt) |
 
-| Need | Read |
-| --- | --- |
-| Install Callbox | [Installing Callbox](install.md) |
-| Learn the workflow | [Repository README](../README.md) |
-| Every feature, in depth (screenshots, keys and mouse, waiting, CI, comparisons, FAQ) | [The full guide](guide.md) |
-| Understand how signals stay safe | [Identity](identity.md) |
+## Look up a command
 
-## Technical references
+`callbox help` is the short overview. `callbox help all` prints the complete
+reference, including every command's detailed help and all launch flags.
+Use `callbox COMMAND --help` when you know which command you need.
 
-- [Launcher](launcher.md): fork/session/process-group launch model.
-- [Store](store.md): user-local and root-managed state layout.
-- [Identity](identity.md): validation before signaling.
-- [Console](console.md): PTY-backed calls, attach/detach.
-- [Screens](screen.md): the headless terminal, the control protocol, HSNAP1, messaging.
-- [callbox shell](shell.md): a person's shell with the chat window; the composited display.
-- [Implementation invariants](SPEC.md): the on-disk contract everything relies on.
-- [CI parity](CI-PARITY.md): keeping local checks equal to CI.
+| Topic | Terminal help | Read here |
+| --- | --- | --- |
+| Launch modes and options | `callbox help launch` | [Launch reference](../src/cli/help/reference/launch.txt) |
+| Names, IDs, and prefixes | `callbox help targets` | [Target reference](../src/cli/help/reference/targets.txt) |
+| Exit codes, standard output, and scripts | `callbox help scripting` | [Scripting reference](../src/cli/help/reference/scripting.txt) |
+| User and root-managed calls | `callbox help system` | [System reference](../src/cli/help/reference/system.txt) |
 
-## Source map
+The [in-depth guide](guide.md) explains screenshots, keyboard and mouse
+input, waiting, messaging, and CI, with worked examples. The help pages
+under [src/cli/help](../src/cli/help) are compiled into the binary, so help
+is available without a network connection or separate documentation files.
+
+## Understand the design
+
+- [Callbox identity](callbox-identity.md): the product model and command vocabulary.
+- [Docker familiarity contract](docker-familiarity-contract.md): shared flag and table conventions.
+- [Console](console.md): terminal and pipe-backed calls, attaching, and detaching.
+- [Screens](screen.md): screen state, the control protocol, snapshots, and messages.
+- [Shell and chat](shell.md): the attached shell and its chat window.
+- [Launcher](launcher.md): sessions, process groups, and launch behavior.
+- [Store](store.md): user-local and root-managed records and logs.
+- [Process identity](identity.md): validation before sending signals.
+- [Implementation invariants](SPEC.md): the on-disk contract.
+- [CI parity](CI-PARITY.md): local checks and their CI counterparts.
+- [Help maintenance](help.md): page organization, source evidence, and validation.
+- [Release readiness](release-readiness.md): evidence and limits of the onboarding review.
+
+## Find the implementation
 
 Public headers live under `include/callbox/`; implementation is layered under
-`src/`, lowest first, with `src/main.c` as the entry point.
-`scripts/lint_layers.sh` (run by `make lint` and CI) keeps each layer from
-including the headers of layers that come after it in this list, so
-dependencies point one way only.
+`src/`, with `src/main.c` as the entry point. In dependency order:
 
-- `core/`: file I/O, JSON, SHA-256, id and name validation, small utilities
+- `core/`: file I/O, JSON, SHA-256, IDs, names, and shared utilities
 - `screen/`: the headless terminal, snapshots, and PNG rendering
-- `platform/`: OS facts (boot ID), paths, user lookup, process facts
+- `platform/`: OS, account, path, and process information
 - `store/`: durable call records and layout
-- `term/`: PTY spawn and the PTY-master read pump
-- `console/`: the per-call broker, its control protocol over a Unix socket or
-  FIFOs, attach, and the `callbox shell` chat window and compositor
-- `access/`: invocation context (euid, invoking user)
+- `term/`: terminal spawning and output handling
+- `console/`: the per-call broker, control transport, attach, and chat display
+- `access/`: invocation identity and user context
 - `runtime/`: product commands and lifecycle behavior
-- `cli/`: the command table, flag parsing, help text, and dispatch
+- `cli/`: command definitions, parsing, help, and dispatch
+
+`scripts/lint_layers.sh`, run by `make lint` and CI, checks that a layer
+does not include headers from the layers below it in this list. See
+[Contributing](../CONTRIBUTING.md) for build and test instructions.

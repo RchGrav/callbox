@@ -1,10 +1,10 @@
 /* cli/specs.c — command_specs[] and the flag engine that runs off it.
  *
  * One row per spelled verb: aliases are rows whose canon names the dispatch
- * verb they fold onto. Arity, the per-command flag mask, the usage line, and
- * the help prose all live in the row, so parsing, arity guards, usage text,
- * and help are driven from this one table; no verb parses its own flags by
- * hand. */
+ * verb they fold onto. The table owns arity, shared flags, and error usage.
+ * Commands with value options parse their own arguments. Help prose lives
+ * in src/cli/help; this table selects each command's page and assembles the
+ * complete reference so aliases and less-common commands stay discoverable. */
 #include "callbox/config.h"
 #include <stddef.h>
 #include "callbox/types.h"
@@ -73,6 +73,7 @@ static const struct hold_cli_command_spec command_specs[] = {
      "                   [--wait-reply [--timeout MS]]\n"
      "       callbox msg [<target>] --received [ID]"},
     {"inbox", NULL, 0, -1, SPEC_OWN_HELP, "usage: callbox inbox [<name>] [--wait | --monitor] [--timeout <ms>]"},
+    {"monitor", NULL, 0, -1, SPEC_OWN_HELP, "usage: callbox monitor [NAME] [--timeout MS]"},
     {"resize", NULL, 1, 3, SPEC_OWN_HELP, "usage: callbox resize <target> <cols> <rows>   (or <cols>x<rows>)"},
     {"config", NULL, 0, 4, SPEC_OWN_HELP,
      "usage: callbox config get <setting>\n"
@@ -205,6 +206,38 @@ static const char *const help_renamed[][2] = {
     {"run", "launch"},
 };
 
+/* The complete reference reuses the same pages as per-command help. Only
+ * the introduction is authored separately; command coverage and aliases
+ * come from the parser's table rather than a second hand-maintained list. */
+static int show_all_help(void) {
+    static const char *const reference[] = {
+        "reference/all", "reference/launch", "reference/targets",
+        "reference/system", "reference/scripting"
+    };
+    for (size_t i = 0; i < sizeof(reference) / sizeof(reference[0]); i++) {
+        if (i) putchar('\n');
+        if (hold_help_print(reference[i]) != 0) return HOLD_EXIT_USAGE;
+    }
+    puts("\nCOMMAND REFERENCE\n");
+    for (size_t i = 0; i < sizeof(command_specs) / sizeof(command_specs[0]); i++) {
+        const struct hold_cli_command_spec *spec = &command_specs[i];
+        if (spec->canon) continue;
+        char page[96];
+        if (hold_checked_snprintf(page, sizeof(page), "commands/%s", spec->name) != 0 ||
+            hold_help_print(page) != 0)
+            return HOLD_EXIT_USAGE;
+        putchar('\n');
+    }
+    puts("COMMAND ALIASES");
+    for (size_t i = 0; i < sizeof(command_specs) / sizeof(command_specs[0]); i++)
+        if (command_specs[i].canon)
+            printf("  %-12s %s\n", command_specs[i].name, command_specs[i].canon);
+    puts("\nHELP TOPIC ALIASES");
+    for (size_t i = 0; i < sizeof(help_renamed) / sizeof(help_renamed[0]); i++)
+        printf("  %-12s %s\n", help_renamed[i][0], help_renamed[i][1]);
+    return 0;
+}
+
 /* The help pages are compiled in from src/cli/help (help_text.h): guides,
  * reference, the unlisted extras, and one page per command, which an alias
  * shares with the command it stands for. */
@@ -215,6 +248,7 @@ int hold_show_help(const char *topic) {
     }
     for (size_t i = 0; i < sizeof(help_renamed) / sizeof(help_renamed[0]); i++)
         if (!strcmp(topic, help_renamed[i][0])) topic = help_renamed[i][1];
+    if (!strcmp(topic, "all")) return show_all_help();
     static const char *const sections[] = {"guides/", "reference/", "extra/"};
     char name[96];
     for (size_t i = 0; i < sizeof(sections) / sizeof(sections[0]); i++)

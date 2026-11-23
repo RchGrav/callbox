@@ -7,6 +7,14 @@
 #include "callbox/runtime.h"
 
 void hold_report_session_escapees(const struct hold_run_record *r);
+/* Choose a name shared by calls and operator inboxes, honoring records,
+ * pending launch reservations and live inboxes. The caller holds the store
+ * lock and records its claim before releasing it. */
+int hold_pick_run_name_locked(const struct hold_store *store, const char *id, const char *requested,
+                              char out[ALIAS_MAX_LEN + 1]);
+/* Parse a nonnegative, representable millisecond count: 0 succeeds, -1 is
+ * invalid. Shared by inbox/monitor and msg --wait-reply. */
+int hold_parse_inbox_timeout_ms(const char *text, long *value);
 /* Before attaching: if this process runs inside a call (CALLBOX_ID) that
  * has a console in one of these stores, the attach is nested in that call's
  * terminal; the console layer is told where that call's broker listens. */
