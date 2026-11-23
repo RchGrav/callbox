@@ -180,8 +180,9 @@ receiver confirms it, then `delivered`. If the call is gone or not running,
 its console cannot be reached or does not answer within 90 s, it refuses the
 message (rate limit, too large), or too many sends are in flight, the
 message is marked `NOT DELIVERED` with the reason, and never shown as
-delivered. The `outside callbox` conversation cannot be replied to: there
-is no call to send to.
+delivered. A conversation with a sender outside any call (an operator,
+under the name callbox gave it) is replied to by writing into its inbox, so
+it is marked delivered at once.
 
 **In.** A message for the shell is recorded like any other (so
 `callbox msg --received` works inside the shell) and filed in the chat inbox
@@ -189,7 +190,7 @@ under the call that sent it:
 
 - from a call: that call's conversation, keyed by its id, so it follows a
   rename;
-- sent from outside any call: `outside callbox`.
+- sent from outside any call: the name that sender was given (its inbox).
 
 The
 selected conversation stays selected for follow-ups; `Tab` lists the calls

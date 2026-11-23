@@ -423,3 +423,37 @@ uint64_t hold_current_pid_ns(void) {
     return 0;
 #endif
 }
+
+/* A process's parent and short name (comm: at most 15 characters on Linux,
+ * cut to 15 on macOS too, so names line up the same everywhere). Used to name
+ * the harness that runs a sender outside any call (runtime/inbox.c). */
+int hold_proc_parent_and_name(pid_t pid, pid_t *ppid_out, char *name, size_t n) {
+    if (pid <= 0 || !ppid_out || !name || n == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+#if defined(__APPLE__)
+    struct kinfo_proc kp;
+    if (mac_kinfo_pid(pid, &kp) != 0) return -1;
+    *ppid_out = kp.kp_eproc.e_ppid;
+    snprintf(name, n, "%.15s", kp.kp_proc.p_comm);
+    return 0;
+#else
+    char buf[4096], *f;
+    if (proc_stat_fields(pid, buf, sizeof(buf), &f) != 0) return -1;
+    const char *lp = strchr(buf, '(');
+    const char *rp = strrchr(buf, ')');
+    if (!lp || !rp || rp < lp) {
+        errno = EINVAL;
+        return -1;
+    }
+    snprintf(name, n, "%.*s", (int)(rp - lp - 1 > 15 ? 15 : rp - lp - 1), lp + 1);
+    const char *pp = nth_field(f, 1); /* fields after ")": state, ppid, ... */
+    if (!pp) {
+        errno = EINVAL;
+        return -1;
+    }
+    *ppid_out = (pid_t)strtol(pp, NULL, 10);
+    return 0;
+#endif
+}

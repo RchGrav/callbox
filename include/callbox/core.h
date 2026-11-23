@@ -49,6 +49,9 @@ void hold_sha256_update(struct sha256_ctx *c, const void *data, size_t n);
 void hold_sha256_final(struct sha256_ctx *c, unsigned char out[32]);
 void hold_sha256_update_nul_field(struct sha256_ctx *ctx, const char *s);
 void hold_hex_encode(const unsigned char *bytes, size_t n, char *out, size_t out_n);
+/* Drop control characters from untrusted message text, escape sequences whole;
+ * keeps newlines and tabs. Edits t in place; returns the new length. */
+size_t hold_strip_controls(char *t, size_t n);
 
 /* fs */
 int hold_mkdir_p_mode(const char *dir, mode_t mode);

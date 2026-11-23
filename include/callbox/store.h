@@ -90,4 +90,26 @@ int hold_settings_path(const char *home, char *out, size_t n);
 int hold_settings_get(const char *home, const char *name, char *value, size_t n);
 int hold_settings_put(const char *home, const char *name, const char *value);
 
+/* Operator inboxes (inbox.c): replies for a sender outside any call, under a
+ * generated name, in <store base>/inbox/. A name and its messages expire after
+ * HOLD_INBOX_TTL_S unused. find: 0 and the name already given to key, 1 none
+ * (expired names are removed on the way). claim: give name to key (fails with
+ * EEXIST if it is taken). deliver: append one message (ENOENT: no live inbox).
+ * read: call fn for each live message past from_off, in order; a nonzero
+ * return from fn stops after that message; *end_off is where to read from
+ * next. Returns 1 if fn saw a message, 0 if none, -1 on error. Text handed to
+ * fn has had control characters removed. */
+typedef int (*hold_inbox_fn)(time_t at, const char *from, const char *text, size_t len, void *ctx);
+int hold_inbox_dir(const struct hold_store *s, char *out, size_t n);
+bool hold_inbox_live(const struct hold_store *s, const char *name);
+void hold_inbox_touch(const struct hold_store *s, const char *name);
+int hold_inbox_find(const struct hold_store *s, const char *key, char *name, size_t n);
+int hold_inbox_claim(const struct hold_store *s, const char *name, const char *key);
+int hold_inbox_deliver(const struct hold_store *s, const char *name, const char *from, const char *text, size_t len);
+off_t hold_inbox_size(const struct hold_store *s, const char *name);
+int hold_inbox_read(const struct hold_store *s, const char *name, off_t from_off, off_t *end_off, hold_inbox_fn fn, void *ctx);
+/* How far into the inbox has been shown, and moving that mark forward. */
+off_t hold_inbox_seen(const struct hold_store *s, const char *name);
+int hold_inbox_mark_seen(const struct hold_store *s, const char *name, off_t off);
+
 #endif /* HOLD_STORE_H */

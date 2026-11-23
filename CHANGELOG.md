@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.9.11 - 2026-11-23
+
+### Added
+
+- An agent outside callbox can hold a conversation. Its first `callbox msg`
+  gives it a name, made like a call's from its harness process (Claude Code,
+  say: shells and wrappers are stepped over), and an inbox under that name.
+  The receiver sees an ordinary header and replies with an ordinary
+  `callbox msg <name>`, which lands in the inbox. `callbox inbox` lists the
+  replies; `--wait` returns the next unread one (one that came while nobody
+  waited included); `--monitor` prints each as it arrives, one line each,
+  until stopped. `callbox msg ... --wait-reply` sends, then waits for the
+  first reply. The first message prints these options once. Names and
+  messages expire an hour after their last use. Why: such an agent had no
+  prompt for a reply to be typed into, so it could only shout into a call
+  and never hear back.
+- The chat window files an outside sender's messages under its name, and a
+  reply from the window goes to its inbox (it said "no call to answer").
+
+### Changed
+
+- From outside any call, the header names the sender
+  (`[msg from melodic_silver; reply: ...]`) instead of
+  `[msg from outside callbox]`, which is left only for when no name can be
+  made.
+
 ## 0.9.10 - 2026-11-23
 
 ### Added

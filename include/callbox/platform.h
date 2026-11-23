@@ -23,6 +23,8 @@ const char *hold_boot_id_or_null(char buf[128]);
 enum group_liveness hold_group_session_liveness(pid_t pgid, pid_t sid);
 int hold_count_session_escapees(pid_t sid, pid_t expected_pgid);
 int hold_read_proc_stat_tokens(pid_t pid, char *state_out, uint64_t *starttime_out);
+/* A process's parent pid and short name (at most 15 characters). */
+int hold_proc_parent_and_name(pid_t pid, pid_t *ppid_out, char *name, size_t n);
 int hold_read_proc_exe(pid_t pid, uint64_t *dev, uint64_t *ino);
 bool hold_leader_present(pid_t pid);
 int hold_group_exists(pid_t pgid);

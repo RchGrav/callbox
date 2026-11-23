@@ -36,7 +36,9 @@
 #define CHAT_KEY_LEN (ALIAS_MAX_LEN + ID_STR_LEN + 1)
 #define CHAT_LABEL_LEN (ALIAS_MAX_LEN + ID_STR_LEN + 16)
 
-enum thread_kind { TH_CALL, TH_OUTSIDE };
+/* TH_OPERATOR: an agent outside any call; its replies go to its inbox under
+ * that name (store/inbox.c), not to a broker. */
+enum thread_kind { TH_CALL, TH_OPERATOR, TH_OUTSIDE };
 enum msg_state { MSG_IN, MSG_SENDING, MSG_SENT, MSG_FAILED };
 
 struct chat_msg {
@@ -758,7 +760,7 @@ static void send_message(struct chat *c) {
         start_picking(c);
         return;
     }
-    if (t->kind != TH_CALL) {
+    if (t->kind == TH_OUTSIDE) {
         set_notice(c, "sent from outside callbox: no call to answer");
         return;
     }
@@ -786,6 +788,21 @@ static void send_message(struct chat *c) {
         return;
     }
 
+    if (t->kind == TH_OPERATOR) {
+        /* No broker to ask: the reply goes straight into its inbox. */
+        char self[ALIAS_MAX_LEN + 1];
+        self_label(c, self, sizeof(self));
+        int rc = c->host.store ? hold_inbox_deliver(c->host.store, t->key, self, body ? body : m->text,
+                                                     body ? body_len : m->len)
+                               : -1;
+        free(body);
+        if (rc != 0) fail_msg(c, m, "%s has no inbox now (it expires an hour after its last use)", t->label);
+        else {
+            m->state = MSG_SENT;
+            c->dirty = true;
+        }
+        return;
+    }
     struct hold_run_record r;
     char path[HOLD_PATH_MAX], sock[HOLD_PATH_MAX] = "";
     if (!c->host.store || hold_load_record_by_id(c->host.store->record_dir, t->key, &r, path, sizeof(path)) != 0) {
@@ -896,9 +913,10 @@ void chat_poll_done(struct chat *c, const struct pollfd *pfds, int n, int64_t no
 
 /* ---- incoming ------------------------------------------------------------------------- */
 
-void chat_inbound(struct chat *c, const char *sender_id, const char *label, const char *text, size_t len) {
-    struct chat_thread *t = sender_id && *sender_id ? get_thread(c, TH_CALL, sender_id, label ? label : sender_id)
-                                                    : get_thread(c, TH_OUTSIDE, "", "outside callbox");
+void chat_inbound(struct chat *c, const char *sender_id, const char *label, bool operator, const char *text, size_t len) {
+    struct chat_thread *t = sender_id && *sender_id
+                                ? get_thread(c, operator ? TH_OPERATOR : TH_CALL, sender_id, label ? label : sender_id)
+                                : get_thread(c, TH_OUTSIDE, "", "outside callbox");
     if (!t) return; /* every conversation is in use: callbox msg --received still has it */
     if (len > CHAT_MAX_INBOUND) len = CHAT_MAX_INBOUND;
     while (len > 0 && (text[len - 1] == '\n' || text[len - 1] == '\r' || text[len - 1] == ' ')) len--;
@@ -1604,7 +1622,7 @@ static void draw_window(struct chat *c) {
         }
         if (c->in_len == 0 && i == 0) {
             char hint[CHAT_LABEL_LEN + 32];
-            if (c->current && c->current->kind == TH_CALL) snprintf(hint, sizeof(hint), "message %s", c->current->label);
+            if (c->current && c->current->kind != TH_OUTSIDE) snprintf(hint, sizeof(hint), "message %s", c->current->label);
             else snprintf(hint, sizeof(hint), "Tab: choose who to talk to");
             put(c, row, c->x + 3, text_w, hint, &ST_INPUT_HINT);
         }

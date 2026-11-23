@@ -2206,6 +2206,42 @@ test_bare_launch_runs_on_a_pty() {
   out_has '"tty": true' "$HOLD_BIN" inspect bare1 || return 1
 }
 
+# An agent outside any call messages a call: it gets a name and an inbox;
+# the call sees an ordinary header and replies with an ordinary msg, which
+# --wait-reply, inbox --wait, and inbox read back. The receiving options are
+# printed with the first message only.
+test_operator_inbox_round_trip() {
+  local out rc
+  cat > "$TEST_ROOT/responder.sh" <<EOF
+#!/bin/sh
+echo responder-up
+while IFS= read -r line; do
+  who=\$(printf '%s' "\$line" | sed -n 's/^\[msg from \([a-z0-9_-]*\);.*/\1/p')
+  [ -n "\$who" ] && "$HOLD_REAL_BIN" msg "\$who" "answer to: \${line#*] }" >/dev/null 2>&1
+done
+EOF
+  chmod 755 "$TEST_ROOT/responder.sh"
+  "$HOLD_BIN" -dt --name resp -- "$TEST_ROOT/responder.sh" >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" wait resp --match responder-up --timeout 8000 >/dev/null || { "$HOLD_BIN" peek resp >&2; return 1; }
+  rc=0; out=$(CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg resp "what is 2+2" --wait-reply --timeout 10000 2>"$TEST_ROOT/op.err") || rc=$?
+  [ "$rc" -eq 0 ] || { echo "--wait-reply: rc=$rc" >&2; cat "$TEST_ROOT/op.err" >&2; "$HOLD_BIN" peek resp >&2; return 1; }
+  printf '%s\n' "$out" | grep -q 'from resp\] answer to: what is 2+2' || { echo "no reply: [$out]" >&2; return 1; }
+  grep -q 'outside any call' "$TEST_ROOT/op.err" || { echo "the first message did not say how replies come" >&2; cat "$TEST_ROOT/op.err" >&2; return 1; }
+  CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg resp "again" >/dev/null 2>"$TEST_ROOT/op2.err" || return 1
+  if grep -q 'outside any call' "$TEST_ROOT/op2.err"; then echo "the note repeated" >&2; return 1; fi
+  CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" inbox --wait --timeout 10000 > "$TEST_ROOT/op.wait" || { echo "inbox --wait found no reply" >&2; return 1; }
+  grep -q 'answer to: again' "$TEST_ROOT/op.wait" || { cat "$TEST_ROOT/op.wait" >&2; return 1; }
+  rc=0; CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" inbox --wait --timeout 300 >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 7 ] || { echo "inbox --wait with nothing unread: rc=$rc (want 7)" >&2; return 1; }
+  out=$(CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" inbox) || return 1
+  [ "$(printf '%s\n' "$out" | grep -c 'answer to:')" -eq 2 ] || { echo "inbox lists: [$out]" >&2; return 1; }
+  rc=0; "$HOLD_BIN" inbox no_such_name >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 5 ] || { echo "inbox of an unknown name: rc=$rc (want 5)" >&2; return 1; }
+  rc=0; CALLBOX_ID=x CALLBOX_NAME=resp "$HOLD_BIN" msg resp "x" --wait-reply >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] || { echo "--wait-reply inside a call: rc=$rc (want 1)" >&2; return 1; }
+  "$HOLD_BIN" end resp >/dev/null 2>&1 || true
+}
+
 # User mode at a terminal (a switchless launch): a message for the call goes
 # to its chat window and is never typed into the program; send still types
 # into it; redial brings the program back the same way.
@@ -2234,7 +2270,7 @@ test_it_launch_messages_are_typed() {
   if "$HOLD_BIN" inspect itcall | grep -q '"chat": true'; then echo "-it got the chat window" >&2; return 1; fi
   out_has '"tty": true' "$HOLD_BIN" inspect itcall || return 1
   CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg itcall 'for the program' || return 1
-  "$HOLD_BIN" wait itcall --match 'typed:[msg from outside callbox] for the program' --timeout 5000 >/dev/null ||
+  "$HOLD_BIN" wait itcall --regex 'typed:\[msg from [a-z0-9_-]+; reply: callbox msg [a-z0-9_-]+ "\.\.\."\] for the program' --timeout 5000 >/dev/null ||
     { echo "the message was not typed into the -it program" >&2; "$HOLD_BIN" peek itcall >&2; return 1; }
   "$HOLD_BIN" end itcall idrv >/dev/null 2>&1 || true
 }
@@ -2742,12 +2778,12 @@ test_attach_exit_codes() {
 # msg prints the delivered message's id, which msg --received knows.
 test_msg_prints_its_id() {
   local id
-  "$HOLD_BIN" -dt --name inbox -- cat >/dev/null || return 1
-  "$HOLD_BIN" wait inbox --idle 200 --timeout 3000 >/dev/null 2>&1 || true
-  id=$("$HOLD_BIN" msg inbox "hello inbox") || return 1
+  "$HOLD_BIN" -dt --name mailbox -- cat >/dev/null || return 1
+  "$HOLD_BIN" wait mailbox --idle 200 --timeout 3000 >/dev/null 2>&1 || true
+  id=$("$HOLD_BIN" msg mailbox "hello mailbox") || return 1
   printf '%s' "$id" | grep -Eq '^[0-9a-f]{6}$' || { echo "msg printed [$id]" >&2; return 1; }
-  out_has "id:   $id" "$HOLD_BIN" msg inbox --received "$id" || return 1
-  "$HOLD_BIN" end inbox >/dev/null 2>&1 || true
+  out_has "id:   $id" "$HOLD_BIN" msg mailbox --received "$id" || return 1
+  "$HOLD_BIN" end mailbox >/dev/null 2>&1 || true
 }
 
 # end a b c: the ones that resolve are ended; the worst code is returned.
@@ -4281,7 +4317,8 @@ test_msg_between_calls() {
   # msg prints the id it was delivered under
   mid=$(env -u CALLBOX_ID -u CALLBOX_NAME "$HOLD_BIN" msg lead "$(printf 'two\nlines')") || return 1
   "$HOLD_BIN" wait lead --match 'two lines' --timeout 5000 || { "$HOLD_BIN" peek lead >&2; return 1; }
-  "$HOLD_BIN" peek lead | grep -Eq '^LEAD GOT: \[msg from outside callbox\] two lines$' || { "$HOLD_BIN" peek lead >&2; return 1; }
+  # from outside any call: the sender's own name, which it can be answered by
+  "$HOLD_BIN" peek lead | grep -Eq '^LEAD GOT: \[msg from [a-z0-9_-]+; reply: callbox msg [a-z0-9_-]+ "\.\.\."\] two lines$' || { "$HOLD_BIN" peek lead >&2; return 1; }
   "$HOLD_BIN" msg lead --received "$mid" | grep -qx 'two' || { echo "msg printed no id --received knows" >&2; return 1; }
   "$HOLD_BIN" end lead worker >/dev/null 2>&1 || true
 }
@@ -5621,17 +5658,22 @@ test_shell_chat_failures_and_outside_senders() {
   # Named by its call's name: the agent's conversation, open on screen.
   CALLBOX_ID='' CALLBOX_NAME=agent "$HOLD_BIN" msg work 'by name' || return 1
   "$HOLD_BIN" wait term --match 'by name' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  # From outside any call: a conversation of its own.
-  env -u CALLBOX_ID -u CALLBOX_NAME "$HOLD_BIN" msg work 'from a plain terminal' || return 1
+  # From outside any call: a conversation of its own, under the name the
+  # sender was given, and a reply from the window goes to its inbox.
+  local op
+  env -u CALLBOX_ID -u CALLBOX_NAME "$HOLD_BIN" msg work 'from a plain terminal' >/dev/null 2>"$TEST_ROOT/op.err" || return 1
+  op=$(sed -n 's/^callbox: you are \([a-z0-9_-]*\), outside any call.*/\1/p' "$TEST_ROOT/op.err")
+  [ -n "$op" ] || { echo "the outside sender was not told its name" >&2; cat "$TEST_ROOT/op.err" >&2; return 1; }
   "$HOLD_BIN" wait term --match '+1 new' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
   if out_has 'from a plain terminal' "$HOLD_BIN" peek term; then echo "an outside message joined the agent's conversation" >&2; "$HOLD_BIN" peek term >&2; return 1; fi
   "$HOLD_BIN" send term -k Tab || return 1
-  "$HOLD_BIN" wait term --match 'outside callbox  1 new' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" send term 'outside' -k Enter || return 1
+  "$HOLD_BIN" wait term --match "$op  1 new" --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" send term "$op" -k Enter || return 1
   "$HOLD_BIN" wait term --match 'from a plain terminal' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  out_has 'chat · outside callbox' "$HOLD_BIN" peek term || return 1
+  out_has "chat · $op" "$HOLD_BIN" peek term || return 1
   "$HOLD_BIN" send term 'hello?' -k Enter || return 1
-  "$HOLD_BIN" wait term --match 'no call to answer' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" wait term --match 'delivered' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
+  env -u CALLBOX_ID -u CALLBOX_NAME "$HOLD_BIN" inbox | grep -q 'from work\] hello?' || { echo "the reply did not reach the inbox" >&2; env -u CALLBOX_ID -u CALLBOX_NAME "$HOLD_BIN" inbox >&2; return 1; }
   shell_untouched || return 1
   if out_has 'by name\|plain terminal' "$HOLD_BIN" peek work; then echo "a message was typed into the shell" >&2; return 1; fi
 }
@@ -6018,7 +6060,7 @@ test_shell_chat_draft_editing() {
   start_shell_in_terminal 100 30 /bin/sh || return 1
   env -u CALLBOX_ID -u CALLBOX_NAME "$HOLD_BIN" msg work 'hello' || return 1
   "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --match 'chat · outside callbox' --timeout 8000 || return 1
+  "$HOLD_BIN" wait term --regex 'chat · [a-z0-9_-]+' --timeout 8000 || return 1
   "$HOLD_BIN" send term 'héllo wörld 日本語' || return 1
   "$HOLD_BIN" wait term --match '> héllo wörld 日本語' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" send term -k Backspace -k Backspace -k Home 'X' -k End '!' || return 1
@@ -6396,6 +6438,7 @@ run_test "tail Ctrl-C detaches from tail and does not stop run" test_tail_ctrl_c
 run_test "foreground: Ctrl-C goes to the program, Ctrl-P Ctrl-Q detaches" test_foreground_keys_interrupt_or_detach
 run_test "foreground without a terminal: SIGINT goes to the program" test_foreground_sigint_reaches_the_program
 run_test "a bare launch runs attached on a PTY, streamed to a script" test_bare_launch_runs_on_a_pty
+run_test "an agent outside callbox gets a name, an inbox, and replies" test_operator_inbox_round_trip
 run_test "user mode: messages go to chat, redial comes back in user mode" test_user_mode_messages_go_to_chat
 run_test "-it has no chat window; its messages are typed" test_it_launch_messages_are_typed
 run_test "-i: piped input streams in and ends; no PTY" test_pipe_input_streams_and_ends

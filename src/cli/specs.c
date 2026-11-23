@@ -198,6 +198,24 @@ static const char help_shell[] =
     "\n"
     "Flags: --name, --size, -e, --env-file, --rm, --detach-keys (two keys: the lead\n"
     "key, then the key that detaches) and --chat-key. See callbox help launch.\n";
+static const char help_inbox[] =
+    "Replies for an agent that runs outside any call. The first time such an\n"
+    "agent sends with callbox msg, it gets a name (made like a call's) and an\n"
+    "inbox under it; the receiver sees an ordinary header and answers with\n"
+    "callbox msg <that name>. Messages and the name expire after 60 minutes\n"
+    "unused. With no <name>, the inbox is your own.\n\n"
+    "  callbox inbox                    every message kept, oldest first\n"
+    "  callbox inbox --wait             the next unread message; waits for one\n"
+    "  callbox inbox --monitor          each unread message, then each new one as\n"
+    "                                   it arrives, until stopped (one line each:\n"
+    "                                   run it under a line monitor to be woken)\n"
+    "  --timeout <ms>                   give up after this long (0 = never, the\n"
+    "                                   default)\n\n"
+    "  callbox msg <call> TEXT --wait-reply   send, then wait for the first reply\n\n"
+    "Each message prints as [HH:MM from NAME] TEXT.\n"
+    "Exit status: 0 a message came, 5 no such inbox, 7 timed out, 8 the inbox\n"
+    "expired while waiting.\n";
+
 static const char help_msg[] =
     "Message another call, typically an agent harness running under callbox. The text\n"
     "is typed into its prompt at once and submitted with Enter (an agent harness\n"
@@ -208,12 +226,15 @@ static const char help_msg[] =
     "\n"
     "<you> is your own call, which callbox msg finds in $CALLBOX_ID (set in every\n"
     "call); the receiver shows that call's name as it is now. From outside any\n"
-    "call the header is [msg from outside callbox].\n"
+    "call, you get a name of your own and an inbox for the replies (callbox help\n"
+    "inbox); the first message says how to read them.\n"
     "Multi-line text goes in as one bracketed paste when the program supports it.\n"
     "A callbox shell takes its messages in its chat window, never at its prompt.\n"
     "\n"
 
     "  --no-enter       type without submitting\n"
+    "  --wait-reply     from outside any call: then wait for the first reply and\n"
+    "                   print it (exit 0; 7 if --timeout MS passes first)\n"
     "  --stdin          read the text from stdin\n"
     "  --               the rest is text, even words that start with a dash\n"
     "  --received [ID]  the call's message history: every message delivered to it,\n"
@@ -311,7 +332,10 @@ static const struct hold_cli_command_spec command_specs[] = {
      "                 [--since SEQ] [--exit] [--timeout MS]", NULL, help_wait},
     {"msg", NULL, 1, -1, SPEC_OWN_HELP,
      "usage: callbox msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]\n"
+     "                   [--wait-reply [--timeout MS]]\n"
      "       callbox msg [<target>] --received [ID]", NULL, help_msg},
+    {"inbox", NULL, 0, -1, SPEC_OWN_HELP, "usage: callbox inbox [<name>] [--wait | --monitor] [--timeout <ms>]", NULL,
+     help_inbox},
     {"resize", NULL, 1, 3, SPEC_OWN_HELP, "usage: callbox resize <target> <cols> <rows>   (or <cols>x<rows>)", NULL, help_resize},
     {"config", NULL, 0, 4, SPEC_OWN_HELP,
      "usage: callbox config get <setting>\n"
@@ -629,7 +653,14 @@ static int help_page_all(void) {
            "  resize <call> <cols> <rows> change its terminal size\n"
            "  msg <call> <text>           message it (typed in, or to its chat window)\n"
            "  msg [<call>] --received [<id>]   messages it has been sent\n"
+           "  msg <call> <text> --wait-reply   from outside any call: send, then wait\n"
+           "                              for the reply\n"
+           "  inbox [<name>] [--wait | --monitor]   replies for a sender outside any\n"
+           "                              call (callbox help inbox)\n"
            "\n"
+           );
+    /* two strings: C99 promises only 4095 characters in one */
+    printf(
            "END AND CLEAN UP\n"
            "  end <call>...               TERM, then KILL if it has not ended in 5 s\n"
            "  kill <call>...              KILL now\n"
@@ -1035,8 +1066,11 @@ static int help_page_comms(void) {
            "    callbox attach reviewer                 take its terminal yourself\n"
            "    callbox msg tester \"stop; lead takes over\"\n"
            "\n"
-           "A harness started outside callbox can send messages, but has no call to\n"
-           "receive the answer in. Start it with callbox -it, and it can.\n");
+           "A harness started outside callbox can join in too. Its first message gives\n"
+           "it a name, and replies to that name wait in its inbox for an hour:\n"
+           "\n"
+           "    callbox msg reviewer \"status?\" --wait-reply   send, then wait for it\n"
+           "    callbox inbox --monitor                 print each reply as it comes\n");
     return 0;
 }
 

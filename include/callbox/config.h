@@ -44,6 +44,12 @@
 #define ID_HEX_LEN 64
 #define ID_STR_LEN (ID_HEX_LEN + 1)
 #define ALIAS_MAX_LEN 64
+/* An operator inbox (store/inbox.c) and its messages expire after an hour
+ * unused: long enough for a slow agent to answer, short enough that names
+ * from finished sessions do not pile up. */
+#define HOLD_INBOX_TTL_S 3600
+/* One inbox message, at most: the same order as a msg through a broker. */
+#define HOLD_INBOX_MAX_TEXT 65536
 #define STOP_TIMEOUT_MS 5000
 #define POLL_SLEEP_MS 25
 #ifndef HOLD_VERSION

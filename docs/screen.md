@@ -157,12 +157,23 @@ The sender names its call by `CALLBOX_ID`, else `CALLBOX_NAME`; only an id
 or a call name is taken (anything else could break the header or a `.msgs`
 line). The receiver looks that call up and shows its name as the record has it
 now, so a renamed call is shown, and answered, by its new name. The header,
-on one line before the text, takes one of two forms:
+on one line before the text:
 
 ```text
-[msg from NAME; reply: callbox msg NAME "..."]   from a call
-[msg from outside callbox]                       from no call callbox knows
+[msg from NAME; reply: callbox msg NAME "..."]
 ```
+
+A sender outside any call (`CALLBOX_ID` and `CALLBOX_NAME` unset) is given a
+name of its own, made like a call's from its harness process (the first
+process above callbox that is not a shell or a wrapper), and an inbox under
+that name in `<store>/inbox/`. It sends that name with `op=1`; the receiver
+shows it in the same header, and `callbox msg NAME` from anywhere appends to
+the inbox instead of reaching a broker. `callbox inbox [--wait | --monitor]`
+and `callbox msg ... --wait-reply` read it. A name and its messages expire an
+hour after their last use. Why: an agent that runs outside callbox has no
+prompt for a reply to be typed into, and the receiver should not need to know
+that; one way of replying works for everyone. Only when no name can be made
+does the header fall back to `[msg from outside callbox]`.
 
 The header is addressing, not proof. Only the console's own user can reach
 it (the socket checks the peer's uid; FIFOs are the user's), and anything

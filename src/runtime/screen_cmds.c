@@ -308,7 +308,7 @@ static const char *const send_value_flags[] = {"-k", "--key", "--keys", "--text"
 static const char *const send_optional_flags[] = {NULL};
 static const char *const wait_value_flags[] = {"--timeout", "--match", "--regex", "--since", NULL};
 static const char *const wait_optional_flags[] = {"--idle", NULL};
-static const char *const msg_value_flags[] = {NULL};
+static const char *const msg_value_flags[] = {"--timeout", NULL};
 static const char *const msg_optional_flags[] = {"--received", NULL};
 
 /* ---- peek ----------------------------------------------------------------- */
@@ -980,6 +980,7 @@ int hold_cmd_resize_action(const struct hold_invocation *inv,
 
 static const char msg_usage[] =
     "usage: callbox msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]\n"
+    "                   [--wait-reply [--timeout MS]]\n"
     "       callbox msg [<target>] --received [ID]\n";
 
 /* Agent-to-agent messaging: the text is typed into the target's prompt at
@@ -1082,7 +1083,8 @@ static int msg_action_impl(const struct hold_invocation *inv,
                         int argc,
                         char **argv) {
     const char *token = NULL, *recv_id = NULL;
-    bool submit = true, from_stdin = false, received = false;
+    bool submit = true, from_stdin = false, received = false, wait_reply = false;
+    long reply_timeout_ms = 0;
     struct reqbuf text = {0};
     int rc = 1;
     bool literal = false;
@@ -1098,6 +1100,15 @@ static int msg_action_impl(const struct hold_invocation *inv,
             if (i + 1 < argc && is_msg_id(argv[i + 1])) recv_id = argv[++i];
         } else if (!strcmp(a, "--no-enter")) {
             submit = false;
+        } else if (!strcmp(a, "--wait-reply")) {
+            wait_reply = true;
+        } else if (!strcmp(a, "--timeout")) {
+            char *end = NULL;
+            reply_timeout_ms = i + 1 < argc ? strtol(argv[++i], &end, 10) : -1;
+            if (!end || *end || reply_timeout_ms < 0) {
+                fprintf(stderr, "callbox: error: --timeout takes milliseconds (0 = never)\n%s", msg_usage);
+                goto out;
+            }
         } else if (!strcmp(a, "--stdin")) {
             from_stdin = true;
         } else if (!strcmp(a, "-h") || !strcmp(a, "--help")) {
@@ -1129,6 +1140,37 @@ static int msg_action_impl(const struct hold_invocation *inv,
         fputs(msg_usage, stderr);
         goto out;
     }
+    /* A sender outside any call answers to a name of its own, and replies to
+     * it wait in an inbox (runtime/inbox.c): the receiver sees an ordinary
+     * header either way. */
+    const char *self_id = getenv("CALLBOX_ID"), *self_name = getenv("CALLBOX_NAME");
+    bool outside = !(self_id && *self_id) && !(self_name && *self_name);
+    char opname[ALIAS_MAX_LEN + 1] = "";
+    bool made = false;
+    if (outside && hold_operator_name(user_store, true, opname, sizeof(opname), &made) != 0) opname[0] = '\0';
+    if (wait_reply && !outside) {
+        fprintf(stderr, "callbox: --wait-reply is for a sender outside callbox: inside a call, the reply is typed "
+                        "into your prompt\n");
+        rc = HOLD_EXIT_USAGE;
+        goto out;
+    }
+    if (wait_reply && !opname[0]) {
+        fprintf(stderr, "callbox: cannot make an inbox for the reply: %s\n", strerror(errno));
+        goto out;
+    }
+    off_t reply_from = opname[0] ? hold_inbox_size(user_store, opname) : 0;
+    if (hold_valid_alias(token) && hold_inbox_live(user_store, token)) {
+        /* To an operator: no broker, straight into its inbox. */
+        const char *from = self_name && *self_name ? self_name : opname[0] ? opname : "outside callbox";
+        if (hold_inbox_deliver(user_store, token, from, text.p, text.len) != 0) {
+            fprintf(stderr, "callbox: cannot deliver to %s's inbox: %s\n", token, strerror(errno));
+            goto out;
+        }
+        rc = 0;
+        if (made) hold_operator_first_note(opname);
+        if (wait_reply) rc = hold_inbox_wait(user_store, opname, reply_from, false, reply_timeout_ms);
+        goto out;
+    }
     struct screen_target t;
     rc = open_screen_target(inv, user_store, system_store, "msg", token, &t);
     if (rc != 0) goto out;
@@ -1142,10 +1184,12 @@ static int msg_action_impl(const struct hold_invocation *inv,
         char num[96];
         snprintf(num, sizeof(num), "msg%s", submit ? "" : " submit=0");
         int bad = rb_str(&req, num);
-        /* The exact id names one call; the receiver shows its name. */
+        /* The exact id names one call; the receiver shows its name. An
+         * operator sends its inbox name, marked op=1. */
         const char *from = getenv("CALLBOX_ID");
         if (!from || !*from) from = getenv("CALLBOX_NAME");
         if (from && *from) bad |= rb_str(&req, " from=") | rb_hex(&req, from, strlen(from));
+        else if (opname[0]) bad |= rb_str(&req, " op=1 from=") | rb_hex(&req, opname, strlen(opname));
         bad |= rb_str(&req, "\n") | rb_hex(&req, text.p, text.len);
         unsigned char *reply = NULL;
         size_t len = 0;
@@ -1160,9 +1204,12 @@ static int msg_action_impl(const struct hold_invocation *inv,
                 size_t il = strcspn(idp, " \n");
                 if (il > 0 && il < 16) printf("%.*s\n", (int)il, idp);
             }
+            fflush(stdout);
+            if (made) hold_operator_first_note(opname);
         }
         free(reply);
         free(req.p);
+        if (rc == 0 && wait_reply) rc = hold_inbox_wait(user_store, opname, reply_from, false, reply_timeout_ms);
     }
     close_screen_target(&t);
 out:

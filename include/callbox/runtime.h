@@ -112,6 +112,15 @@ int hold_cmd_wait_action(const struct hold_invocation *inv, const struct hold_st
                          const struct hold_store *system_store, int argc, char **argv);
 int hold_cmd_resize_action(const struct hold_invocation *inv, const struct hold_store *user_store,
                            const struct hold_store *system_store, int argc, char **argv);
+/* Operator inboxes (inbox.c): the name of a sender outside any call (0, or 1
+ * when it has none and create is false), the note printed with its first
+ * message, waiting on an inbox (forever_each: print every message until
+ * stopped; else return after one; exit 0, 7 timed out, 8 the inbox expired),
+ * and callbox inbox. */
+int hold_operator_name(const struct hold_store *store, bool create, char *name, size_t n, bool *made);
+void hold_operator_first_note(const char *name);
+int hold_inbox_wait(const struct hold_store *store, const char *name, off_t from_off, bool forever_each, long timeout_ms);
+int hold_cmd_inbox_action(const struct hold_invocation *inv, const struct hold_store *user_store, int argc, char **argv);
 int hold_cmd_msg_action(const struct hold_invocation *inv, const struct hold_store *user_store,
                         const struct hold_store *system_store, int argc, char **argv);
 /* callbox config get|set|unset <setting> [value] (src/runtime/config_cmd.c). */
