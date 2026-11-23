@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.8 - 2026-11-23
+
+### Changed
+
+- The help, rewritten. `callbox help` lists the commands by use case - run
+  agents and programs yourself, orchestrate agents, drive terminal apps,
+  services and background processes - in usage notation (`<call>`,
+  `[<args>]`), each section pointing at a page with examples. New pages:
+  `callbox help all` (every command and flag), `users`, `agents`,
+  `messaging`, `service` (background processes without systemd, including
+  one idempotent ~/.bashrc line to keep one running), and `examples`
+  (whole workflows). `help you` and `help background` from 0.9.7 are gone:
+  `users` and `service` replace them.
+
 ## 0.9.7 - 2026-11-23
 
 ### Added
