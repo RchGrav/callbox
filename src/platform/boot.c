@@ -42,3 +42,31 @@ bool hold_current_boot_id(char *buf, size_t n) {
 const char *hold_boot_id_or_null(char buf[128]) {
     return hold_current_boot_id(buf, 128) ? buf : NULL;
 }
+
+/* Whether a recorded boot id names the current boot. A Linux boot id is a
+ * kernel UUID: equal or not. A macOS one is synthesized from kern.boottime,
+ * which macOS recomputes when it adjusts the clock (time sync, wake), so the
+ * same boot reads a little differently later: boot times within 60 s are the
+ * same boot. Why: an exact match made every call "stale" a few minutes in
+ * (0.066 s apart on one Mac), and msg, send, end and list then treated live
+ * calls as ended. A real reboot moves the boot time by the whole previous
+ * uptime, far past 60 s. */
+#define HOLD_MACOS_BOOT_SLACK_S 60
+static bool parse_macos_boot(const char *id, long long *sec) {
+    if (strncmp(id, "macos-", 6) != 0) return false;
+    char *end = NULL;
+    errno = 0;
+    long long v = strtoll(id + 6, &end, 10);
+    if (errno != 0 || end == id + 6 || (*end != '.' && *end != '\0')) return false;
+    *sec = v;
+    return true;
+}
+
+bool hold_same_boot(const char *recorded, const char *current) {
+    if (!recorded || !current) return true; /* nothing to compare: no boot check */
+    if (strcmp(recorded, current) == 0) return true;
+    long long a, b;
+    if (parse_macos_boot(recorded, &a) && parse_macos_boot(current, &b))
+        return (a > b ? a - b : b - a) <= HOLD_MACOS_BOOT_SLACK_S;
+    return false;
+}

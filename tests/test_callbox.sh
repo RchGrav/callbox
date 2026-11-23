@@ -2206,6 +2206,23 @@ test_bare_launch_runs_on_a_pty() {
   out_has '"tty": true' "$HOLD_BIN" inspect bare1 || return 1
 }
 
+# macOS boot ids come from kern.boottime, which macOS shifts slightly when it
+# adjusts the clock: the same boot read 0.066 s apart must not make calls
+# stale (msg then refused live calls as ended). A reboot-sized jump does.
+test_macos_boot_time_drift_is_same_boot() {
+  printf 'macos-1791613741.073254\n' > "$HOLD_BOOT_ID_PATH"
+  "$HOLD_BIN" -dt --name drift -- sh -c 'echo drift-ready; while IFS= read -r l; do echo "got:$l"; done' >/dev/null || return 1
+  "$HOLD_BIN" wait drift --match drift-ready --timeout 8000 >/dev/null || return 1
+  printf 'macos-1791613741.139128\n' > "$HOLD_BOOT_ID_PATH"
+  out_has '"state": "running"' "$HOLD_BIN" inspect drift || { echo "clock drift made the call stale" >&2; "$HOLD_BIN" inspect drift | grep state >&2; return 1; }
+  CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg drift 'still here' >/dev/null || { echo "msg refused a live call after clock drift" >&2; return 1; }
+  "$HOLD_BIN" wait drift --regex 'got:.*still here' --timeout 5000 >/dev/null || return 1
+  printf 'macos-1791700000.000000\n' > "$HOLD_BOOT_ID_PATH"
+  out_has '"state": "stale"' "$HOLD_BIN" inspect drift || { echo "a reboot-sized change did not read as stale" >&2; return 1; }
+  printf 'macos-1791613741.073254\n' > "$HOLD_BOOT_ID_PATH"
+  "$HOLD_BIN" end drift >/dev/null 2>&1 || true
+}
+
 # User mode at a terminal (a switchless launch): a message for the call goes
 # to its chat window and is never typed into the program; send still types
 # into it; redial brings the program back the same way.
@@ -6392,6 +6409,7 @@ run_test "tail Ctrl-C detaches from tail and does not stop run" test_tail_ctrl_c
 run_test "foreground: Ctrl-C goes to the program, Ctrl-P Ctrl-Q detaches" test_foreground_keys_interrupt_or_detach
 run_test "foreground without a terminal: SIGINT goes to the program" test_foreground_sigint_reaches_the_program
 run_test "a bare launch runs attached on a PTY, streamed to a script" test_bare_launch_runs_on_a_pty
+run_test "macOS boot-time drift is the same boot; a reboot is not" test_macos_boot_time_drift_is_same_boot
 run_test "user mode: messages go to chat, redial comes back in user mode" test_user_mode_messages_go_to_chat
 run_test "-it has no chat window; its messages are typed" test_it_launch_messages_are_typed
 run_test "-i: piped input streams in and ends; no PTY" test_pipe_input_streams_and_ends

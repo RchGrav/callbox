@@ -36,7 +36,7 @@ static int validate_signal_target(const char *id,
 
     char boot[128];
     const char *boot_id = hold_boot_id_or_null(boot);
-    if (r->has_boot && boot_id && strcmp(r->boot_id, boot_id) != 0)
+    if (r->has_boot && boot_id && !hold_same_boot(r->boot_id, boot_id))
         return refuse_signal(id, "is stale and cannot be signaled");
 
     bool have_identity_token = r->proc_starttime_ticks != 0 || (r->exe_dev != 0 && r->exe_ino != 0);

@@ -19,7 +19,7 @@ A record stores:
 - `pid_ns`: the PID namespace the call was launched in (Linux; 0 means unknown).
 - `liveness_lock`: whether the call's supervisor holds a lock on the log for the call's whole life.
 
-On Linux the probes read `/proc/<pid>/stat`, `/proc/<pid>/exe`, `/proc/self/ns/pid`, and `/proc/sys/kernel/random/boot_id`. macOS has no `/proc`, so start time and executable come from `sysctl(KERN_PROC_PID)` and `proc_pidpath`, and the boot marker is built from `kern.boottime` as `macos-<sec>.<usec>`.
+On Linux the probes read `/proc/<pid>/stat`, `/proc/<pid>/exe`, `/proc/self/ns/pid`, and `/proc/sys/kernel/random/boot_id`. macOS has no `/proc`, so start time and executable come from `sysctl(KERN_PROC_PID)` and `proc_pidpath`, and the boot marker is built from `kern.boottime` as `macos-<sec>.<usec>`. macOS recomputes `kern.boottime` when it adjusts the clock (time sync, wake), so the same boot reads a little differently later: two macOS boot markers within 60 seconds are the same boot. A reboot moves the boot time by the whole previous uptime.
 
 A probe can fail: the process may already be gone, permission may be denied, or the platform may lack the source. A failed probe is recorded as absent, never guessed. Checks use the identity values that exist.
 
@@ -75,7 +75,7 @@ flowchart TD
 
 Notes on the diagram:
 
-- **Boot check:** applies only when the record has a boot ID and the current boot ID can be read.
+- **Boot check:** applies only when the record has a boot ID and the current boot ID can be read. macOS boot IDs match within 60 seconds (see above).
 - **Marked failed:** means `state: failed` or a `launch_error` in the record. Callbox does not write either; the evaluator still honors them.
 - **Leader present:** the leader's stat is readable and it is not a zombie, or `kill(pid, 0)` succeeds or fails with `EPERM`.
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- macOS: calls no longer turn "stale" a few minutes after they start. The
+  boot id there is built from `kern.boottime`, which macOS shifts slightly
+  when it adjusts the clock (one Mac: 0.066 s), and callbox compared it
+  exactly; every call then read as stale, and `msg`, `send`, `end` and
+  `list` treated live calls as ended ("savvy_gecko has ended"). Boot times
+  within 60 seconds are now the same boot. Calls already running read
+  correctly again with this binary, without a restart.
+
 ## 0.9.2 - 2026-11-23
 
 ### Fixed
