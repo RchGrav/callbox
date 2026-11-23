@@ -5945,12 +5945,19 @@ EOF
 # callbox help launch lists the flags for placing a call.
 test_help_pages_fit_and_say_it() {
   local topic wide
-  for topic in "" all users agents messaging service examples features tui comms launch targets system scripting list ps end stop kill tail logs inspect ports stats peek send wait msg resize config shell attach console purge save rename; do
+  for topic in "" all users agents messaging service examples features tui comms launch run targets system scripting list ps end stop kill tail logs inspect ports stats peek send wait msg resize config shell attach console purge prune rm drop save rename; do
     # shellcheck disable=SC2086
     "$HOLD_BIN" help $topic > "$TEST_ROOT/help.out" 2> "$TEST_ROOT/help.err" || { echo "callbox help $topic failed" >&2; return 1; }
     [ -s "$TEST_ROOT/help.out" ] || { echo "callbox help $topic printed nothing" >&2; return 1; }
+    [ ! -s "$TEST_ROOT/help.err" ] || { echo "callbox help $topic wrote to stderr" >&2; cat "$TEST_ROOT/help.err" >&2; return 1; }
     wide=$(awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }' "$TEST_ROOT/help.out")
     [ "$wide" -le 80 ] || { echo "callbox help $topic: a line is $wide columns wide" >&2; return 1; }
+    case "$topic" in
+      users|tui|agents|comms|service)
+        sed -n 's/^    //p' "$TEST_ROOT/help.out" > "$TEST_ROOT/guide-example.sh"
+        bash -n "$TEST_ROOT/guide-example.sh" || { echo "callbox help $topic has broken shell quoting" >&2; return 1; }
+        ;;
+    esac
   done
   for topic in peek send wait msg; do
     "$HOLD_BIN" "$topic" x --bogus > /dev/null 2> "$TEST_ROOT/help.err" || true
@@ -5966,6 +5973,115 @@ test_help_pages_fit_and_say_it() {
   out_has 'log_path' "$HOLD_BIN" help inspect || return 1
   if out_has '--plain' "$HOLD_BIN" help inspect; then echo "help inspect still names --plain" >&2; return 1; fi
   out_has 'usage error' "$HOLD_BIN" help scripting || return 1
+}
+
+# The overview is a short entry point. Every advertised help destination must
+# work, and asking for help must not initialize a store or saved settings.
+test_help_overview_and_navigation() {
+  local topic args lines rc
+  "$HOLD_BIN" help > "$TEST_ROOT/overview.out" 2> "$TEST_ROOT/help.err" || return 1
+  lines=$(wc -l < "$TEST_ROOT/overview.out")
+  [ "$lines" -le 40 ] || { echo "main help has $lines lines; keep it to 40 or fewer" >&2; return 1; }
+  for args in "" --help -h "help --help" "help -h"; do
+    # shellcheck disable=SC2086
+    "$HOLD_BIN" $args > "$TEST_ROOT/help.out" 2> "$TEST_ROOT/help.err" || return 1
+    cmp -s "$TEST_ROOT/overview.out" "$TEST_ROOT/help.out" || { echo "callbox $args differs from callbox help" >&2; return 1; }
+    [ ! -s "$TEST_ROOT/help.err" ] || { cat "$TEST_ROOT/help.err" >&2; return 1; }
+  done
+  for topic in users tui agents comms service all launch; do
+    grep -Fq "callbox help $topic" "$TEST_ROOT/overview.out" || { echo "main help does not point to $topic" >&2; return 1; }
+  done
+  cat "$TEST_ROOT/overview.out" > "$TEST_ROOT/help-pages.out"
+  for topic in users tui agents comms service messaging examples features all; do
+    "$HOLD_BIN" help "$topic" >> "$TEST_ROOT/help-pages.out" || return 1
+  done
+  grep -Eo 'callbox help [[:alpha:]][[:alnum:]_-]*' "$TEST_ROOT/help-pages.out" |
+    sed 's/^callbox help //' | sort -u > "$TEST_ROOT/help-links"
+  [ -s "$TEST_ROOT/help-links" ] || { echo "no help links found" >&2; return 1; }
+  while IFS= read -r topic; do
+    "$HOLD_BIN" help "$topic" > "$TEST_ROOT/help.out" 2> "$TEST_ROOT/help.err" || {
+      echo "broken help link: callbox help $topic" >&2; cat "$TEST_ROOT/help.err" >&2; return 1;
+    }
+    [ ! -s "$TEST_ROOT/help.err" ] || { cat "$TEST_ROOT/help.err" >&2; return 1; }
+  done < "$TEST_ROOT/help-links"
+  rc=0
+  "$HOLD_BIN" help no-such-help-page > "$TEST_ROOT/help.out" 2> "$TEST_ROOT/help.err" || rc=$?
+  [ "$rc" -eq 1 ] && [ ! -s "$TEST_ROOT/help.out" ] || { echo "unknown help topic must fail on stderr only" >&2; return 1; }
+  grep -q 'unknown help topic' "$TEST_ROOT/help.err" || { cat "$TEST_ROOT/help.err" >&2; return 1; }
+  [ ! -e "$ACTOR_HOME/.local/state/callbox" ] && [ ! -e "$ACTOR_HOME/.config/callbox" ] || {
+    echo "help created call state or settings" >&2; return 1;
+  }
+}
+
+# Use the command table and actual flag parsers as the inventory, independently
+# of the help prose. New verbs or flags must remain discoverable in help all;
+# full command pages must survive consolidation, including accepted aliases.
+test_help_reference_covers_commands_and_flags() {
+  local name canon page all flag count signature
+  "$HOLD_BIN" help all > "$TEST_ROOT/reference.out" 2> "$TEST_ROOT/help.err" || return 1
+  [ ! -s "$TEST_ROOT/help.err" ] || { cat "$TEST_ROOT/help.err" >&2; return 1; }
+  all=$(cat "$TEST_ROOT/reference.out")
+  awk -F'"' '
+    /^static const struct hold_cli_command_spec command_specs\[\] = \{/ { in_specs=1; next }
+    in_specs && /^};/ { exit }
+    in_specs && /^[[:space:]]*\{"/ {
+      name=$2; rest=$0
+      sub(/^[[:space:]]*\{"[^"]*",[[:space:]]*/, "", rest)
+      if (substr(rest, 1, 1) == "\"") print name, $4
+      else print name, name
+    }
+  ' src/cli/specs.c > "$TEST_ROOT/help-commands"
+  [ -s "$TEST_ROOT/help-commands" ] || { echo "command inventory was empty" >&2; return 1; }
+  while read -r name canon; do
+    if [ "$name" = help ]; then
+      grep -Fq 'usage: callbox help [topic]' "$TEST_ROOT/reference.out" || { echo "help all omits help syntax" >&2; return 1; }
+      continue
+    fi
+    page=$("$HOLD_BIN" help "$name" 2> "$TEST_ROOT/help.err") || { echo "missing help for $name" >&2; return 1; }
+    [ ! -s "$TEST_ROOT/help.err" ] || { cat "$TEST_ROOT/help.err" >&2; return 1; }
+    case "$all" in
+      *"$page"*) ;;
+      *) echo "help all lost part of the $name command page" >&2; return 1 ;;
+    esac
+    "$HOLD_BIN" "$name" --help > "$TEST_ROOT/command-help.out" 2> "$TEST_ROOT/help.err" || return 1
+    [ "$(cat "$TEST_ROOT/command-help.out")" = "$page" ] || { echo "$name --help and help $name disagree" >&2; return 1; }
+    [ ! -s "$TEST_ROOT/help.err" ] || { cat "$TEST_ROOT/help.err" >&2; return 1; }
+    if [ "$name" != "$canon" ]; then
+      [ "$("$HOLD_BIN" help "$canon")" = "$page" ] || { echo "$name help differs from its alias target $canon" >&2; return 1; }
+      grep -Eq "(^|[^[:alnum:]_-])$name([^[:alnum:]_-]|$)" "$TEST_ROOT/reference.out" || {
+        echo "help all does not name alias $name" >&2; return 1;
+      }
+    fi
+  done < "$TEST_ROOT/help-commands"
+  for name in launch targets system scripting; do
+    page=$("$HOLD_BIN" help "$name") || return 1
+    case "$all" in
+      *"$page"*) ;;
+      *) echo "help all lost part of the $name reference page" >&2; return 1 ;;
+    esac
+  done
+  {
+    sed -n '/^static bool parse_docker_run_flag(/,/^}/p' src/cli/main.c
+    sed -n '/^} run_value_opts\[\] = {/,/^};/p' src/cli/main.c
+    sed -n '/^} owned_flags\[\] = {/,/^};/p' src/cli/specs.c
+    for name in peek send wait msg; do
+      signature="static int ${name}_action_impl("
+      awk -v signature="$signature" 'index($0, signature) == 1 { active=1 } active { print } active && /^}/ { exit }' src/runtime/screen_cmds.c
+    done
+    sed -n '/^int hold_cmd_view_action(/,/^}/p' src/runtime/signal.c
+  } > "$TEST_ROOT/help-parsers"
+  grep -Eo '"--?[[:alnum:]][[:alnum:]-]*"' "$TEST_ROOT/help-parsers" |
+    tr -d '"' > "$TEST_ROOT/help-flags"
+  # Launch switches handled outside the mode and value tables.
+  printf '%s\n' --rm --size --tail -f --console --system --quiet -h --help -V --version >> "$TEST_ROOT/help-flags"
+  sort -u "$TEST_ROOT/help-flags" > "$TEST_ROOT/help-flags-sorted"
+  count=$(wc -l < "$TEST_ROOT/help-flags-sorted")
+  [ "$count" -gt 20 ] || { echo "flag inventory was incomplete: $count flags" >&2; return 1; }
+  while IFS= read -r flag; do
+    grep -Eq -- "(^|[^[:alnum:]_-])${flag}([^[:alnum:]_-]|$)" "$TEST_ROOT/reference.out" || {
+      echo "help all omits accepted flag $flag" >&2; return 1;
+    }
+  done < "$TEST_ROOT/help-flags-sorted"
 }
 
 # The lead key (Ctrl-P) waits for the key after it, however long that takes,
@@ -6476,6 +6592,8 @@ run_test "callbox -it exits as its command did and leaves its last screen" test_
 run_test "however an attach ends, the last screen stays and callbox says how" test_attach_endings_leave_the_last_screen
 run_test "a mistyped command line is a usage error and acts on nothing" test_cli_mistakes_are_usage_errors
 run_test "every help page fits 80 columns; help launch lists the flags" test_help_pages_fit_and_say_it
+run_test "help is concise, navigable, and creates no state" test_help_overview_and_navigation
+run_test "help all covers the command table, aliases, and accepted flags" test_help_reference_covers_commands_and_flags
 run_test "callbox shell: the draft takes any script and whole pastes" test_shell_chat_draft_editing
 run_test "callbox shell: detach, attach and redial keep the shell a shell" test_shell_detach_attach_and_redial
 run_test "a console is free again once its attach client is gone" test_attach_again_after_client_vanishes

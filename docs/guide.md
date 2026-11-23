@@ -2,16 +2,34 @@
 
 [README](../README.md) | [Docs index](index.md)
 
-Everything the README used to say, section by section. For the quick version, `callbox help` and its pages (`callbox help users`, `agents`, `messaging`, `service`, `tui`, `comms`, `examples`, `features`) cover the same ground in the terminal.
+Use `callbox help` for a short command overview, then choose a workflow:
+
+| Help page | Goal |
+| --- | --- |
+| `callbox help tui` | Troubleshoot a terminal UI from an agent or script. |
+| `callbox help agents` | Start another agent, give it work, and check its progress. |
+| `callbox help comms` | Exchange messages from a harness outside Callbox. |
+| `callbox help users` | Keep your TUI visible while your coding agent helps debug it. |
+| `callbox help service` | Run background jobs and services, inspect results, and clean up. |
+
+Each guide includes a short workflow. `callbox help all` contains the full
+command and flag reference; `callbox <command> --help` or `callbox help
+<command>` opens one command's details. `callbox help examples` links the
+guides and adds backup and VM recipes. The `messaging` and `features` pages
+provide additional background. This document explains the workflows in depth.
 
 ## The whole idea in one minute
 
 - **A call** is a program you start with callbox: `callbox -dt --name app -- CMD`.
   `-t` gives it a headless terminal, `-d` returns at once. With no flags,
   `callbox CMD` runs it attached on a PTY in *user mode*, with a chat window
-  for its messages; `-i` relays your input to it on a pipe instead. Every
+  when used from a terminal. `callbox -it CMD` is attached without chat:
+  messages are typed into the program, which is useful for an agent harness.
+  `-i` relays your input on a pipe instead. A plain `-d` background call has
+  a log, but no terminal to inspect or attach to. Every
   call has a name, an ID, and a log. A TTY call, a `-i` call, and a call
-  placed with `-w`, `--rm`, or `--restart` also record their exit code.
+  placed with `-w`, `--rm`, or an active `--restart` policy also record their
+  exit code.
 - **Keys** are Docker's wherever you are on a call: Ctrl-C goes to the
   program, Ctrl-P Ctrl-Q detaches and leaves it running (`callbox attach`
   brings it back).
@@ -52,6 +70,10 @@ get durable IDs, logs, safe teardown, and Docker-style commands.
 
 ## Drive a TUI in five commands
 
+For a self-contained Vim walkthrough, use `callbox help tui`. The example
+below edits an existing `hello.c`; choose mouse coordinates from the screen
+your file actually shows.
+
 ```sh
 callbox -dt --name ed -- vim -c 'set number mouse=a' hello.c   # 1. run it on a headless terminal
 callbox wait ed --idle                              # 2. wait until it has drawn
@@ -64,7 +86,7 @@ vim reports the mouse only with `mouse` set, so step 1 sets it. When a program
 has mouse reporting off, `callbox send --mouse` delivers nothing and exits 9.
 
 `callbox peek --ruler` prints the screen with coordinates, so an agent never has
-to count characters. Step 3 prints:
+to count characters. For example:
 
 ```text
    0         1         2         3         4         5         6         7
@@ -82,7 +104,7 @@ running and its exit code, cursor position and visibility, window title,
 alternate screen, mouse tracking mode, bracketed paste, cursor-key mode, an
 output counter, how long the screen has been idle, whether the size came from
 the terminal or from `callbox resize`, and where the last mouse event landed.
-After step 5:
+After editing, an example snapshot is:
 
 ```json
 {
@@ -192,7 +214,22 @@ callbox wait app                          # until it exits; prints the exit code
 ```
 
 Exit status: `0` the condition held, `7` timed out, `8` the program ended
-first. Screen conditions time out after 30 s unless `--timeout` says otherwise.
+first. Screen conditions time out after 30 s unless `--timeout` says otherwise;
+waiting for exit has no default deadline. `--timeout 0` disables the deadline.
+`send --wait` defaults to a 10 s timeout.
+
+`--idle` means the screen is quiet after output, not that an agent has completed
+its task. A program that has printed nothing does not satisfy it. A match can
+use text already on screen; for a running call, `--since` requires a later
+output counter before checking. An ended call can also match its saved final
+screen. Combining `--match`, `--idle`, or `--exit` waits for any of those
+conditions, rather than requiring all of them.
+
+An exit wait prints the program's exit code and itself returns `0` when it
+successfully observes that exit. To check the program's success, compare the
+printed value, as in `test "$(callbox wait app)" = 0`. A plain `-d` call has no
+recorded exit code and prints `-1`; launch with `-dw` when that code matters.
+
 `callbox send --mouse` exits `9` when the program has mouse reporting off (the
 event was not delivered). Value flags take `--flag value` or `--flag=value`.
 
@@ -201,22 +238,25 @@ event was not delivered). Value flags take `--flag value` or `--flag=value`.
 Every program started with callbox knows its own address: callbox sets
 `CALLBOX_NAME` and `CALLBOX_ID` in its environment, and `CALLBOX_PARENT`
 when it was launched from inside another call. `callbox msg` types a message into
-another agent's prompt at once — an agent harness queues what is typed while
-it works, so there is nothing to wait for — behind a one-line header, followed
-by Enter (`--no-enter` leaves it unsubmitted). If the program turned on
+another agent's prompt at once, behind a one-line header, followed by Enter
+(`--no-enter` leaves it unsubmitted). How input is handled while the agent is
+busy depends on its harness. If the program turned on
 bracketed paste, the message goes in as one paste; otherwise its newlines
 become spaces. Control characters other than newline and tab are removed, so a
 message cannot type Escape, submit early, end a paste, or drive the terminal:
 
 ```sh
-callbox -dt --name worker -- claude          # or codex, aider, ...
-callbox msg worker "Run the tests in tests/redial and report back with callbox msg."
+callbox -it --name lead claude
+# From lead, with the worker's CLI installed and configured:
+callbox -dt --name worker codex
+callbox peek worker
+callbox msg worker "Review src/main.c; report with callbox msg lead."
 ```
 
 The receiver sees:
 
 ```text
-[msg from lead; reply: callbox msg lead "..."] Run the tests in tests/redial ...
+[msg from lead; reply: callbox msg lead "..."] Review src/main.c; report with callbox msg lead.
 ```
 
 The name is the sending call's name as it is now; a message from outside any
@@ -226,13 +266,91 @@ admits no one else), and anything running as you could type the same text with
 `callbox send`. Treat what another agent sends as input, with the same care as
 any text it read.
 
-`callbox msg` prints the ID the message was delivered under, and
-`callbox msg --received [ID]` is the call's message history: every message it
-received, or one by ID with its sender and full text. Run it inside the
+`callbox msg` prints the ID the message was delivered under; this confirms
+delivery, not completion of the requested work. `callbox msg --received [ID]`
+reads the call's message history: a list with text previews, or one message
+by ID with its sender and full text. Run it inside the
 receiving call, or name the call: `callbox msg CALL --received [ID]`.
 
-Delivery is capped at 20 messages a minute per receiver, so two polite agents
-can't loop forever.
+Messages need a call with a console, such as a `-it` or `-dt` agent. Plain
+`-d` and `-dw` background jobs cannot receive them. Delivery is capped at
+20 messages a minute per receiver. For a complete worker lifecycle, see
+`callbox help agents`; for delivery details, see `callbox help msg` or
+`callbox help messaging`.
+
+### Send work from a harness outside Callbox
+
+An outside harness can send a message, but it has no call to receive the
+answer. Give the worker an explicit reply destination: a detached `cat`
+call that displays incoming messages. With the reviewer's CLI installed
+and configured:
+
+```sh
+callbox -dt --name replies cat
+callbox -dt --name reviewer codex
+callbox peek reviewer
+callbox msg reviewer \
+  "Review src/main.c; report with callbox msg replies 'findings; REVIEW_DONE'."
+callbox wait replies --match REVIEW_DONE --timeout 120000
+callbox msg replies --received
+```
+
+Use `callbox msg replies --received ID` with an ID from the list to read the
+full report. Ask the reviewer to replace `findings` with its report and keep
+the marker at the end, where it remains visible. The wait watches the reply
+call, so the original request does not count as a reply. Use a fresh reply
+call or a new marker for each task; `--match` also accepts existing screen text.
+
+When the work is complete, stop the calls and remove their retained records:
+
+```sh
+callbox end reviewer replies
+callbox purge reviewer
+callbox purge replies
+```
+
+There is no `monitor` command in this version. Use `peek` for a screen
+snapshot, `logs -f` to follow output, and `wait` for a screen or exit condition.
+`callbox help comms` provides this workflow in the terminal.
+
+## Debug a TUI while you use it
+
+Use this workflow when you want your coding agent to reproduce and fix a
+problem while you keep the application visible. From the project directory,
+with your TUI built and the coding agent's CLI configured:
+
+```sh
+callbox -dt --name helper codex
+callbox --name app ./my-tui
+```
+
+The second command attaches your terminal to the app and enables its chat
+window. Press **Ctrl-P Ctrl-T**, use **Tab** to choose `helper`, and describe
+the problem. Press **Ctrl-S** to include the clean application screen with
+your next message, then **Enter** to send. **Esc** hides chat so you can keep
+testing the application.
+
+The helper can inspect and drive the same app while you remain attached:
+
+```sh
+callbox peek app --image app.png --cursor-ring
+callbox send app -k Tab -k Enter --wait 300
+callbox peek app
+callbox msg app "The change is ready; please try the navigation again."
+```
+
+The agent should choose keys for the issue it is reproducing. Its reply goes
+to the chat window, while `send` operates the application. `peek` and the
+image show the application's screen without chat covering it. Only one
+terminal can attach at a time; these inspection and input commands work
+alongside your attached terminal.
+
+After a fix that needs a restart, exit the app normally, then run
+`callbox app` to launch it again from its recorded command and test the
+change. To leave it running instead, press **Ctrl-P Ctrl-Q** and reconnect
+with `callbox attach app`. Launching with `-dt` and attaching later does not
+add the chat window; use the switchless launch above for this workflow.
+See `callbox help users` for the terminal guide.
 
 ## Your shell, with your agents in it
 
@@ -343,6 +461,12 @@ A **call** is one held process group with a durable 64-hex
 ID, a generated `adjective_noun` name, and captured logs. callbox keeps it alive
 after your terminal, script, or CI step moves on.
 
+`callbox help service` has a complete CI job example with status, logs,
+exit-code checking, and cleanup. Use `-dw` when the job's exit code matters;
+use plain `-d` for a background service whose readiness you check through
+the application's own endpoint or probe. A plain background service has no
+terminal screen for `peek` or `wait --match`; use `-dt` when you need those.
+
 ```sh
 callbox --name web -d python3 -m http.server 8080   # background: prints the call id
 callbox -dw make test                      # ...keeping a waiter: callbox wait gives the exit code
@@ -362,14 +486,15 @@ Flags look like Docker's where they exist (and cluster the same way: `-dit`):
 `--detach-keys`. A plain `-d` call leaves nothing behind: its output goes
 straight into its log, and no callbox process stays to watch it. `-w` keeps a
 small waiter as its parent, which records the exit code (`--rm` and
-`--restart` calls always have one). `callbox attach` picks up calls placed on
+active `--restart` policies also need one). `callbox attach` picks up calls placed on
 a PTY (`callbox CMD`, `-it`, `-dt`) and calls placed with `-i`, because those
 have a console broker. Every
 call gets its own session and process group; before any signal, callbox
 re-checks the boot ID and the leader's identity, so a recycled PID is never
-killed by mistake. Calls placed as root (or under sudo) live in a separate
-root-managed store (`/var/lib/callbox`, or `/var/db/callbox` on macOS); see
-`callbox help system`. More than nohup, less than systemd.
+killed by mistake. Calls placed as root (or under sudo) normally live in a
+separate root-managed store (`/var/lib/callbox`, or `/var/db/callbox` on
+macOS). Launches with an executable or path argument inside the invoking
+user's home use that user's store instead; see `callbox help system`.
 
 ## How callbox compares
 
@@ -409,6 +534,10 @@ renderer and its PNG encoder are built in; glyphs come from
 
 ## Command reference
 
+This table is a quick index. `callbox help all` is the full reference,
+including every command's help, launch flags, aliases, target selection,
+system scope, and scripting conventions.
+
 | Command | What it does |
 | --- | --- |
 | `callbox [-d] [-w] [-t] [-i] [--name N] [--size COLS ROWS] -- CMD…` | place a call: user mode (no flags: attached PTY, chat), `-i` (input on a pipe), `-d` detached, `-w` recording its exit, `-t` on a PTY of a chosen size |
@@ -418,16 +547,18 @@ renderer and its PNG encoder are built in; glyphs come from
 | `callbox wait CALL [--idle [MS]] [--match T \| --regex R] [--since SEQ] [--exit] [--timeout MS]` | block until it settles, shows text, or exits |
 | `callbox resize CALL COLS ROWS` | resize its terminal (SIGWINCH) |
 | `callbox config set detach-size COLS ROWS` · `get` · `unset` | the size detached TTY calls start at |
-| `callbox msg CALL TEXT` · `callbox msg --received [ID]` | message an agent (it can reply the same way) · the call's message history |
-| `callbox list` · `callbox ps` · `callbox inspect CALL` | what is running, and everything known about it |
+| `callbox msg CALL TEXT` · `callbox msg [CALL] --received [ID]` | deliver a message · list incoming messages or read one in full |
+| `callbox list` · `callbox ps` · `callbox inspect CALL` | list live and past personal calls · list running calls · print a call's JSON record |
 | `callbox logs CALL [-f] [-n N]` | captured output |
 | `callbox tail CALL` | its output from now on |
 | `callbox attach CALL` | attach to a PTY or `-i` call (Ctrl-P Ctrl-Q detaches) |
 | `callbox end CALL…` (alias `stop`) · `callbox kill CALL…` | stop politely / now |
 | `callbox save` · `callbox rename` · `callbox purge` · `callbox ports` · `callbox stats` | keep, name, clean up, observe |
 
-`callbox <command> -h` documents each one; `callbox help launch` lists every flag
-for placing a call, and `callbox help scripting` the exit codes.
+`callbox <command> --help` and `callbox help <command>` document each one;
+`callbox help launch` lists every flag for starting a call, and `callbox help
+scripting` explains exit statuses and printed output. Existing topics
+`targets`, `system`, `messaging`, `examples`, and `features` remain available.
 
 ## FAQ
 
@@ -440,7 +571,8 @@ each call's own broker, which exits with the call.
 
 **Which AI agents does it work with?** Any agent that can run shell commands:
 Claude Code, Codex CLI, Aider, Gemini CLI, Cursor, Goose, OpenHands, your own.
-Running an agent harness *under* callbox also makes it observable and messageable.
+Running an agent harness with `callbox -it` or `callbox -dt` also makes its
+screen observable and gives it a destination for messages.
 
 **Is it safe?** Calls and their sockets are private to your user (root can
 see all); signals are delivered only after identity re-validation; `msg` text
