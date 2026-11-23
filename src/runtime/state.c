@@ -26,7 +26,7 @@ static enum run_state eval_local_state(const struct hold_run_record *r, const ch
     if (r->pgid <= 1 || r->sid <= 0) {
         return STATE_UNKNOWN;
     }
-    if (r->has_boot && current_boot && !hold_same_boot(r->boot_id, current_boot)) {
+    if (r->has_boot && current_boot && strcmp(r->boot_id, current_boot) != 0) {
         return STATE_STALE;
     }
 
@@ -103,7 +103,7 @@ static enum run_state eval_state(const struct hold_run_record *r, const char *cu
     if (!foreign) return eval_local_state(r, current_boot);
     if ((r->has_state && strcmp(r->state, "failed") == 0) || (r->has_launch_error && r->launch_error[0] != '\0'))
         return STATE_FAILED;
-    if (r->has_boot && current_boot && !hold_same_boot(r->boot_id, current_boot)) return STATE_STALE;
+    if (r->has_boot && current_boot && strcmp(r->boot_id, current_boot) != 0) return STATE_STALE;
     if (r->has_exit_code) return STATE_EXITED;
     if (supervisor_holds_log(r)) {
         if (elsewhere) *elsewhere = true;
