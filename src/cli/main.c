@@ -788,18 +788,20 @@ int hold_cli_main(int argc, char **argv) {
          * missing command fails without leaving a record), matching the doc's
          * "call id -> call name -> PATH command" order. Shell snippets go
          * through an explicit `callbox -- sh -c ...`. */
-        /* User mode: a program placed with no session flags (or with -it)
-         * runs attached on a PTY, as `callbox shell` does for a shell - with
-         * the chat window, so messages for the call go there and are never
-         * typed into the program - and redial brings that program back. It
-         * is how a person runs a terminal program; scripts and agents say
-         * what they want with -d, -dt, -dw, or -i. Without a terminal there
-         * is nowhere to draw the window: the program still runs attached on
-         * its PTY. */
+        /* User mode: a program placed with no session flags runs attached on
+         * a PTY, as `callbox shell` does for a shell - with the chat window,
+         * so messages for the call go there and are never typed into the
+         * program (callbox send still types into it) - and redial brings
+         * that program back. It is how a person runs a terminal program.
+         * Any switch says otherwise: -it, -d, -dt, -dw, -i. Why -it is not
+         * user mode: a program run with -it (an agent, say) must get its
+         * messages typed in; the window is only for the switchless launch
+         * and callbox shell. Without a terminal there is nowhere to draw
+         * the window: the program still runs attached on its PTY. */
         bool restart_asked = run.restart_policy[0] && strcmp(run.restart_policy, "no") != 0;
         bool bare = !run.detach && !run.interactive && !run.tty && !console_mode && !run.tail_flag && !run.wait &&
                     !restart_asked;
-        bool user_mode = !shell_mode && (bare || (run.interactive && run.tty && !run.detach));
+        bool user_mode = !shell_mode && bare;
         bool on_terminal = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
         if (user_mode) {
             run.tty = true;

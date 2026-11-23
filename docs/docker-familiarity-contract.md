@@ -43,8 +43,9 @@ A foreground launch prints nothing of its own, only the process output, and
 exits with the held process's exit status, as `docker run` does.
 
 Where callbox differs: with no session flags, a program runs attached on a
-PTY, as `-it` (user mode, with a chat window when there is a terminal; see
-callbox help launch). Docker's bare `docker run` attaches without a TTY;
+PTY in user mode, with a chat window when there is a terminal (see callbox
+help launch); `-it` is attached on a PTY without the window, so messages
+for the program are typed in. Docker's bare `docker run` attaches without a TTY;
 callbox's bare form is how a person runs a terminal program, and scripts and
 agents name what they want (`-d`, `-dt`, `-dw`, `-i`).
 

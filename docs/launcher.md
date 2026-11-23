@@ -9,7 +9,8 @@ Every call runs in its own session, so it outlives the shell that started it eit
 ## Output
 
 - **`-d`:** prints the bare 64-hex call ID on stdout and nothing else.
-- **No session flags, or `-it`:** user mode. The program runs on a PTY and callbox attaches to its screen, with the chat window when stdin and stdout are a terminal (messages for the call go there, never into the program). From a script, the run's output arrives as a stream instead of a screen. callbox exits with the call's exit status.
+- **No session flags:** user mode. The program runs on a PTY and callbox attaches to its screen, with the chat window when stdin and stdout are a terminal (messages for the call go there, never into the program; `callbox send` still types into it). From a script, the run's output arrives as a stream instead of a screen. callbox exits with the call's exit status.
+- **`-it`:** the same attached PTY without the chat window: a message for the call is typed into the program, as for any call. Why: a program run with `-it` (an agent, say) must get its messages; the window is for the switchless launch and `callbox shell`.
 - **`-i` (no `-t`):** the program runs on pipes under a broker that relays your input, so it never holds your terminal. callbox shows its output, edits each typed line itself, and turns Ctrl-D into end of input. Piped input streams in and ends with EOF.
 - **Foreground plain call (`-w`, `--restart`, `--tail <cmd>`):** prints nothing of its own; it follows the log, then exits with the call's exit status.
 - **Keys, in every mode you are on a call:** Ctrl-C goes to the program; Ctrl-P Ctrl-Q detaches and leaves it running, with a note saying how to pick it up again.

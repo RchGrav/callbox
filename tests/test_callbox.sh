@@ -2206,8 +2206,9 @@ test_bare_launch_runs_on_a_pty() {
   out_has '"tty": true' "$HOLD_BIN" inspect bare1 || return 1
 }
 
-# User mode at a terminal: a message for the call goes to its chat window and
-# is never typed into the program; redial brings the program back the same way.
+# User mode at a terminal (a switchless launch): a message for the call goes
+# to its chat window and is never typed into the program; send still types
+# into it; redial brings the program back the same way.
 test_user_mode_messages_go_to_chat() {
   "$HOLD_BIN" -dt --size 120 30 --name udrv -- "$HOLD_REAL_BIN" --name umode -- sh -c 'echo umode-ready; while IFS= read -r l; do echo "typed:$l"; done' >/dev/null || return 1
   "$HOLD_BIN" wait udrv --match umode-ready --timeout 8000 >/dev/null || { "$HOLD_BIN" peek udrv >&2; return 1; }
@@ -2215,11 +2216,27 @@ test_user_mode_messages_go_to_chat() {
   CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg umode 'for the chat' || return 1
   "$HOLD_BIN" wait udrv --match 'chat: 1 new' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek udrv >&2; return 1; }
   if "$HOLD_BIN" peek umode | grep -q 'typed:'; then echo "the message was typed into the program" >&2; return 1; fi
+  "$HOLD_BIN" send umode --text 'by send' -k Enter >/dev/null || return 1
+  "$HOLD_BIN" wait umode --match 'typed:by send' --timeout 5000 >/dev/null || { echo "send did not reach the program" >&2; return 1; }
   "$HOLD_BIN" end umode udrv >/dev/null 2>&1 || true
   "$HOLD_BIN" -dt --size 120 30 --name udrv2 -- "$HOLD_REAL_BIN" umode >/dev/null || return 1
   "$HOLD_BIN" wait udrv2 --match umode-ready --timeout 8000 >/dev/null || { "$HOLD_BIN" peek udrv2 >&2; return 1; }
   out_has '"chat": true' "$HOLD_BIN" inspect umode || { echo "redial did not come back in user mode" >&2; return 1; }
   "$HOLD_BIN" end umode udrv2 >/dev/null 2>&1 || true
+}
+
+# -it is not user mode: attached on a PTY with no chat window, and a message
+# for it is typed into the program, as for any call (an agent run with -it
+# must get its messages).
+test_it_launch_messages_are_typed() {
+  "$HOLD_BIN" -dt --size 120 30 --name idrv -- "$HOLD_REAL_BIN" -it --name itcall -- sh -c 'echo it-ready; while IFS= read -r l; do echo "typed:$l"; done' >/dev/null || return 1
+  "$HOLD_BIN" wait idrv --match it-ready --timeout 8000 >/dev/null || { "$HOLD_BIN" peek idrv >&2; return 1; }
+  if "$HOLD_BIN" inspect itcall | grep -q '"chat": true'; then echo "-it got the chat window" >&2; return 1; fi
+  out_has '"tty": true' "$HOLD_BIN" inspect itcall || return 1
+  CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg itcall 'for the program' || return 1
+  "$HOLD_BIN" wait itcall --match 'typed:[msg from outside callbox] for the program' --timeout 5000 >/dev/null ||
+    { echo "the message was not typed into the -it program" >&2; "$HOLD_BIN" peek itcall >&2; return 1; }
+  "$HOLD_BIN" end itcall idrv >/dev/null 2>&1 || true
 }
 
 # -i: the program's input is a pipe its broker holds, never your terminal.
@@ -6376,6 +6393,7 @@ run_test "foreground: Ctrl-C goes to the program, Ctrl-P Ctrl-Q detaches" test_f
 run_test "foreground without a terminal: SIGINT goes to the program" test_foreground_sigint_reaches_the_program
 run_test "a bare launch runs attached on a PTY, streamed to a script" test_bare_launch_runs_on_a_pty
 run_test "user mode: messages go to chat, redial comes back in user mode" test_user_mode_messages_go_to_chat
+run_test "-it has no chat window; its messages are typed" test_it_launch_messages_are_typed
 run_test "-i: piped input streams in and ends; no PTY" test_pipe_input_streams_and_ends
 run_test "-i at a terminal: line editing, detach, attach, Ctrl-D, Ctrl-C" test_pipe_input_keys_detach_and_attach
 run_test "-di: attach later types into its input" test_pipe_input_detached_then_attached

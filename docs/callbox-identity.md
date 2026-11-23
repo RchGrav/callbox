@@ -46,7 +46,8 @@ a program named `run`.
 
 ```sh
 # place a call (callbox help launch)
-callbox <cmd> [args...]          # user mode (= -it): attached on a PTY, messages to chat
+callbox <cmd> [args...]          # user mode: attached on a PTY, messages to chat
+callbox -it <cmd> [args...]      # attached on a PTY, no chat window: messages typed in
 callbox -i <cmd> [args...]       # attached, your input relayed on a pipe (no PTY)
 callbox -d <cmd> [args...]       # detached: print the 64-hex call id
 callbox -dw <cmd> [args...]      #  ...and keep a waiter that records the exit code

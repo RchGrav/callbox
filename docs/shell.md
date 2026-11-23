@@ -14,8 +14,8 @@ it goes. Both are fixed by the launch command — the record carries
 
 | Launched with | A message (`callbox msg`) for it | Its attach client is sent |
 | --- | --- | --- |
-| `callbox -dt` (any program, shells included) | is typed into the program's prompt at once | the PTY's raw bytes |
-| `callbox shell`, and `callbox <cmd>` / `-it` at a terminal (user mode) | goes to the chat inbox; nothing is ever typed | composed frames |
+| `callbox -dt` or `-it` (any program, shells included) | is typed into the program's prompt at once | the PTY's raw bytes |
+| `callbox shell`, and `callbox <cmd>` (no switches) at a terminal (user mode) | goes to the chat inbox; nothing is ever typed | composed frames |
 
 ```sh
 callbox shell                       # $SHELL, else your login shell, else /bin/sh

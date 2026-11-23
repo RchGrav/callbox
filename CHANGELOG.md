@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `callbox -it <cmd>` no longer opens the chat window: messages for the call
+  are typed into the program, as for `-dt`. The chat window is for the
+  switchless `callbox <cmd>` and `callbox shell` only. Why: 0.9.0 made `-it`
+  user mode, so an agent started with `-it` never saw its messages, and one
+  from outside any call sat in a corner window with nothing to answer it.
+
 ## 0.9.1 - 2026-11-23
 
 ### Changed
