@@ -1,6 +1,7 @@
 # Build output
 /callbox
 /callbox-dynamic
+/callbox-test
 /obj/
 /obj-test/
 

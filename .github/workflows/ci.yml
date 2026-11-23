@@ -18,6 +18,8 @@ jobs:
         cc: [gcc, clang]
     steps:
       - uses: actions/checkout@v5
+      - name: Install the TUIs the screen tests drive
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux whiptail vim-tiny micro
       - name: Build static and dynamic with strict warnings, then run regression suite
         run: |
           make clean
@@ -32,6 +34,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+      - name: Install the TUIs the screen tests drive
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux whiptail vim-tiny micro
       - name: Run the suite as a non-root user that sudo-elevates per test (skips are failures)
         run: bash scripts/test_root.sh
 
@@ -42,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install the TUIs the screen tests drive
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux whiptail vim-tiny
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux whiptail vim-tiny micro
       - name: Build and run the suite as root (it acts as a throwaway user per test)
         run: sudo env -u SUDO_USER -u SUDO_UID -u SUDO_GID -u SUDO_COMMAND PATH="$PATH" make test CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
 
@@ -53,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install the TUIs the screen tests drive
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux whiptail vim-tiny
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux whiptail vim-tiny micro
       - name: Suite with every console forced onto FIFOs
         run: CALLBOX_CONSOLE_TRANSPORT=fifo make test CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
       - name: Suite with Unix sockets denied, as some sandboxes do (the fallback runs for real)

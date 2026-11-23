@@ -41,7 +41,7 @@ trap 'rm -rf "$tmp"' EXIT
 mkdir "$tmp/src"
 # Anchor excludes to repo-root paths: a bare --exclude=callbox would also drop
 # the include/callbox/ header directory.
-tar --exclude='./.git' --exclude='./callbox' --exclude='./callbox-dynamic' \
+tar --exclude='./.git' --exclude='./callbox' --exclude='./callbox-dynamic' --exclude='./callbox-test' \
     --exclude='./obj' --exclude='./obj-test' \
     --exclude='./callbox.dSYM' --exclude='./callbox-dynamic.dSYM' \
     -C "$src" -cf - . | tar -xf - -C "$tmp/src"

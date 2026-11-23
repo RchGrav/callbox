@@ -1,5 +1,64 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A redial keeps the call's saved flag and name. Why: it rewrote the record
+  from the new run alone, so a saved call lost its protection and the next
+  plain `callbox purge` deleted it.
+- Redials of one call at the same moment start it once; the others exit 6
+  (already running). Why: "not running" was checked before launching, with
+  nothing between the two, and 16 simultaneous redials started 16 programs
+  under one id - `end` stopped one and the rest ran on. A redial now holds a
+  lock on the call through its launch and checks after taking it.
+- Purge leaves a call alone while a redial is launching it, and checks a
+  call is still ended under the store lock before removing it. Why: the
+  redial's running record is written at the end of its launch, so a purge
+  in between removed a call that was starting.
+- `--restart` reports a program that cannot start (126/127) and leaves no
+  call, as a launch without it does. Why: the supervisor signalled success
+  before its first worker ran, so `-d --restart` printed an id for a program
+  that never ran.
+- A command found on `PATH` but not executable is "permission denied"
+  (126), not "command not found" (127). Why: 127 sends the person looking
+  for a missing program when the fix is chmod; by path the same file was
+  already 126.
+- `make test` builds and runs `./callbox-test` and no longer replaces
+  `./callbox`. Why: it left a dynamically linked test build where the
+  release binary goes, and a later `make` called it up to date.
+- `end`, `stop` and `kill` of a call that has already ended say
+  `<name> already exited` and exit 0. Why: they said "no call matches" (exit
+  5) about a call `list -a` shows, and `callbox help scripting` promises 0
+  for a known name with nothing to do - a cleanup step failed though its
+  goal already held.
+- `send --wait` says the input was sent when the wait then fails: "input
+  sent; q then ended (exit code 0) before going quiet" (8), "input sent; busy
+  did not go quiet within 1000 ms" (7). Why: it printed `wait`'s own text, so
+  a failed step read as if the keys had not arrived.
+- `msg` removes a whole escape sequence from message text, not only its
+  first byte: `\e[31mRED` arrives as `RED`, not `[31mRED`. Why: the leftover
+  bytes were noise in the receiver's prompt that no sender meant as text.
+- `logs -h` says what `logs` prints - the captured bytes, escape sequences
+  included for a TTY call - instead of "plain text"; `peek -h` lists every
+  image option and the default scale.
+- A refused `attach` always says who has the call (exit 3). Why: when the
+  broker turned it away before the attach's opening bytes reached it, the
+  attach's own write failed first and it either died of SIGPIPE (exit 141) or
+  called the console gone - "has closed its terminal and runs on", about a
+  call that was running and attached elsewhere. It now reads the broker's
+  reason before deciding, and ignores SIGPIPE for the whole attach.
+- Every CI suite lane and the Linux CI container install the programs the
+  screen tests drive (tmux, whiptail, vim, micro), and CONTRIBUTING lists
+  them. Why: no lane installed it, so the micro mouse test
+  (click, double-click, drag select, wheel) skipped everywhere and its SKIP
+  looked like coverage. It passes.
+- README: a curses program (htop) can read `-k Escape` and the next key in
+  the same `send` as Alt-key - send Escape on its own for those; the script
+  claims say what the renderer does (cells drawn one by one: Arabic is not
+  joined); the CI example purges its call on exit, so a second run can use
+  the same name.
+
 ## 0.9.0 - 2026-11-22
 
 The first release of callbox: one static C11 binary for Linux and macOS that

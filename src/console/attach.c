@@ -310,6 +310,25 @@ static int attach_on_output(void *ctx, const char *buf, size_t n) {
     return 0;
 }
 
+/* A broker that turns us away writes its reason and hangs up, and may do so
+ * before our opening bytes reach it - then our write breaks first, with the
+ * reason still unread in the connection. Read what is there (briefly: a
+ * broker that went away gives its end at once) before calling the console
+ * gone. Why: under load a refused attach said "has closed its terminal and
+ * runs on" about a call that was running and attached elsewhere. */
+static void read_parting_words(int sock, struct attach_state *a) {
+    while (a->held_len < sizeof(a->held)) {
+        struct pollfd p = {.fd = sock, .events = POLLIN};
+        if (poll(&p, 1, 200) <= 0) return;
+        char buf[sizeof(a->held)];
+        ssize_t n = read(sock, buf, sizeof(a->held) - a->held_len);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) return;
+        memcpy(a->held + a->held_len, buf, (size_t)n);
+        a->held_len += (size_t)n;
+    }
+}
+
 int hold_run_native_console(const char *sock_path) {
     int writer = -1;
     g_refused = g_gone = g_heard = g_reader_gone = false;
@@ -332,6 +351,13 @@ int hold_run_native_console(const char *sock_path) {
         fprintf(stderr, "callbox: cannot attach: %s\n", strerror(e));
         return e == ENOTSOCK || e == ENAMETOOLONG ? 5 : 3;
     }
+
+    /* A broker that hung up makes our writes fail (EPIPE), never end us:
+     * the opening writes come before the client loop ignores SIGPIPE, and a
+     * refused attach died of it (exit 141) instead of saying why. */
+    struct sigaction ign_pipe = {.sa_handler = SIG_IGN}, old_pipe;
+    sigemptyset(&ign_pipe.sa_mask);
+    bool pipe_ignored = sigaction(SIGPIPE, &ign_pipe, &old_pipe) == 0;
 
     bool interactive = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
     struct hold_term_saved saved;
@@ -403,9 +429,11 @@ int hold_run_native_console(const char *sock_path) {
 
     /* The connection closing just after the detach keys is the detach. */
     if (a.detach_sent_ms && attach_now_ms() - a.detach_sent_ms < 2000) rc = 0;
+    if (g_gone && !a.heard && a.holding) read_parting_words(sock, &a);
     if (a.holding && a.held_len > 0) {
         if (parse_refusal(a.held, a.held_len, &g_refused_by)) {
             g_refused = true;
+            g_gone = false; /* turned away, not over */
             rc = 3;
         } else {
             (void)hold_write_all(STDOUT_FILENO, a.held, a.held_len); /* a program's own (short) output */
@@ -439,6 +467,7 @@ int hold_run_native_console(const char *sock_path) {
     g_heard = a.heard;
     if (a.writer >= 0 && a.writer != sock) close(a.writer);
     close(sock);
+    if (pipe_ignored) sigaction(SIGPIPE, &old_pipe, NULL);
     if (end == HOLD_CLIENT_SIGNALED) hold_term_reraise_stop();
     return rc;
 }

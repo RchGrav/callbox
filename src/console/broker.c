@@ -986,17 +986,59 @@ static int verify_sender(const struct broker *b, pid_t peer, const char *claim, 
 /* A message is text from a sender callbox does not trust: keep newlines and
  * tabs, drop every other control - C0 bytes, DEL, and C1 (U+0080-U+009F) -
  * so it can never type Escape into the receiver, submit early with a carriage
- * return, end a bracketed paste, or drive the terminal (titles, clears). */
+ * return, end a bracketed paste, or drive the terminal (titles, clears).
+ * An escape sequence goes whole, not just its ESC: "\e[31mRED" arrives as
+ * "RED". Why: dropping only the control byte left "[31mRED", noise in the
+ * receiver's prompt that no sender meant as text. */
+
+/* Where the sequence that starts at t[i] ends (one past it). intro is the
+ * byte that selects the kind: ESC's next byte, or the C1 code (0x80-0x9f). */
+static size_t skip_sequence(const char *t, size_t n, size_t i, unsigned char intro) {
+    unsigned char kind = intro >= 0x80 ? (unsigned char)(intro - 0x40) : intro; /* C1 0x9b == ESC [ */
+    if (kind == '[') { /* CSI: parameters and intermediates, then one final byte */
+        while (i < n && (unsigned char)t[i] >= 0x20 && (unsigned char)t[i] <= 0x3f) i++;
+        while (i < n && (unsigned char)t[i] >= 0x20 && (unsigned char)t[i] <= 0x2f) i++;
+        if (i < n && (unsigned char)t[i] >= 0x40 && (unsigned char)t[i] <= 0x7e) i++;
+        return i;
+    }
+    if (kind == ']' || kind == 'P' || kind == 'X' || kind == '^' || kind == '_') {
+        /* OSC, DCS, SOS, PM, APC: a string, to BEL or ST (ESC \ or C1 0x9c) */
+        while (i < n) {
+            unsigned char ch = (unsigned char)t[i];
+            if (ch == 0x07) return i + 1;
+            if (ch == 0x1b && i + 1 < n && t[i + 1] == '\\') return i + 2;
+            if (ch == 0xc2 && i + 1 < n && (unsigned char)t[i + 1] == 0x9c) return i + 2;
+            i++;
+        }
+        return i;
+    }
+    if (intro >= 0x80) return i; /* any other C1 control is one code */
+    /* ESC with intermediates (ESC ( B), then a final byte */
+    while (i < n && (unsigned char)t[i] >= 0x20 && (unsigned char)t[i] <= 0x2f) i++;
+    if (i < n && (unsigned char)t[i] >= 0x30 && (unsigned char)t[i] <= 0x7e) i++;
+    return i;
+}
+
 static size_t strip_controls(char *t, size_t n) {
     size_t o = 0;
-    for (size_t i = 0; i < n; i++) {
+    for (size_t i = 0; i < n;) {
         unsigned char ch = (unsigned char)t[i];
-        if ((ch < 0x20 && ch != '\n' && ch != '\t') || ch == 0x7f) continue;
+        if (ch == 0x1b) {
+            if (i + 1 >= n) break;
+            unsigned char intro = (unsigned char)t[i + 1];
+            /* ESC then a control: the ESC alone, the control on its own turn */
+            i = intro < 0x20 || intro == 0x7f ? i + 1 : skip_sequence(t, n, i + 2, intro);
+            continue;
+        }
         if (ch == 0xc2 && i + 1 < n && (unsigned char)t[i + 1] >= 0x80 && (unsigned char)t[i + 1] <= 0x9f) {
+            i = skip_sequence(t, n, i + 2, (unsigned char)t[i + 1]);
+            continue;
+        }
+        if ((ch < 0x20 && ch != '\n' && ch != '\t') || ch == 0x7f) {
             i++;
             continue;
         }
-        t[o++] = t[i];
+        t[o++] = t[i++];
     }
     return o;
 }

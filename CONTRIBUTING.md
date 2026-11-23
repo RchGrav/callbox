@@ -46,6 +46,12 @@ release, run `make ci` on a Mac and `scripts/linux.sh` as well.
 - `tests/test_version_makefile.sh` and `tests/test_release_installer.sh` cover
   version resolution and `install.sh`.
 - `make test` runs all of the above.
+- Some suite tests drive real terminal programs: tmux, whiptail, vim, micro,
+  and python3 (Debian/Ubuntu: `apt install tmux whiptail vim-tiny micro
+  python3`). A test whose program is missing reports SKIP. Install them all,
+  because a skipped test checks nothing; CI's screen-test lanes install the
+  same list, and so does the Linux CI container
+  (`docker/Dockerfile.linux-ci`).
 
 Conventions:
 

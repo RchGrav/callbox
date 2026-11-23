@@ -108,6 +108,66 @@ void hold_abort_run_reservation(const struct hold_store *store, const char *id) 
     }
 }
 
+int hold_claim_existing_run(const struct hold_store *store, const char *id) {
+    char path[HOLD_PATH_MAX];
+    if (!store || !id || !hold_valid_id(id)) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (hold_checked_snprintf(path, sizeof(path), "%s/.%s.reserve", store->record_dir, id) != 0) return -1;
+    for (;;) {
+        int fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+        if (fd < 0) return -1;
+        while (flock(fd, LOCK_EX) != 0) {
+            if (errno != EINTR) {
+                int e = errno;
+                close(fd);
+                errno = e;
+                return -1;
+            }
+        }
+        /* The holder before us committed (its record write unlinked this
+         * file) or aborted: our lock is on a file no longer at the path.
+         * Claim the one that is there now. */
+        struct stat held, now;
+        if (fstat(fd, &held) == 0 && lstat(path, &now) == 0 &&
+            held.st_dev == now.st_dev && held.st_ino == now.st_ino) return fd;
+        close(fd);
+    }
+}
+
+void hold_release_existing_run(const struct hold_store *store, const char *id, int fd) {
+    if (fd < 0) return;
+    int saved = errno;
+    char path[HOLD_PATH_MAX];
+    struct stat held, now;
+    /* Unlink only our own file: a committed launch's reserve is already gone,
+     * and the path may by now be the next redial's claim. */
+    if (store && id && hold_checked_snprintf(path, sizeof(path), "%s/.%s.reserve", store->record_dir, id) == 0 &&
+        fstat(fd, &held) == 0 && lstat(path, &now) == 0 &&
+        held.st_dev == now.st_dev && held.st_ino == now.st_ino) {
+        unlink(path);
+    }
+    close(fd); /* releases the flock: a waiting redial goes on */
+    errno = saved;
+}
+
+bool hold_existing_run_claimed(const struct hold_store *store, const char *id) {
+    char path[HOLD_PATH_MAX];
+    if (!store || !id || hold_checked_snprintf(path, sizeof(path), "%s/.%s.reserve", store->record_dir, id) != 0)
+        return false;
+    int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0) return false;
+    /* never waits: the redial takes the store lock we hold before it lets go */
+    if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        bool held = errno == EWOULDBLOCK;
+        close(fd);
+        return held;
+    }
+    hold_release_existing_run(store, id, fd);
+    return false;
+}
+
 void hold_free_run_record(struct hold_run_record *r) {
     if (!r) return;
     hold_free_argv_alloc(r->recipe.argv, r->recipe.argc);

@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-HOLD_REAL_BIN="${HOLD_BIN:-./callbox}"
+# The test build (make callbox-test, or make test), never the release
+# binary: only a -DHOLD_TESTING build honors HOLD_TEST_SYSTEM_STATE_DIR, so
+# the sudo tests would otherwise write into the machine's real system store.
+HOLD_REAL_BIN="${HOLD_BIN:-./callbox-test}"
 case "$HOLD_REAL_BIN" in
   /*) ;;
   *) HOLD_REAL_BIN="$PWD/$HOLD_REAL_BIN" ;;
@@ -2553,6 +2556,122 @@ test_cannot_start_exits_127_and_126() {
   if "$HOLD_BIN" list -a | grep -q 'no-such-command\|not-exec'; then echo "a failed start left a record" >&2; return 1; fi
 }
 
+# The same file is "permission denied" (126) by bare name on PATH as by its
+# path, and under --restart, -d too: the first worker's exec is the launch.
+test_cannot_start_126_by_path_and_restart() {
+  local rc out
+  mkdir -p "$TEST_ROOT/pbin"
+  printf 'echo hi\n' > "$TEST_ROOT/pbin/not-exec-xyz"; chmod 644 "$TEST_ROOT/pbin/not-exec-xyz"
+  rc=0; PATH="$TEST_ROOT/pbin:$PATH" "$HOLD_BIN" -d not-exec-xyz >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 126 ] || { echo "PATH, not executable: rc=$rc (want 126)" >&2; return 1; }
+  rc=0; "$HOLD_BIN" --restart on-failure:0 "$TEST_ROOT/pbin/not-exec-xyz" </dev/null >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 126 ] || { echo "--restart foreground: rc=$rc (want 126)" >&2; return 1; }
+  rc=0; out=$("$HOLD_BIN" -d --restart on-failure:0 "$TEST_ROOT/pbin/not-exec-xyz" 2>/dev/null) || rc=$?
+  [ "$rc" -eq 126 ] && [ -z "$out" ] || { echo "--restart -d: rc=$rc out=[$out] (want 126, no id)" >&2; return 1; }
+  rc=0; "$HOLD_BIN" -d --restart always no-such-command-xyz >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 127 ] || { echo "--restart, not found: rc=$rc (want 127)" >&2; return 1; }
+  if "$HOLD_BIN" list -a | grep -q 'not-exec\|no-such-command'; then echo "a failed start left a record" >&2; return 1; fi
+}
+
+# Until callbox reports the named call ended (its observed state).
+name_ended_soon() {
+  local i
+  for i in $(seq 1 100); do
+    out_has '^  "state": "exited"' "$HOLD_BIN" inspect "$1" && return 0
+    sleep 0.05
+  done
+  echo "the call $1 did not end" >&2
+  return 1
+}
+
+# What the person set on a call (save, name) is the call's: a redial keeps it,
+# so a plain purge still leaves a saved call alone.
+test_redial_keeps_saved_and_name() {
+  "$HOLD_BIN" -d --name keepme -- sh -c 'exit 0' >/dev/null || return 1
+  name_ended_soon keepme || return 1
+  "$HOLD_BIN" save keepme 2>/dev/null || return 1
+  "$HOLD_BIN" -d keepme >/dev/null || return 1
+  name_ended_soon keepme || return 1
+  out_has '"saved": true' "$HOLD_BIN" inspect keepme || { echo "redial dropped saved" >&2; "$HOLD_BIN" inspect keepme >&2; return 1; }
+  "$HOLD_BIN" purge >/dev/null 2>&1 || true
+  out_has keepme "$HOLD_BIN" list -a || { echo "plain purge removed a saved, redialed call" >&2; return 1; }
+}
+
+# A burst of redials of one ended call starts it once: the rest find it
+# running (6), and ending it leaves nothing running.
+test_concurrent_redials_start_once() {
+  local i starts rc
+  "$HOLD_BIN" -d --name burst -- sh -c 'echo x >> "$0"; sleep 30' "$TEST_ROOT/starts" >/dev/null || return 1
+  "$HOLD_BIN" end burst >/dev/null 2>&1 || return 1
+  : > "$TEST_ROOT/starts"
+  for i in $(seq 1 16); do
+    ( rc=0; "$HOLD_BIN" -d burst >/dev/null 2>&1 || rc=$?; echo "$rc" > "$TEST_ROOT/burst.$i" ) &
+  done
+  wait
+  sleep 0.5
+  starts=$(wc -l < "$TEST_ROOT/starts")
+  [ "$starts" -eq 1 ] || { echo "16 redials started $starts programs" >&2; cat "$TEST_ROOT"/burst.* >&2; return 1; }
+  [ "$(cat "$TEST_ROOT"/burst.* | grep -c '^0$')" -eq 1 ] || { echo "want one success:" >&2; cat "$TEST_ROOT"/burst.* >&2; return 1; }
+  [ "$(cat "$TEST_ROOT"/burst.* | grep -c '^6$')" -eq 15 ] || { echo "want fifteen 6s:" >&2; cat "$TEST_ROOT"/burst.* >&2; return 1; }
+  "$HOLD_BIN" end burst >/dev/null || return 1
+  name_ended_soon burst || return 1
+  if ls -a "$HOME/.local/state/callbox/" | grep -q '\.reserve$'; then echo "a redial claim was left behind" >&2; return 1; fi
+}
+
+# While a redial is launching a call (it holds the call's claim), purge
+# leaves the call alone; a dead launcher's unheld claim goes with the record.
+test_purge_stands_back_from_a_redial() {
+  local id store rc
+  command -v flock >/dev/null 2>&1 || skip "no flock(1) to hold a redial's claim"
+  store="$HOME/.local/state/callbox"
+  id=$("$HOLD_BIN" -d --name inflight -- sh -c 'exit 0') || return 1
+  name_ended_soon inflight || return 1
+  flock "$store/.$id.reserve" sleep 3 &
+  sleep 0.3
+  "$HOLD_BIN" purge >/dev/null 2>&1 || true
+  out_has inflight "$HOLD_BIN" list -a || { echo "a sweep purged a call mid-redial" >&2; return 1; }
+  rc=0; "$HOLD_BIN" purge inflight >/dev/null 2>"$TEST_ROOT/inflight.err" || rc=$?
+  [ "$rc" -eq 2 ] || { echo "targeted purge mid-redial: rc=$rc (want 2)" >&2; cat "$TEST_ROOT/inflight.err" >&2; return 1; }
+  grep -q 'being redialed' "$TEST_ROOT/inflight.err" || { cat "$TEST_ROOT/inflight.err" >&2; return 1; }
+  wait
+  # the claim is no longer held: litter, removed with the record
+  [ -e "$store/.$id.reserve" ] || : > "$store/.$id.reserve"
+  "$HOLD_BIN" purge inflight >/dev/null || return 1
+  [ ! -e "$store/.$id.reserve" ] || { echo "purge left the dead claim behind" >&2; return 1; }
+}
+
+# end/stop/kill on a known call that has already ended: nothing to do, which
+# is success (help scripting: "known name with nothing to do"), and it says so.
+test_end_on_ended_call_is_success() {
+  local rc
+  "$HOLD_BIN" -d --name done1 -- true >/dev/null || return 1
+  name_ended_soon done1 || return 1
+  for verb in end stop kill; do
+    rc=0; "$HOLD_BIN" "$verb" done1 >/dev/null 2>"$TEST_ROOT/ended.err" || rc=$?
+    [ "$rc" -eq 0 ] || { echo "$verb on an ended call: rc=$rc (want 0)" >&2; cat "$TEST_ROOT/ended.err" >&2; return 1; }
+    grep -q 'done1 already exited' "$TEST_ROOT/ended.err" || { cat "$TEST_ROOT/ended.err" >&2; return 1; }
+    ! grep -q 'nothing to' "$TEST_ROOT/ended.err" || { cat "$TEST_ROOT/ended.err" >&2; return 1; }
+  done
+  rc=0; "$HOLD_BIN" end no-such-call-xyz >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 5 ] || { echo "end of an unknown name: rc=$rc (want 5)" >&2; return 1; }
+}
+
+# send --wait says the input was sent when the program then ends or never goes
+# quiet, so a failed step is not read as undelivered keys.
+test_send_wait_says_input_was_sent() {
+  local rc
+  "$HOLD_BIN" -dt --name sq -- sh -c 'echo sq-ready; read x' >/dev/null || return 1
+  "$HOLD_BIN" wait sq --match sq-ready --timeout 5000 >/dev/null || return 1
+  rc=0; "$HOLD_BIN" send sq -k Enter --wait 300 2>"$TEST_ROOT/sq.err" || rc=$?
+  [ "$rc" -eq 8 ] || { echo "send --wait into an ending program: rc=$rc (want 8)" >&2; cat "$TEST_ROOT/sq.err" >&2; return 1; }
+  grep -q 'input sent; sq then ended' "$TEST_ROOT/sq.err" || { cat "$TEST_ROOT/sq.err" >&2; return 1; }
+  "$HOLD_BIN" -dt --name busy -- sh -c 'while :; do date +%N; sleep 0.05; done' >/dev/null || return 1
+  rc=0; "$HOLD_BIN" send busy x --wait 300 --timeout 1000 2>"$TEST_ROOT/busy.err" || rc=$?
+  [ "$rc" -eq 7 ] || { echo "send --wait into a busy program: rc=$rc (want 7)" >&2; cat "$TEST_ROOT/busy.err" >&2; return 1; }
+  grep -q 'input sent; busy did not go quiet within 1000 ms' "$TEST_ROOT/busy.err" || { cat "$TEST_ROOT/busy.err" >&2; return 1; }
+  "$HOLD_BIN" end busy >/dev/null 2>&1 || true
+}
+
 # Names: a verb is refused, a taken name exits 11.
 test_call_names_verbs_and_taken() {
   local rc
@@ -3541,13 +3660,18 @@ PY
 }
 
 
+# Built in a copy of the tree: a clean and rebuild in the checkout would
+# delete the binary this suite is running and leave a test build where the
+# release binary goes.
 test_build_artifact_coexistence() {
-  make clean >/dev/null || return 1
-  make callbox callbox STATIC_LDFLAGS= EXTRA_CPPFLAGS=-DHOLD_TESTING >/dev/null || return 1
-  [ -x ./callbox ] && [ -x ./callbox ] || return 1
-  make callbox-dynamic EXTRA_CPPFLAGS=-DHOLD_TESTING >/dev/null || return 1
-  [ -x ./callbox ] && [ -x ./callbox ] && [ -x ./callbox-dynamic ] || return 1
-  [ -e ./callbox ] && [ -e ./callbox ] && [ -e ./callbox-dynamic ]
+  local src="$TEST_ROOT/tree"
+  mkdir "$src" || return 1
+  cp -R Makefile src include third_party "$src/" || return 1
+  mkdir -p "$src/.github/scripts" && cp .github/scripts/resolve_version.sh "$src/.github/scripts/" || return 1
+  make -C "$src" callbox STATIC_LDFLAGS= EXTRA_CPPFLAGS=-DHOLD_TESTING VERSION=test >/dev/null || return 1
+  [ -x "$src/callbox" ] || return 1
+  make -C "$src" callbox-dynamic callbox-test EXTRA_CPPFLAGS=-DHOLD_TESTING VERSION=test >/dev/null || return 1
+  [ -x "$src/callbox" ] && [ -x "$src/callbox-dynamic" ] && [ -x "$src/callbox-test" ]
 }
 
 test_concurrent_unique_ids() {
@@ -4163,7 +4287,8 @@ test_msg_strips_control_characters() {
   CALLBOX_ID= CALLBOX_NAME= "$HOLD_BIN" msg ctl -- "$(printf 'one\033]0;HIJACK\007two\033[2Jthree\r')" || return 1
   "$HOLD_BIN" wait ctl --match 'three' --timeout 5000 || { "$HOLD_BIN" peek ctl >&2; return 1; }
   ! "$HOLD_BIN" peek ctl --json | grep -q '"title": "HIJACK"' || { echo "a message set the terminal title" >&2; return 1; }
-  "$HOLD_BIN" peek ctl | grep -q 'one]0;HIJACKtwo\[2Jthree>' || { "$HOLD_BIN" peek ctl >&2; return 1; }
+  # whole sequences go, not just their ESC (no "]0;HIJACK" or "[2J" residue)
+  "$HOLD_BIN" peek ctl | grep -q 'onetwothree>' || { "$HOLD_BIN" peek ctl >&2; return 1; }
   local mid
   mid=$("$HOLD_BIN" peek ctl | sed -n 's/.*\[msg \([0-9a-f]\{6\}\) via callbox.*/\1/p' | head -1)
   ! "$HOLD_BIN" msg ctl --received "$mid" | LC_ALL=C grep -q "$(printf '\033')" || { echo "--received printed an escape" >&2; return 1; }
@@ -6239,6 +6364,12 @@ run_test "an ambiguous id prefix lists the calls and exits 6, for every verb" te
 run_test "the start of a name is a target when one call fits" test_name_prefix_targets
 run_test "shortened verbs and call names; PATH still wins" test_shortened_top_level_words
 run_test "redialing a running call attaches or follows, never starts it twice" test_redial_running_call_goes_back_to_it
+run_test "PATH and --restart report a program that cannot run as 126" test_cannot_start_126_by_path_and_restart
+run_test "redial keeps the call's saved flag and name" test_redial_keeps_saved_and_name
+run_test "concurrent redials of one call start it once" test_concurrent_redials_start_once
+run_test "purge leaves a call alone while a redial launches it" test_purge_stands_back_from_a_redial
+run_test "end, stop and kill of an ended call succeed and say so" test_end_on_ended_call_is_success
+run_test "send --wait says the input was sent when the wait fails" test_send_wait_says_input_was_sent
 run_test "a command that cannot start exits 127 or 126" test_cannot_start_exits_127_and_126
 run_test "call names: verbs refused, a taken name exits 11" test_call_names_verbs_and_taken
 run_test "attach exits 8 when the call ended, 10 without a console" test_attach_exit_codes

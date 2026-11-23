@@ -219,6 +219,7 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
      * c` with one mistyped name used to end none, leaving the others running
      * while it looked like a typo. */
     int worst = 0;
+    bool noted_ended = false; /* said "already exited": not also "nothing to" */
     for (int i = 0; i < argc; i++) {
         struct hold_resolved_target *one = NULL;
         int none = 0;
@@ -234,11 +235,27 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
                 if (hold_load_record_by_id(t.store.record_dir, t.id, &r, path, sizeof(path)) == 0) {
                     uint64_t here = hold_current_pid_ns();
                     bool foreign = r.pid_ns != 0 && here != 0 && r.pid_ns != here;
-                    bool unknown = hold_eval_state(&r, hold_boot_id_or_null(boot)) == STATE_UNKNOWN;
+                    enum run_state st = hold_eval_state(&r, hold_boot_id_or_null(boot));
+                    bool unknown = st == STATE_UNKNOWN;
+                    /* A known call that has already ended: nothing to do,
+                     * which is success (callbox help scripting: "includes
+                     * known name with nothing to do"). Why: "no call
+                     * matches" denied a call that list -a and purge find, and
+                     * exit 5 failed a cleanup step whose goal already held. */
+                    bool ended = st == STATE_EXITED || st == STATE_FAILED || st == STATE_STALE;
                     if (foreign && unknown) not_running_here(&r, false);
+                    if (ended) {
+                        char display[ID_DISPLAY_HEX_LEN + 1];
+                        hold_run_id_display(r.id, display);
+                        hold_sig_note(inv, "callbox: %s already exited\n", r.has_name ? r.name : display);
+                    }
                     hold_free_run_record(&r);
                     if (foreign && unknown) {
                         if (3 > worst) worst = 3;
+                        continue;
+                    }
+                    if (ended) {
+                        noted_ended = true;
                         continue;
                     }
                 }
@@ -265,7 +282,7 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
     }
     if (ntargets == 0) {
         free(targets);
-        if (worst == 0) hold_sig_note(inv, "callbox: nothing to %s\n", command);
+        if (worst == 0 && !noted_ended) hold_sig_note(inv, "callbox: nothing to %s\n", command);
         return worst;
     }
     /* Root-managed targets a non-root caller cannot signal: reported, and

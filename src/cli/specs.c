@@ -72,7 +72,9 @@ static const char help_tail[] =
     "<target> -f prints what is already captured first, then follows.) For a call\n"
     "that has ended, tail prints its whole log.\n";
 static const char help_logs[] =
-    "Print a call's captured output as plain text.\n"
+    "Print a call's captured output, byte for byte as the program wrote it: plain\n"
+    "text for a plain call; for a TTY call, its escape sequences too (colors,\n"
+    "cursor moves), as a terminal would receive them.\n"
     "\n"
     "  -f, --follow     keep printing as a running call writes, until it ends\n"
     "  -n N, --tail N   only the newest N lines\n"
@@ -90,7 +92,8 @@ static const char help_peek[] =
     "                   the cursor's column and row in red\n"
     "    --no-ruler     ...without the ruler\n"
     "    --cursor-ring  ...with a ring around the cursor\n"
-    "    --scale N      ...N times the size (1-4)\n"
+    "    --scale N      ...N times the size (1-4; default 2 up to 100 columns,\n"
+    "                   else 1)\n"
     "    --no-footer    ...without the cursor/size line under the screen\n"
     "    --no-mouse-marker ...without the mark at the last mouse event\n"
     "    --text         ...and print the screen as text too\n"
@@ -297,7 +300,8 @@ static const struct hold_cli_command_spec command_specs[] = {
     {"stats", NULL, 1, 1, SPEC_NOSTREAM | SPEC_STRICT, "usage: callbox stats <target> [--no-stream]", NULL, help_stats},
     {"peek", NULL, 1, -1, SPEC_OWN_HELP,
      "usage: callbox peek <target> [--json] [--ruler] [--last-alt]\n"
-     "                 [--image FILE [--no-ruler] [--cursor-ring] [--scale N]]", NULL, help_peek},
+     "                 [--image FILE [--no-ruler] [--cursor-ring] [--scale N]\n"
+     "                               [--no-footer] [--no-mouse-marker] [--text]]", NULL, help_peek},
     {"send", NULL, 1, -1, SPEC_OWN_HELP,
      "usage: callbox send <target> [TEXT]... [--text TEXT] [-k KEY]...\n"
      "                 [--keys \"K1 K2\"] [--enter] [--paste TEXT|-] [--stdin] [--seq]\n"
@@ -555,9 +559,11 @@ static int help_scripting(void) {
            "  4  signal delivery failed\n"
            "  5  no such call: nothing matches the target, or it is not a valid id or name\n"
            "  6  more than one call (or verb) matches: they are listed; be more exact\n"
-           "  7  callbox wait timed out\n"
-           "  8  the call ended: before the wait condition held, or (attach) before or\n"
-           "     while you were on it; attach exits 0 when you detach, 3 if refused\n"
+           "  7  callbox wait timed out (send --wait: the input was sent; the program\n"
+           "     did not go quiet in time)\n"
+           "  8  the call ended: before the wait condition held (send --wait: after the\n"
+           "     input was sent), or (attach) before or while you were on it; attach\n"
+           "     exits 0 when you detach, 3 if refused\n"
            "  9  send --mouse: the program has mouse reporting off (not delivered)\n"
            "  10 the call has no terminal screen or console (placed without -t / -i)\n"
            "  11 the call name asked for is taken\n"

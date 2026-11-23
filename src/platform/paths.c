@@ -110,17 +110,25 @@ int hold_find_binary_path(const char *argv0, char *out, size_t n) {
     }
     const char *path = getenv("PATH");
     if (!path || !*path) path = "/usr/local/bin:/usr/bin:/bin";
+    /* A name that is on PATH but not executable is "permission denied"
+     * (126), not "command not found" (127), when no later entry runs: what
+     * a shell and execvp report, and what the same file reports by its
+     * absolute path. Why: 127 sends the person looking for a missing
+     * program when the fix is chmod. */
+    bool denied = false;
     for (const char *p = path;; p = strchr(p, ':') + 1) {
         const char *colon = strchr(p, ':');
         size_t len = colon ? (size_t)(colon - p) : strlen(p);
         if (len >= HOLD_PATH_MAX) { errno = ENAMETOOLONG; return -1; }
         char candidate[HOLD_PATH_MAX];
         if (len > 0 &&
-            hold_checked_snprintf(candidate, sizeof(candidate), "%.*s/%s", (int)len, p, argv0) == 0 &&
-            access(candidate, X_OK) == 0 && absolute_copy(candidate, NULL, out, n) == 0) return 0;
+            hold_checked_snprintf(candidate, sizeof(candidate), "%.*s/%s", (int)len, p, argv0) == 0) {
+            if (access(candidate, X_OK) == 0 && absolute_copy(candidate, NULL, out, n) == 0) return 0;
+            if (errno == EACCES) denied = true;
+        }
         if (!colon) break;
     }
-    errno = ENOENT;
+    errno = denied ? EACCES : ENOENT;
     return -1;
 }
 

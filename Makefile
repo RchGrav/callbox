@@ -78,9 +78,16 @@ obj-test/%.o: src/%.c Makefile
 	@mkdir -p $(dir $@)
 	$(CC) $(ALL_CPPFLAGS) $(TEST_CPPFLAGS) $(DEPFLAGS) $(CFLAGS) -c -o $@ $<
 
-test: $(TEST_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(TEST_LDFLAGS) -o callbox $(TEST_OBJS)
-	@bash tests/test_callbox.sh
+# The suite's binary is callbox-test, never ./callbox: a -DHOLD_TESTING build
+# honors test-only environment (HOLD_TEST_SYSTEM_STATE_DIR, failure
+# injection) and is linked dynamically, so it must not be left where the
+# release binary goes - nor be taken for it by a later `make`, which would
+# call the test build up to date.
+callbox-test: $(TEST_OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(TEST_LDFLAGS) -o callbox-test $(TEST_OBJS)
+
+test: callbox-test
+	@HOLD_BIN=./callbox-test bash tests/test_callbox.sh
 	@$(MAKE) screen-test
 	@bash tests/test_version_makefile.sh
 	@bash tests/test_release_installer.sh
@@ -111,7 +118,7 @@ lint:
 -include $(wildcard obj/*.d obj/*/*.d obj-test/*.d obj-test/*/*.d)
 
 clean:
-	rm -f callbox callbox-dynamic screen-test
+	rm -f callbox callbox-dynamic callbox-test screen-test
 	rm -rf obj obj-test
 
 .PHONY: all clean test test-040 check ci lint screen-test print-version

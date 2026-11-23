@@ -367,7 +367,8 @@ static void write_peek_json(const struct screen_target *t, const struct hold_sna
 
 static const char peek_usage[] =
     "usage: callbox peek <target> [--json] [--ruler] [--last-alt]\n"
-    "                 [--image FILE [--no-ruler] [--cursor-ring] [--scale N]]\n";
+    "                 [--image FILE [--no-ruler] [--cursor-ring] [--scale N]\n"
+    "                               [--no-footer] [--no-mouse-marker] [--text]]\n";
 
 static int peek_action_impl(const struct hold_invocation *inv,
                          const struct hold_store *user_store,
@@ -499,7 +500,7 @@ static const char send_usage[] =
     "                 [--keys \"K1 K2\"] [--enter] [--paste TEXT|-] [--stdin] [--seq]\n"
     "                 [--mouse ACTION,COL,ROW[,BUTTON]] [--wait MS [--timeout MS]]\n";
 
-static int run_wait(const struct screen_target *t, const char *args, bool print_exit);
+static int run_wait(const struct screen_target *t, const char *args, bool print_exit, bool after_send);
 
 static int send_action_impl(const struct hold_invocation *inv,
                          const struct hold_store *user_store,
@@ -630,9 +631,9 @@ static int send_action_impl(const struct hold_invocation *inv,
             if (wait_ms >= 0) {
                 char args[160];
                 snprintf(args, sizeof(args), "wait idle=%ld since=%llu timeout=%ld", wait_ms ? wait_ms : 1, sv, timeout_ms);
-                rc = run_wait(&t, args, false);
+                rc = run_wait(&t, args, false, true);
                 if (rc == WAIT_CONSOLE_CLOSED) {
-                    fprintf(stderr, "callbox: %s %s after the input arrived\n", t.label,
+                    fprintf(stderr, "callbox: input sent; %s then %s\n", t.label,
                             still_running(&t) ? "closed its terminal" : "ended");
                     rc = WAIT_EXIT_ENDED;
                 }
@@ -651,8 +652,11 @@ out:
 
 /* ---- wait ----------------------------------------------------------------- */
 
-/* Ask the broker; map its answer to an exit status. */
-static int run_wait(const struct screen_target *t, const char *args, bool print_exit) {
+/* Ask the broker; map its answer to an exit status. After a send, the
+ * messages say the input was delivered. Why: send --wait printed wait's own
+ * text, so a failed step read as if the keys had not arrived, and nothing
+ * told it apart from a separate wait. */
+static int run_wait(const struct screen_target *t, const char *args, bool print_exit, bool after_send) {
     unsigned char *reply = NULL;
     size_t len = 0;
     /* A closed console (the program ended, or closed its terminal) is not an
@@ -670,10 +674,19 @@ static int run_wait(const struct screen_target *t, const char *args, bool print_
         if (print_exit && strstr(r, "reason=exit")) printf("%d\n", code);
         rc = 0;
     } else if (!strncmp(r, "timeout", 7)) {
-        fprintf(stderr, "callbox: %s: wait timed out\n", t->label);
+        const char *to = after_send ? strstr(args, "timeout=") : NULL;
+        if (to)
+            fprintf(stderr, "callbox: input sent; %s did not go quiet within %ld ms\n", t->label, atol(to + 8));
+        else if (after_send)
+            fprintf(stderr, "callbox: input sent; %s did not go quiet before the timeout\n", t->label);
+        else
+            fprintf(stderr, "callbox: %s: wait timed out\n", t->label);
         rc = WAIT_EXIT_TIMEOUT;
     } else if (!strncmp(r, "ended", 5)) {
-        fprintf(stderr, "callbox: %s ended (exit code %d) before the wait condition held\n", t->label, code);
+        if (after_send)
+            fprintf(stderr, "callbox: input sent; %s then ended (exit code %d) before going quiet\n", t->label, code);
+        else
+            fprintf(stderr, "callbox: %s ended (exit code %d) before the wait condition held\n", t->label, code);
         rc = WAIT_EXIT_ENDED;
     } else {
         rc = reply_error(t, reply);
@@ -881,7 +894,7 @@ static int wait_action_impl(const struct hold_invocation *inv,
     if (want_exit) rc |= rb_str(&b, " exit=1");
     snprintf(num, sizeof(num), " timeout=%ld", timeout);
     rc |= rb_str(&b, num);
-    rc = rc ? 1 : run_wait(&t, b.p, !screen_cond);
+    rc = rc ? 1 : run_wait(&t, b.p, !screen_cond, false);
     free(b.p);
     if (rc == WAIT_CONSOLE_CLOSED) {
         if (!screen_cond) {

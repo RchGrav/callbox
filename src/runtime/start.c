@@ -284,10 +284,6 @@ static void run_restart_supervisor(const struct hold_store *store,
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGHUP, &sa, NULL);
 
-    close(handshake_fd);
-    /* Under the fallback, a passive lifetime lock on the log tells shells in
-     * other PID namespaces the call is alive; nothing else changes. */
-    if (g_liveness_lock) hold_supervisor_lock_log(log_path);
     int failures = 0;
     int status = 0;
     bool have_status = false;
@@ -295,8 +291,17 @@ static void run_restart_supervisor(const struct hold_store *store,
     while (!g_restart_stop) {
         struct timespec run_start;
         clock_gettime(CLOCK_MONOTONIC, &run_start);
+        /* The first worker's exec is the launch: its errno rides the launch
+         * handshake, so a program that cannot start is reported (126/127)
+         * and rolled back exactly as without --restart, instead of a call
+         * id for a program that never ran. Later workers' failures are runs
+         * of the call and go to its log. */
+        bool first = handshake_fd >= 0;
+        int exec_pipe[2] = {-1, -1};
+        if (first && hold_cloexec_pipe(exec_pipe) != 0) child_fail_errno(handshake_fd);
         pid_t worker = fork();
         if (worker < 0) {
+            if (first) child_fail_errno(handshake_fd);
             fprintf(stderr, "callbox: restart supervisor failed to fork: %s\n", strerror(errno));
             mark_finished_with_retry(store, id, 127 << 8, getpid()); /* the record names the supervisor */
             _exit(127);
@@ -306,8 +311,28 @@ static void run_restart_supervisor(const struct hold_store *store,
             signal(SIGINT, SIG_DFL);
             signal(SIGHUP, SIG_DFL);
             execv(resolved_exec_path, launch_argv);
+            if (first) child_fail_errno(exec_pipe[1]);
             fprintf(stderr, "callbox: cannot restart '%s': %s\n", resolved_exec_path, strerror(errno));
             _exit(127);
+        }
+        if (first) {
+            close(exec_pipe[1]);
+            int worker_errno = 0;
+            int hs = hold_read_exec_handshake(exec_pipe[0], &worker_errno);
+            close(exec_pipe[0]);
+            if (hs != 0) {
+                /* hs < 0: the worker's fate is unknown - do not leave it */
+                if (hs < 0) kill(worker, SIGKILL);
+                while (waitpid(worker, NULL, 0) < 0 && errno == EINTR) continue;
+                errno = hs > 0 && worker_errno ? worker_errno : EIO;
+                child_fail_errno(handshake_fd); /* the launcher rolls the call back */
+            }
+            close(handshake_fd);
+            handshake_fd = -1;
+            /* Under the fallback, a passive lifetime lock on the log tells
+             * shells in other PID namespaces the call is alive; nothing else
+             * changes. */
+            if (g_liveness_lock) hold_supervisor_lock_log(log_path);
         }
         while (waitpid(worker, &status, 0) < 0) {
             if (errno == EINTR) {
@@ -492,6 +517,7 @@ struct launch_undo {
     const struct hold_store *store;
     const char *id;           /* reserve to abort once reserved */
     bool reserved;
+    int claim_fd;             /* a redial's claim on the call (-1: none) */
     const char *log_path;
     bool unlink_log;          /* owns_new_log, once launch material exists */
     const char *console_sock; /* unlinked when nonempty */
@@ -520,6 +546,9 @@ static void launch_undo(struct launch_undo *u) {
     }
     if (u->record_path && u->record_path[0]) unlink(u->record_path);
     if (u->reserved) hold_abort_run_reservation(u->store, u->id);
+    /* after the rollback above, so a waiting redial finds this launch gone */
+    hold_release_existing_run(u->store, u->id, u->claim_fd);
+    u->claim_fd = -1;
     if (u->unlink_log && u->log_path[0]) unlink(u->log_path);
     if (u->console_sock[0]) unlink(u->console_sock);
     free_launch_and_observed_argv(u->launch_argv, u->observed_argv, u->argc);
@@ -664,6 +693,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         .fds = io,
         .nfds = IO_N,
         .argc = argc,
+        .claim_fd = -1,
     };
 
     char observed_cwd[HOLD_PATH_MAX] = {0};
@@ -703,6 +733,37 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         copy_field(&u, log_path, sizeof(log_path), opts->existing_log_path, "callbox: restart metadata too long");
         if (opts->existing_run_name && *opts->existing_run_name) {
             copy_field(&u, run_name, sizeof(run_name), opts->existing_run_name, "callbox: call name too long");
+        }
+        /* One launch per call at a time: claim it, then decide. The caller's
+         * "not running" was read before this claim; a redial that launched
+         * in between is seen only now (see hold_claim_existing_run). */
+        u.claim_fd = hold_claim_existing_run(store, id);
+        if (u.claim_fd < 0) launch_die(&u, "callbox: failed to claim the call for redial");
+        /* sudo-routed user-local redial: the claim is the user's, like the
+         * log, so a launcher that died holding it leaves the user a file
+         * they can claim again. */
+        if (store->kind == STORE_USER_LOCAL && inv && inv->euid_root && inv->have_sudo_user &&
+            fchown(u.claim_fd, inv->invoking_uid, inv->invoking_gid) != 0) {
+            launch_die(&u, "callbox: failed to set user-local ownership");
+        }
+        struct hold_run_record cur;
+        char cur_path[HOLD_PATH_MAX];
+        if (hold_load_record_by_id(store->record_dir, id, &cur, cur_path, sizeof(cur_path)) != 0) {
+            char display[ID_DISPLAY_HEX_LEN + 1];
+            hold_run_id_display(id, display);
+            fprintf(stderr, "callbox: error: call %s is gone (purged while redialing)\n", display);
+            launch_undo(&u);
+            return HOLD_EXIT_NO_TARGET;
+        }
+        char boot_now[128];
+        bool running = hold_eval_state(&cur, hold_boot_id_or_null(boot_now)) == STATE_RUNNING;
+        hold_free_run_record(&cur);
+        if (running) {
+            char display[ID_DISPLAY_HEX_LEN + 1];
+            hold_run_id_display(id, display);
+            fprintf(stderr, "callbox: error: call %s is already running\n", display);
+            launch_undo(&u);
+            return 6; /* as the caller's own check: already running */
         }
     } else {
         if (hold_reserve_run_id(store, resolved_exec_path, argc, launch_argv,
@@ -777,6 +838,9 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     if (pid == 0) {
         close(io[HS_R]);
         if (io[TP_R] >= 0) close(io[TP_R]);
+        /* The claim is the launcher's alone: a broker, waiter or supervisor
+         * that kept it would hold every later redial for the call's life. */
+        if (u.claim_fd >= 0) close(u.claim_fd);
         if (restart_enabled) {
             run_restart_supervisor(store, id, io[HS_W], interactive_stdin,
                                    envc, env, clean_child_env,
@@ -1000,12 +1064,37 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         launch_die(&u, "callbox: failed to write record");
     }
 #endif
-    if (hold_write_record_atomic(store->record_dir, &r, argc, launch_argv, record_path, sizeof(record_path)) != 0) {
+    int record_lock = -1;
+    if (restarting_existing) {
+        /* A redial replaces the record, but what the person set on the call
+         * (callbox save, rename) is the call's, not the run's: carried over
+         * from the record as it is now, under the lock save and rename
+         * write under, so one made during this launch is kept too. Why: a
+         * redialed call that lost its saved flag was deleted by the next
+         * plain purge. */
+        record_lock = hold_store_lock(store->record_dir);
+        struct hold_run_record cur;
+        char cur_path[HOLD_PATH_MAX];
+        if (hold_load_record_by_id(store->record_dir, id, &cur, cur_path, sizeof(cur_path)) == 0) {
+            r.saved = cur.saved;
+            r.has_name = cur.has_name;
+            r.name[0] = '\0';
+            if (cur.has_name) snprintf(r.name, sizeof(r.name), "%s", cur.name);
+            hold_free_run_record(&cur);
+        }
+    }
+    int write_rc = hold_write_record_atomic(store->record_dir, &r, argc, launch_argv, record_path, sizeof(record_path));
+    hold_store_unlock(record_lock);
+    if (write_rc != 0) {
         launch_die(&u, "callbox: failed to write record");
     }
     if (!restarting_existing) {
         u.record_path = record_path;
     }
+    /* Committed: the record write removed the claim's file; a waiting
+     * redial now finds this call running. */
+    hold_release_existing_run(store, id, u.claim_fd);
+    u.claim_fd = -1;
 
     if (store->kind == STORE_USER_LOCAL && inv && inv->euid_root && inv->have_sudo_user) {
         /* sudo-routed user-local launch: hand the artifacts back. */

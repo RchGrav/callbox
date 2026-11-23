@@ -145,7 +145,9 @@ messages go in oldest first, one per broker pass, with at most 16 pending.
 
 Every control character except newline and tab (C0 bytes, DEL, C1) is
 removed first, so a message can never type Escape, submit early with a
-carriage return, end a bracketed paste, or drive the terminal. The text goes
+carriage return, end a bracketed paste, or drive the terminal. An escape
+sequence (CSI, OSC, DCS and the other string forms) is removed whole, not just
+its first byte, so `\e[31mRED` arrives as `RED` rather than `[31mRED`. The text goes
 in as a bracketed paste when the program enabled mode 2004. Otherwise
 newlines and carriage returns become spaces, so it cannot submit early.
 Enter follows, unless `--no-enter` was given (`submit=0`).

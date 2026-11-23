@@ -591,6 +591,21 @@ int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const 
     /* Under the store lock so a racing exit stamp cannot recreate the
      * record after this unlink (see hold_mark_run_finished). */
     int lock_fd = hold_store_lock(store->record_dir);
+    /* A redial launching it, or one that finished since the look above:
+     * the call is starting or running, not ended. */
+    struct hold_run_record cur;
+    char cur_path[HOLD_PATH_MAX];
+    bool running_now = false;
+    if (hold_load_record_by_id(store->record_dir, id, &cur, cur_path, sizeof(cur_path)) == 0) {
+        running_now = hold_eval_state(&cur, boot ? boot : NULL) == STATE_RUNNING;
+        hold_free_run_record(&cur);
+    }
+    if (running_now || hold_existing_run_claimed(store, id)) {
+        hold_store_unlock(lock_fd);
+        fprintf(stderr, "callbox: error: call %s is being redialed and cannot be purged\n", id);
+        hold_free_run_record(&r);
+        return 2;
+    }
     if (r.auto_remove && r.has_exit_code) write_exit_note(store, &r);
     unlink(path);
     unlink_call_artifacts(store, &r);
@@ -685,12 +700,24 @@ static int prune_record_cb(const char *id, const char *path, struct hold_run_rec
         char cur_path[HOLD_PATH_MAX];
         if (hold_load_record_by_id(w->store->record_dir, r->id, &cur, cur_path, sizeof(cur_path)) == 0) {
             bool saved_now = cur.saved;
+            /* A redial since the look above made it live again. */
+            bool running_now = hold_eval_state(&cur, w->boot_id) == STATE_RUNNING;
             hold_free_run_record(&cur);
             if (saved_now) {
                 hold_store_unlock(lock_fd);
                 w->stats->kept_saved++;
                 return 0;
             }
+            if (running_now) {
+                hold_store_unlock(lock_fd);
+                w->stats->kept_live++;
+                return 0;
+            }
+        }
+        if (hold_existing_run_claimed(w->store, r->id)) {
+            hold_store_unlock(lock_fd);
+            w->stats->kept_live++;
+            return 0;
         }
         if (unlink(path) != 0 && errno == ENOENT) {
             /* Another purge removed it since we looked (under this same

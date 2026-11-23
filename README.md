@@ -205,9 +205,9 @@ starts, not a lock, and a size outside 1-1000 is refused before anything runs.
 ## Screenshots agents can read
 
 `callbox peek <call> --image screen.png` renders the live screen to a PNG with
-true colors, bold/underline/inverse, box drawing, Braille, every modern
-script (Hebrew, Arabic, Indic, Thai, CJK, ...), and anti-aliased emoji — plus
-overlays designed for vision models:
+true colors, bold/underline/inverse, box drawing, Braille, wide and combining
+characters across scripts (CJK, Hebrew, Arabic, Indic, Thai, ...), and
+anti-aliased emoji — plus overlays designed for vision models:
 
 - **Coordinate rulers** on the top and left (`┬` / `├` ticks, labeled), with a
   one-cell gutter so they never touch the content.
@@ -217,6 +217,13 @@ overlays designed for vision models:
   click landed where intended.
 - **A footer** spelling it out: `CURSOR: col 32, row 4   SIZE: 80x24   MOUSE: col 29, row 4`
   (the MOUSE part appears once a mouse event has been sent).
+
+![callbox peek --image of a 60x8 screen: bold, underline, inverse and true color; CJK, Hebrew, Arabic and Thai; emoji; box drawing and Braille.](docs/images/unicode-render.png)
+
+Hebrew and Arabic are drawn left to right, as a terminal shows them: the
+screen is the program's cells in order, which is what `send` and `--mouse`
+coordinates address. Each cell is drawn on its own, so Arabic letters are not
+joined, and an emoji skin-tone modifier shows as a cell of its own.
 
 ![A whiptail checklist driven by callbox send, its cursor marked in red on the rulers.](docs/images/whiptail-form.png)
 
@@ -243,8 +250,11 @@ paste, and clicks behave as they would under xterm:
 | `--mouse click,COL,ROW[,BUTTON]` | SGR (or legacy) mouse press + release, 0-based coordinates in, 1-based on the wire |
 | `--mouse drag,…` / `scroll-up,…` / `press` / `release` / `move` | the matching motion, wheel, and button events |
 
-Each key arrives in a single write, so a lone Escape is never mistaken for an
-escape sequence. If the program has mouse reporting off, `send` says so instead
+Each key arrives in a single write. A program still decides by timing whether
+an Escape was a key or the start of a sequence: curses programs such as htop
+wait a few milliseconds (`ESCDELAY`) for more bytes, so `-k Escape q` in one
+`send` can reach them as Alt-Q. For those, send Escape on its own:
+`callbox send top -k Escape`, then the next keys. If the program has mouse reporting off, `send` says so instead
 of pretending. Ctrl+C and Ctrl+Z become SIGINT and SIGTSTP through the
 terminal driver — exactly as at a keyboard.
 
@@ -313,6 +323,8 @@ agent's prompt from your shell's call, so the agent answers with a plain
 `callbox msg` — it needs to know nothing about the window — and the reply lands
 in chat, never at your prompt.
 
+![callbox shell: the chat window, choosing who to talk to (lead, outer, worker), drawn over a bash prompt that keeps running underneath.](docs/images/shell-chat-picker.png)
+
 - **Esc** hides the window; the conversation stays, and so does the shell. A
   reply that arrives while it is hidden only raises a corner badge
   (`chat: 1 new from helper`) — nothing opens, nothing interrupts you.
@@ -353,6 +365,7 @@ other agents), never run it directly — run it under callbox:
   `callbox peek NAME --image /tmp/NAME.png` (screenshot, then read the image)
 - Type: `callbox send NAME "text" -k Enter` · keys: Enter Tab Escape Up Down
   Left Right PageUp F1-F24, C-c, M-x · `--paste TEXT` · `--mouse click,COL,ROW`
+  · curses apps (htop, ...): send `-k Escape` in a `send` of its own
 - Wait (no sleep), and always before you peek: `callbox wait NAME --match "text"` ·
   `--idle` · `callbox send NAME ... --wait 300`
 - Finish: `callbox end NAME` · exit code: `callbox wait NAME`
@@ -369,6 +382,8 @@ failing step can leave a screenshot behind:
 ```sh
 #!/bin/sh
 set -e
+# however the script ends: stop the call and free its name for the next run
+trap 'callbox end ui >/dev/null 2>&1; callbox purge ui >/dev/null 2>&1' EXIT
 callbox -dt --name ui -- ./my-tui --demo
 callbox wait ui --match "Main menu" --timeout 10000
 callbox send ui -k Down -k Down -k Enter --wait 300
@@ -377,7 +392,9 @@ callbox send ui q            # the TUI's own quit key
 test "$(callbox wait ui)" = 0
 ```
 
-`callbox wait` prints the program's exit code. A program killed by Ctrl-C
+`callbox wait` prints the program's exit code. An ended call keeps its name,
+as a Docker container does, so the trap purges it: without that, the next run's
+`--name ui` is refused (exit 11). A program killed by Ctrl-C
 reports 130 (128 + SIGINT), so quit with the program's own key when the test
 expects 0.
 
