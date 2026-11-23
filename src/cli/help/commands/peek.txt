@@ -1,0 +1,25 @@
+usage: callbox peek <target> [--json] [--ruler] [--last-alt]
+                 [--image FILE [--no-ruler] [--cursor-ring] [--scale N]
+                               [--no-footer] [--no-mouse-marker] [--text]]
+
+Show a TTY call's screen as it is right now: the visible rows as plain text,
+one line per row. After a call ends, peek shows its last screen.
+
+  --ruler          add zero-based column and row numbers
+  --json           add the cursor, terminal modes, title, output counter and
+                   idle time
+  --image FILE     write a color PNG instead, with a coordinate ruler that marks
+                   the cursor's column and row in red
+                   (-o FILE is equivalent; FILE - writes PNG to stdout)
+    --no-ruler     ...without the ruler
+    --cursor-ring  ...with a ring around the cursor
+    --scale N      ...N times the size (1-4; default 2 up to 100 columns,
+                   else 1)
+    --no-footer    ...without the cursor/size line under the screen
+    --no-mouse-marker ...without the mark at the last mouse event
+    --text         ...and print the screen as text too
+  --last-alt       the last full-screen (alternate-screen) frame a program such
+                   as vim or less showed before it switched back
+
+Run callbox wait first (or callbox send --wait) so you do not read a half-drawn
+frame.

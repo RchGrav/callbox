@@ -1,0 +1,56 @@
+callbox help share - fix a terminal app with your agent, on one screen
+
+USE THIS WHEN
+  You want your coding agent to debug or fix a terminal app while the app
+  stays on your screen. You and the agent use the same call: you see each
+  key the agent sends, and the agent reads the screen you see.
+
+EXAMPLE: YOU RUN THE APP
+  Start your agent as a call, check it is ready, then start the app with
+  no switches:
+
+    callbox -dt --name coder codex          # your agent, detached
+    callbox peek coder                      # ready for input?
+    callbox --name app -- ./my-tui          # the app, on your terminal
+
+  Without switches the app has a chat window. Reproduce the bug, then press
+  Ctrl-P Ctrl-T, Tab to choose coder, and say what is wrong. Ctrl-S adds a
+  clean snapshot of the app's screen to the message; Enter sends it; Esc
+  hides chat and leaves the app as it was.
+
+  The agent reads and drives the app while you watch:
+
+    callbox peek app --image bug.png --cursor-ring
+    callbox send app -k Down --wait 300
+    callbox msg app "try Down again now"    # shows in your chat window
+
+  After the agent rebuilds, quit the app and start it again by its name.
+  It comes back as you started it: attached, with its chat window.
+
+    callbox app
+
+EXAMPLE: THE AGENT RUNS THE APP
+  If the agent started the app detached (callbox -dt --name app ./my-tui),
+  join it on your terminal to try it, and leave it running for the agent:
+
+    callbox attach app                      # Ctrl-P Ctrl-Q detaches
+
+  A call started with -dt has no chat window, even while you are attached.
+
+WHAT THE COMMANDS DO
+  callbox --name <name> <program>
+      Runs the app attached to your terminal, at your terminal's size, with
+      a chat window. Messages for it go to the window, never into the app.
+  callbox peek, callbox send, callbox resize
+      Work on the call while you are attached to it; see callbox help tui.
+  callbox <call>
+      Starts an ended call again, with the same command and the same mode.
+  callbox attach <call>
+      Joins a running call. One terminal holds a call at a time: a second
+      attach is refused (exit 3).
+
+  You and the agent type into the same program: take turns.
+
+SEE ALSO
+  callbox help tui                the agent's side: read, type, wait, check
+  callbox shell -h                the same chat window, on your shell

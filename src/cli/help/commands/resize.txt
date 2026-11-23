@@ -1,0 +1,6 @@
+usage: callbox resize <target> <cols> <rows>   (or <cols>x<rows>)
+
+Resize a running TTY call's terminal to <cols> <rows> (or <cols>x<rows>), each
+1-1000. The program receives SIGWINCH, and the screen callbox peek shows reflows
+with it. To start a call at a size, place it with --size <cols> <rows>;
+callbox config set detach-size saves a default for detached TTY calls.

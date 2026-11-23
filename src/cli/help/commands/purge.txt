@@ -1,0 +1,8 @@
+usage: callbox purge [<target>] [-a|--all] [-s|--system] [-u|--user] [--force]
+
+The one removal verb. With no target it sweeps ended calls; -a includes stale
+ones (a state widener, not a scope one). Scope: -u/--user sweeps your personal
+calls (the default); -s/--system sweeps the global store and, if you are not
+root, re-execs through sudo so sudo can prompt for the password. A target
+removes one call; --force removes it whatever its state (live or saved). rm,
+prune, and drop are accepted aliases.

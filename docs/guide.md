@@ -2,7 +2,7 @@
 
 [README](../README.md) | [Docs index](index.md)
 
-Everything the README used to say, section by section. For the quick version, `callbox help` and its pages (`callbox help users`, `agents`, `messaging`, `service`, `tui`, `comms`, `examples`, `features`) cover the same ground in the terminal.
+Everything the README used to say, section by section. For the quick version, `callbox help` covers the same ground in the terminal: five guides (`callbox help tui`, `share`, `agents`, `messaging`, `service`) and five reference pages (`all`, `launch`, `targets`, `scripting`, `system`), written as plain text in [src/cli/help](../src/cli/help).
 
 ## The whole idea in one minute
 

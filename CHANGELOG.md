@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.9.12 - 2026-11-23
+
+### Changed
+
+- The help, rebuilt. `callbox help` is one screen: start a call, see and
+  drive one, message agents, manage calls, then five guides - `tui`,
+  `share`, `agents`, `messaging`, `service` - and the reference: `all`,
+  `launch`, `targets`, `scripting`, `system`, and `callbox <command> -h`.
+  Each guide has the same parts (USE THIS WHEN, EXAMPLE, WHAT THE COMMANDS
+  DO, SEE ALSO), and its examples were run as printed. `help messaging`
+  covers agents outside callbox with `--wait-reply` and `callbox inbox`.
+  `help all` is a compact list of every command and flag. Old topic names
+  still work: `users` opens `share`, `comms` opens `messaging`, `services`
+  opens `service`, `run` opens `launch`; `examples` and `features` remain.
+- The help pages are plain text in `src/cli/help/`, readable on GitHub;
+  `make` compiles them into the binary (`scripts/gen_help.sh`), so callbox
+  reads no files to print help.
+
+### Fixed
+
+- Help accuracy: `ports` and `stats` say they work on Linux only (on macOS
+  they report nothing); `peek -h` names `-o FILE`; `send -h` names
+  `--key` and says to send `-k Escape` on its own to a curses program;
+  `help launch` and `help tui` say every terminal call gets
+  `TERM=xterm-256color`, not only one started without a TERM.
+
 ## 0.9.11 - 2026-11-23
 
 ### Added

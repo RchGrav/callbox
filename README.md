@@ -85,19 +85,27 @@ callbox web                       # start it again, as before
 
 ## Learn more
 
-`callbox help` lists every command by what it is for. Each use has a page
-with examples:
+`callbox help` lists the commands by what they are for. Five guides walk
+through a task with examples, and five reference pages hold the details:
 
-| `callbox help ...` | |
+| Guides: `callbox help ...` | |
 | --- | --- |
-| `users` | run agents and programs yourself |
-| `agents` | orchestrate agents, drive terminal apps |
-| `messaging`, `comms` | how messages work; agents in different harnesses |
-| `service` | background processes: more than nohup, less than systemd |
-| `tui` | troubleshoot a terminal UI |
-| `examples` | whole workflows, start to finish |
-| `features` | what callbox does under the hood |
+| `tui` | troubleshoot a terminal app |
+| `share` | fix a terminal app with your agent, on one screen |
+| `agents` | start an agent and give it work |
+| `messaging` | message agents, inside or outside callbox |
+| `service` | run a service or a job in the background |
+
+| Reference: `callbox help ...` | |
+| --- | --- |
 | `all` | every command and flag |
+| `launch` | every flag for starting a call |
+| `targets` | names, ids, and the start of either |
+| `scripting` | exit codes, stdout, and stderr |
+| `system` | root, sudo, and the global store |
+
+`callbox <command> -h` shows one command in full. The pages are plain text
+in [src/cli/help](src/cli/help), compiled into the binary.
 
 In depth: [the full guide](docs/guide.md) (screenshots, keys and mouse,
 waiting, CI, comparisons, FAQ), [docs index](docs/index.md),

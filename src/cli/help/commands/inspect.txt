@@ -1,0 +1,6 @@
+usage: callbox inspect <target>
+
+Print a call's record as JSON (an array, as docker inspect's is): its id and
+name, state, pids, start time, argv, mode, and log_path - the file its output
+is captured in. For a running call, Stdio shows where fds 0/1/2 point right
+now. For the log's text, use callbox logs <target>.

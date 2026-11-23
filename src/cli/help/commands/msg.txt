@@ -1,0 +1,36 @@
+usage: callbox msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]
+                   [--wait-reply [--timeout MS]]
+       callbox msg [<target>] --received [ID]
+
+Message another call, typically an agent harness running under callbox. The text
+is typed into its prompt at once and submitted with Enter (an agent harness
+that is busy queues it), behind a header (all on one line) that says who
+sent it and how to answer:
+
+  [msg from <you>; reply: callbox msg <you> "..."] TEXT
+
+<you> is your own call, which callbox msg finds in $CALLBOX_ID (set in every
+call); the receiver shows that call's name as it is now. From outside any
+call, you get a name of your own and an inbox for the replies (callbox help
+inbox); the first message says how to read them.
+Multi-line text goes in as one bracketed paste when the program supports it.
+A callbox shell takes its messages in its chat window, never at its prompt.
+
+  --no-enter       type without submitting
+  --wait-reply     from outside any call: then wait for the first reply and
+                   print it (exit 0; 7 if --timeout MS passes first)
+  --stdin          read the text from stdin
+  --               the rest is text, even words that start with a dash
+  --received [ID]  the call's message history: every message delivered to it,
+                   or with ID (printed by callbox msg when it sends) that
+                   message's sender and full text. Run it inside the receiving
+                   call, or name the call: callbox msg CALL --received ID.
+
+msg prints the message's id once it is delivered: delivery, not a report
+that the work is done. Plain -d and -dw calls have no console, so they take
+no messages (exit 10).
+
+The header is addressing, not proof: whatever can reach a call's console runs
+as its user and could type the same text with callbox send. Control
+characters are removed from the text, and delivery is capped at 20 messages a
+minute per receiver.

@@ -1,0 +1,11 @@
+usage: callbox logs <target> [--follow|-f] [--tail|-n N]
+
+Print a call's captured output, byte for byte as the program wrote it: plain
+text for a plain call; for a TTY call, its escape sequences too (colors,
+cursor moves), as a terminal would receive them.
+
+  -f, --follow     keep printing as a running call writes, until it ends
+  -n N, --tail N   only the newest N lines
+
+The log is a file: log_path in callbox inspect <target> names it. For the live
+screen of a TTY call, use callbox peek.

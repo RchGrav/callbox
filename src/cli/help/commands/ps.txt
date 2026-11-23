@@ -1,0 +1,7 @@
+usage: callbox ps [-a|--all] [name]
+
+ps is Docker's machine-wide view: running calls (add -a for ended too) across
+both your own calls and the global ones, as Docker's table without an IMAGE or
+USER column (CALL ID, COMMAND, CREATED, STATUS, PORTS, NAMES). Global calls you
+cannot read show a 'hidden' COMMAND. ps speaks only Docker: it takes no scope
+flags. For callbox's scoped, past-inclusive ledger with a USER column, use list.

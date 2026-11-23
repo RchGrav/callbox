@@ -1,0 +1,70 @@
+callbox help service - run a service or a job in the background
+
+USE THIS WHEN
+  A server, a worker, a VM, or a CI job must run while something else
+  happens: a test run, your own work, or the time after you log out. A
+  background call needs no unit file, no root, and no daemon. Callbox keeps
+  its output in a log, and you manage it by name.
+
+EXAMPLE: RUN A CI JOB AND PASS ON ITS RESULT
+    set -e
+    callbox -dw --name checks -- make test
+    code=$(callbox wait checks)             # blocks; prints its exit code
+    callbox logs checks -n 100
+    callbox purge checks
+    exit "$code"
+
+EXAMPLE: KEEP A SERVICE UP WHILE CI TESTS RUN
+    set -e
+    callbox -d --name web -- python3 -u -m http.server 8080
+    trap 'callbox end web; callbox purge web' EXIT
+    curl --retry 10 --retry-connrefused --retry-delay 1 \
+      --fail --silent --show-error http://127.0.0.1:8080/ >/dev/null
+    ./run-tests.sh || { callbox logs web -n 200; exit 1; }
+
+  The curl is the readiness check: a -d service has no screen to watch.
+  Port 8080 must be free, or curl reaches whatever already listens there.
+
+WHAT THE COMMANDS DO
+  callbox -dw --name <name> <program>
+      Starts the job in the background and records its exit code.
+  callbox wait <call>
+      Blocks until the call ends and prints its exit code. wait itself
+      exits 0 when that works, so pass the job's code on: exit "$code".
+  callbox -d --name <name> <program>
+      Starts it in the background: its output goes to a log, and no
+      callbox process stays with it. No exit code is kept (wait prints -1).
+  trap '...' EXIT
+      Stops and removes the service however the script ends. Without the
+      purge, the name stays taken and the next run exits 11.
+  callbox logs <call> -n <lines>
+      Prints the newest lines of its log; -f follows it.
+
+CHOOSE HOW IT RUNS
+    -d       in the background, with a log and no terminal: peek, send,
+             and msg refuse it (exit 10)
+    -dw      as -d, and callbox wait prints its exit code
+    -dt      detached on a terminal: wait --match can watch for a line
+             such as "listening", and peek and send work; its log keeps
+             terminal output (\r\n line ends, colors)
+    --restart on-failure
+             start it again when it fails (not with -t)
+
+KEEP A SERVICE RUNNING
+    callbox -d --restart on-failure --name api -- ./server --port 8080
+    callbox ps                              # is it running?
+    callbox stats api                       # CPU and memory (Linux)
+    callbox ports api                       # its sockets (Linux)
+    callbox end api                         # stop it
+    callbox api                             # start it again, as before
+    callbox save api                        # keep it through a purge
+
+  To have it running whenever you are, add this to ~/.bashrc. The first
+  shell starts it; later shells leave it running, or start it if it ended:
+
+    callbox -d --name api ./server >/dev/null 2>&1 ||
+        callbox -d api >/dev/null 2>&1
+
+SEE ALSO
+  callbox help launch             --restart policies and every start flag
+  callbox help scripting          exit codes, stdout and stderr

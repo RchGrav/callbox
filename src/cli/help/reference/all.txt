@@ -1,0 +1,86 @@
+callbox help all
+
+usage: callbox [<launch-flags>] [--] <program> [<args>...]
+       callbox <call>                    join it if it runs, else start it again
+       callbox <command> [<options>] [<call>...]
+
+A call is a program callbox keeps, with a name, a 64-hex id, and a log.
+<call> is a name, an id, or the start of either (callbox help targets).
+Value flags take --flag VALUE or --flag=VALUE.
+
+START A CALL (flags come before the program)
+  (no flag)                       attached on a PTY, with a chat window
+  -it                             attached on a PTY; messages typed in
+  -i, --interactive               attached, input on a pipe (-di: detached)
+  -d, --detach                    detached; prints the 64-hex id on stdout
+  -w, --wait                      with -d: record the exit code (-dw)
+  -t, --tty                       a PTY and a headless screen (-dt)
+  --name NAME                     its name (adjective_noun if not given)
+  --size COLS ROWS                its PTY size, with -t (or COLSxROWS)
+  -e, --env KEY=VALUE             an environment variable; may repeat
+  --env-file FILE                 KEY=VALUE lines from FILE
+  --restart POLICY                no|always|unless-stopped|on-failure[:N]
+  --restart-delay SECONDS         fixed delay between restarts (0 = none)
+  --rm                            remove the record and log when it ends
+  -f, --tail CALL                 follow CALL's log (no PTY, no redial)
+  --detach-keys KEYS              detach keys (default ctrl-p,ctrl-q)
+  --quiet                         no status notes on stderr
+  --system                        the root-managed store (needs root)
+  --                              the next word is a program, never a verb
+  shell [--name N] [--size C R] [--chat-key K] [-e K=V]... [--rm]
+        [shell [args...]]         your shell on a PTY, with a chat window
+
+SEE CALLS
+  ps [-a|--all] [name]            running calls, machine-wide (-a: ended too)
+  list [-a|-s|-u] [-l] [name]     your ledger, with a USER column (-l: live)
+  logs <call> [-f|--follow] [-n|--tail N]
+                                  its captured output (-f follows)
+  tail <call>                     its output from now on
+  inspect <call>                  its record, as JSON
+  ports <call>                    the sockets it listens on (Linux)
+  stats <call> [--no-stream]      CPU, memory, processes (Linux)
+
+DRIVE A CALL THAT HAS A TERMINAL
+  peek <call> [--ruler] [--json] [--last-alt]
+              [--image|-o FILE [--no-ruler] [--cursor-ring] [--scale N]
+                               [--no-footer] [--no-mouse-marker] [--text]]
+                                  its screen as text, JSON, or a PNG
+  send <call> [TEXT]... [--text TEXT] [-k|--key KEY]... [--keys "K1 K2"]
+              [--enter] [--paste TEXT|-] [--stdin] [--seq]
+              [--mouse ACTION,COL,ROW[,BTN]] [--wait MS [--timeout MS]]
+                                  type text, press keys, paste, click
+  wait <call> [--idle [MS]] [--match TEXT | --regex RE] [--since SEQ]
+              [--exit] [--timeout MS]
+                                  block until the screen holds, or it ends
+  resize <call> <cols> <rows>     its terminal size (or <cols>x<rows>)
+  attach <call> [--detach-keys K] join it (alias: console)
+
+MESSAGES
+  msg <call> TEXT... [--stdin] [--no-enter] [--wait-reply [--timeout MS]]
+                                  message a call (--wait-reply: from outside
+                                  callbox, wait for the answer)
+  msg [<call>] --received [ID]    the messages a call has been sent
+  inbox [<name>] [--wait | --monitor] [--timeout MS]
+                                  replies for a sender outside callbox
+
+END AND CLEAN UP
+  end [--print] <call>...         TERM, then KILL after 5 s (alias: stop)
+  kill [--print] <call>...        KILL now (--print: print the kill command)
+  save <call>                     keep it when ended calls are purged
+  rename <call> <name>            rename it (this also saves it)
+  purge [<call>] [-a] [-s|-u] [--force]
+                                  remove ended calls (alias: rm, prune, drop)
+  config get|set|unset detach-size [COLS ROWS]
+                                  the size detached TTY calls start at
+
+KEYS WHILE ATTACHED
+  Ctrl-C                          goes to the program
+  Ctrl-P Ctrl-Q                   leave the call running
+  Ctrl-P Ctrl-T                   the chat window (calls with no switch)
+
+MORE
+  callbox help tui | share | agents | messaging | service     guides
+  callbox help launch | targets | scripting | system          reference
+  callbox <command> -h                                        one command
+  help [<topic>]                  this help, or one page of it
+  -h, --help; -V, --version

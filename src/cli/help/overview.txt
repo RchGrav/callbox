@@ -1,0 +1,44 @@
+
+Callbox runs a program as a call. A call has a name, keeps running after
+you leave it, and can be watched, typed into, messaged, stopped, and
+started again. <call> is a call's name, its id, or the start of either.
+
+START A CALL
+  callbox <program> [<args>]            attached, with a chat window
+  callbox -it <agent> [<args>]          attached; messages are typed in
+  callbox -dt --name <name> <program>   detached, on a terminal you can drive
+  callbox -d --name <name> <program>    in the background: a log, no terminal
+  callbox shell                         your shell, with a chat window
+
+SEE AND DRIVE A CALL THAT HAS A TERMINAL
+  callbox peek <call>                   read its screen (--image: as a PNG)
+  callbox send <call> <text> -k <key>   type text and press keys
+  callbox wait <call> --match <text>    block until its screen shows the text
+  callbox resize <call> <cols> <rows>   change its terminal size
+  callbox attach <call>                 join it; Ctrl-P Ctrl-Q detaches
+
+MESSAGE AGENTS
+  callbox msg <call> <text>             message the agent that runs in it
+  callbox inbox [--wait | --monitor]    read replies, if you run outside
+
+MANAGE CALLS
+  callbox ps                            list running calls
+  callbox list                          list your calls, ended ones too
+  callbox logs <call> [-f]              print its output (-f follows)
+  callbox end <call>                    stop it
+  callbox <call>                        start an ended call again
+  callbox purge [<call>]                remove ended calls
+
+GUIDES
+  callbox help tui                      troubleshoot a terminal app
+  callbox help share                    fix a terminal app with your agent
+  callbox help agents                   start an agent and give it work
+  callbox help messaging                message agents, inside or outside
+  callbox help service                  run a service or a job in background
+
+REFERENCE
+  callbox help all                      every command and flag
+  callbox <command> -h                  one command in full
+  callbox help launch                   every flag for starting a call
+  callbox help targets | scripting | system
+  https://github.com/RchGrav/callbox    docs and issues

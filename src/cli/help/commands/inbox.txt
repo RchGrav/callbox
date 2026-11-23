@@ -1,0 +1,21 @@
+usage: callbox inbox [<name>] [--wait | --monitor] [--timeout <ms>]
+
+Replies for an agent that runs outside any call. The first time such an
+agent sends with callbox msg, it gets a name (made like a call's) and an
+inbox under it; the receiver sees an ordinary header and answers with
+callbox msg <that name>. Messages and the name expire after 60 minutes
+unused. With no <name>, the inbox is your own.
+
+  callbox inbox                    every message kept, oldest first
+  callbox inbox --wait             the next unread message; waits for one
+  callbox inbox --monitor          each unread message, then each new one as
+                                   it arrives, until stopped (one line each:
+                                   run it under a line monitor to be woken)
+  --timeout <ms>                   give up after this long (0 = never, the
+                                   default)
+
+  callbox msg <call> TEXT --wait-reply   send, then wait for the first reply
+
+Each message prints as [HH:MM from NAME] TEXT.
+Exit status: 0 a message came, 5 no such inbox, 7 timed out, 8 the inbox
+expired while waiting.

@@ -1,6 +1,7 @@
 #include "callbox/config.h"
 #include "callbox/types.h"
 #include "callbox/runtime.h"
+#include "callbox/help_text.h"
 #include "callbox/runtime_internal.h"
 #include "callbox/core.h"
 #include "callbox/platform.h"
@@ -229,63 +230,11 @@ int hold_cmd_console_action(const struct hold_invocation *inv,
 }
 
 void hold_usage(void) {
-    /* The main help: what callbox does, then its commands by use case, each
-     * pointing at a page of examples (callbox help users|agents|...). The
-     * banner keeps to 80 columns like every help line: a long dev or
-     * packager version puts the description on its own line. */
+    /* The banner, then the overview page (src/cli/help/overview.txt, compiled
+     * in). The banner keeps to 80 columns like every help line: a long dev
+     * or packager version puts the description on its own line. */
     static const char tagline[] = "see, drive, and test TUIs from scripts and AI agents";
     bool fits = strlen("callbox ") + strlen(HOLD_VERSION) + strlen(" - ") + strlen(tagline) <= 80;
     printf("callbox %s%s%s\n", HOLD_VERSION, fits ? " - " : "\n", tagline);
-    printf(
-           "\n"
-           "Run programs as calls: each has a name, keeps running when you leave, and\n"
-           "can be watched, typed into, messaged, ended, and started again. No daemon.\n"
-           "<call> is a call's name, its id, or the start of either.\n"
-           "\n"
-           "RUN AGENTS AND PROGRAMS YOURSELF                (see also: callbox help users)\n"
-           "  callbox -it <agent> [<args>]           an agent, attached; messages typed in\n"
-           "  callbox <program> [<args>]             a full-screen app, with a chat window\n"
-           "  callbox shell [<shell> [<args>]]       your shell, with a chat window\n"
-           "  callbox attach <call>                  join a running call again\n"
-           "  callbox <call>                         start an ended call again\n"
-           "  Ctrl-P Ctrl-Q leaves a call running; Ctrl-P Ctrl-T opens the chat window\n"
-           "\n"
-           "ORCHESTRATE AGENTS             (see also: callbox help agents, help messaging)\n"
-           "  callbox -dt --name <name> <agent>      start a subagent on its own terminal\n"
-           "  callbox msg <call> <text>              message it; replies are typed to you\n"
-           "  callbox msg [<call>] --received [<id>] messages a call has been sent\n"
-           "  callbox peek <call>                    read its screen\n"
-           "  callbox wait <call> --idle <ms>        until it has been quiet that long\n"
-           "  callbox send <call> -k <key>...        press keys in it\n"
-           "\n"
-           "DRIVE TERMINAL APPS                            (see also: callbox help agents)\n"
-           "  callbox -dt [--size <cols> <rows>] [--name <name>] <program> [<args>]\n"
-           "  callbox send <call> [<text>] [-k <key>]... [--paste <text>] [--mouse <spec>]\n"
-           "  callbox wait <call> [--match <text> | --regex <re>] [--idle <ms>]\n"
-           "  callbox peek <call> [--json | --image <file>]\n"
-           "  callbox resize <call> <cols> <rows>\n"
-           "\n"
-           "SERVICES AND BACKGROUND PROCESSES             (see also: callbox help service)\n"
-           "  callbox -d [-w] [--name <name>] [--restart <policy>] <program> [<args>]\n"
-           "  callbox ps | list                      running calls | all your calls\n"
-           "  callbox logs <call> [-f] [-n <lines>]  its output\n"
-           "  callbox stats | ports | inspect <call> CPU and memory | sockets | as JSON\n"
-           "  callbox wait <call>                    until it ends; prints its exit code\n"
-           "  callbox end | kill <call>...           TERM, then KILL | KILL now\n"
-           "  callbox save <call>                    keep it when ended calls are purged\n"
-           "  callbox rename <call> <name>           rename it (this also saves it)\n"
-           "  callbox purge [<call>] [-a] [--force]  remove ended calls\n"
-           "\n"
-           "TUTORIALS\n"
-           "  callbox help examples                  workflows, start to finish\n"
-           "  callbox help tui                       troubleshoot a terminal UI\n"
-           "  callbox help comms                     agents in different harnesses\n"
-           "  callbox help features                  what callbox does under the hood\n"
-           "\n"
-           "REFERENCE\n"
-           "  callbox help all                       every command and flag\n"
-           "  callbox help launch                    every flag for starting a call\n"
-           "  callbox help scripting | system        exit codes and stdout | root, sudo\n"
-           "  callbox <command> -h                   one command in full\n"
-           "  https://github.com/RchGrav/callbox     docs and issues\n");
+    (void)hold_help_print("overview");
 }

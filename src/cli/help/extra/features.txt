@@ -1,0 +1,56 @@
+callbox help features
+
+What callbox does for you, and how.
+
+ONE BINARY, NO DAEMON
+  One binary: static on Linux (x86-64, arm64, armhf, riscv64, mipsel), and
+  for macOS on Intel and Apple silicon. Nothing runs between commands: each
+  call's state is a record on disk, written atomically (temp file, fsync,
+  rename), so a crash or a full disk never leaves half a record. A plain -d
+  call leaves nothing behind at all: no helper process, just the program
+  and its log.
+
+SIGNALS THAT CANNOT HIT THE WRONG PROCESS
+  Before end or kill sends a signal, callbox checks that the process is still
+  the one it started: the boot, the process start time, the executable, and
+  the process group and session. A pid that was reused by something else is
+  never signaled. end sends TERM to the whole process group, waits, then KILL.
+
+A REAL TERMINAL, WITH NOBODY WATCHING
+  A -t call runs on a PTY owned by a small broker, which feeds every byte into
+  a headless terminal (libvterm). It always knows the screen: every cell, its
+  colors and attributes, the cursor, and the program's input modes. That is
+  what peek, wait --match, and peek --image read, with no one attached.
+  It answers the program's terminal queries itself, so programs that ask
+  for the cursor position or the terminal type work under -dt.
+  Keys go in as exact xterm bytes, one write each; mouse events use the
+  encoding the program asked for; pastes are bracketed when it wants that.
+  When a full-screen program exits, its last frame is kept: peek --last-alt.
+  peek --image draws the screen to a PNG with real fonts (Unifont, emoji),
+  box drawing, the cursor, and a ruler, so an agent can look at it.
+
+CALLS THAT COME BACK
+  Each call keeps its recipe: the command line (paths made absolute, so it
+  works from anywhere), the -e variables you gave it, its terminal size, and
+  how it was started. callbox <name> starts it again from that. --restart
+  restarts a failed program with backoff (1 s, doubling to 30 s), so a
+  program that fails at once never spins. Attach and detach as often as you
+  like; a new terminal is repainted from the screen, not replayed.
+
+NAMES YOU CAN TYPE
+  Every call gets a name (adjective_noun, from its id) unless you give one.
+  Any unique start of a name or id works, and so does the start of a
+  command: callbox pe is peek.
+
+MESSAGES BETWEEN AGENTS
+  msg types text into another call's prompt with a header naming the sender
+  and how to reply. Control characters and escape sequences are removed
+  first, so a message can never press Escape, submit early, or drive the
+  terminal; a call takes at most 20 messages a minute.
+
+WORKS WHERE OTHERS BREAK
+  Where Unix sockets are blocked (some sandboxes), consoles fall back to
+  FIFOs and keep every feature, peer checks included. In another PID
+  namespace, callbox asks the call's supervisor rather than trusting pids.
+  Under sudo, a call started in your home lands in your store, and every
+  file stays yours. Other users see root's calls through a redacted list.

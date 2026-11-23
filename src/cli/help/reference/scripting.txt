@@ -1,0 +1,32 @@
+callbox help scripting - exit codes, stdout, and stderr
+
+stdout is for machine data. Human banners, confirmations, warnings, and
+errors go to stderr; --quiet suppresses normal human status.
+
+  id=$(callbox -d <cmd...>)       capture the bare 64-hex call id
+  id=$(callbox -dw <cmd...>)      ...and record its exit code for callbox wait
+  callbox end --print <id>        print kill -TERM -- -<pgid>
+  callbox kill --print <id>       print kill -KILL -- -<pgid>
+
+Exit codes:
+  0  success (includes known name with nothing to do)
+  1  usage error (unknown option, bad value, wrong number of arguments), or a
+     failure with no code of its own
+  2  refused for safety
+  3  permission denied or storage/security failure
+  4  signal delivery failed
+  5  no such call: nothing matches the target, or it is not a valid id or name
+  6  more than one call (or verb) matches: they are listed; be more exact
+  7  callbox wait timed out (send --wait: the input was sent; the program
+     did not go quiet in time)
+  8  the call ended: before the wait condition held (send --wait: after the
+     input was sent), or (attach) before or while you were on it; attach
+     exits 0 when you detach, 3 if refused
+  9  send --mouse: the program has mouse reporting off (not delivered)
+  10 the call has no terminal screen or console (placed without -t / -i)
+  11 the call name asked for is taken
+  126 the command was found but cannot be run; 127 command not found
+
+With several targets (end a b c), each is acted on alone: the ones that
+resolve are ended, the rest reported, and the exit code is the worst.
+callbox msg prints the delivered message's id on stdout.

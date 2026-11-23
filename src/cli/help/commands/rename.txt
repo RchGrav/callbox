@@ -1,0 +1,5 @@
+usage: callbox rename <target> <name>
+
+Rename a call, live or ended. Naming a call says you want to keep it, so
+rename also saves it (protects it from purge); callbox purge <name> --force
+still removes it.

@@ -1,0 +1,56 @@
+callbox help examples
+
+A lead agent hands a review to a subagent:
+
+    callbox -it --name lead claude              you, in your terminal
+    callbox -dt --name reviewer codex           lead starts a subagent
+    callbox msg reviewer "review src/main.c"    lead gives it work
+    callbox wait reviewer --idle 5000           lead waits for it to finish
+    callbox peek reviewer                       ...or reads its screen
+    callbox end reviewer                        lead ends it when done
+
+Test a terminal app from a script:
+
+    callbox -dt --size 100 30 --name app ./my-tui
+    callbox wait app --match "Main menu" --timeout 5000
+    callbox send app 2 -k Enter
+    callbox wait app --match "Saved" --timeout 5000 ||
+        callbox peek app --image fail.png       a picture of what went wrong
+    callbox end app
+
+Run a development server while you work:
+
+    callbox -d --name api npm run dev
+    callbox logs api -f
+    callbox end api && callbox api               restart it
+
+Run a VM in the background and check on it:
+
+    callbox -d --name vm qemu-system-x86_64 -m 4G disk.qcow2
+    callbox stats vm
+    callbox logs vm -n 50
+    callbox end vm
+
+Run a long job and collect its exit code:
+
+    callbox -dw --name backup ./backup.sh
+    code=$(callbox wait backup); echo "backup exited $code"
+
+Test a network service in CI, and keep its log when the tests fail:
+
+    callbox -dt --name api ./server --port 8080
+    trap 'callbox end api; callbox purge api' EXIT
+    callbox wait api --match "listening" --timeout 30000
+    ./run-tests.sh || { callbox logs api -n 200; exit 1; }
+
+Bring up a mesh of QEMU nodes and drive each one's serial console:
+
+    for i in 1 2 3 4; do
+        callbox -dt --name node$i qemu-system-x86_64 -nographic -m 512M \
+            -drive file=node$i.qcow2 -nic user,model=virtio
+    done
+    callbox wait node3 --match "login:" --timeout 120000
+    callbox send node3 root -k Enter
+    callbox send node3 "ip -br addr" -k Enter
+    callbox peek node3                          what it answered
+    callbox attach node3                        or take its console yourself

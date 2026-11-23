@@ -1,0 +1,4 @@
+usage: callbox save <target>
+
+Protect a call from purge. There is no unsave; callbox purge <target> --force
+removes a saved call.

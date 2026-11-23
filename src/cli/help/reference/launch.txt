@@ -1,0 +1,72 @@
+callbox help launch - every flag for starting a call
+
+  callbox [options] [--] PROGRAM [ARGS...]
+  callbox [options] CALL
+
+Put options before PROGRAM; everything after it is passed to that program.
+-- forces a fresh program launch, even if its name is a Callbox command or
+an existing call. Shell expressions need an explicit shell: sh -c '...'.
+A lone CALL reconnects if running, or restarts its recorded command and mode
+if ended. A running call without a console is followed through its log.
+
+CHOOSE A MODE
+  No session flags: run attached on a terminal (PTY). On a real terminal,
+  messages go to a chat window; Ctrl-P Ctrl-T opens it. In a script, output
+  streams with terminal line endings, stderr merged, and messages typed in.
+  Use -i for pipe input. A PTY is a virtual terminal for the program.
+
+  -d, --detach     return immediately with the call ID on stdout
+  -w, --wait       keep an exit-code waiter; with -d, launch still returns now
+  -t, --tty        give the program a terminal screen
+  -i, --interactive
+                   keep input open; without -t, relay it through a pipe
+
+  -it              attached terminal; messages are typed into the program
+  -dt              detached terminal; inspect and control it with peek/send
+  -d               detached process, no terminal or recorded exit code
+  -dw              detached process with a recorded exit code
+  -di              detached pipe input; attach can feed it later
+
+  Terminal and pipe-input calls record exit codes. --rm and active restart
+  policies also retain a waiter. Plain -d alone leaves no Callbox helper.
+
+SET UP THE PROGRAM
+  --name NAME      assign a name (one is generated otherwise)
+  --size COLS ROWS set terminal dimensions, each 1-1000; COLSxROWS also works
+                   Default: --size, then saved detach-size for detached
+                   terminals, then invoking terminal size, then 80 24.
+  -e, --env KEY=VALUE
+                   set an environment variable; repeat for more variables
+  --env-file FILE  read KEY=VALUE lines from a file
+  --rm             remove the record, log, and screens when the call ends
+  --restart POLICY no (default), always, unless-stopped, on-failure[:N]
+                   Active policies run without a PTY; they cannot use -t.
+  --restart-delay SECONDS
+                   fixed delay between restarts, 0 for none; requires an
+                   active policy. Default: 1 s, doubling to 30 s, reset to
+                   1 s after a run of at least 10 s.
+
+CONTROL AN ATTACHED CALL
+  Ctrl-C           send the interrupt to the program
+  Ctrl-P Ctrl-Q    detach; the call keeps running
+  Ctrl-D           end pipe input with -i
+  --detach-keys KEYS
+                   change detach keys (default ctrl-p,ctrl-q); one key such
+                   as ctrl-] detaches immediately. Chat needs two
+                   keys, with its chat key different from both.
+  --chat-key KEY   for callbox shell only: choose the key after the lead key
+                   that opens chat (default ctrl-t)
+  -f, --tail CALL  follow a call's new log output without attaching or redial;
+                   Ctrl-C stops following, leaving the call running
+
+COMMON OPTIONS
+  --quiet          suppress status notes on stderr, keeping data on stdout
+  --system         select root-managed state; actions require root
+  -h, --help       show help (also callbox COMMAND --help)
+  -V, --version    print the version
+
+Value options accept --flag=value. Every PTY call gets TERM=xterm-256color,
+whatever your own TERM is; -e TERM=... sets another. The detach-size
+setting applies only to new detached terminal calls; see callbox config -h.
+
+More: callbox help targets, callbox help system, callbox help scripting

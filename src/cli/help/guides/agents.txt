@@ -1,0 +1,54 @@
+callbox help agents - start another agent and give it work
+
+USE THIS WHEN
+  You have work to hand off: a review, a test run, a second opinion. The
+  other agent runs in a call of its own, in any harness that runs in a
+  terminal (Claude Code, Codex, opencode, ...). The harness must already
+  be installed and set up for your project.
+
+EXAMPLE
+  You, in your terminal:
+
+    callbox -it --name lead claude          # the agent you work with
+
+  lead, through its command tool:
+
+    callbox -dt --name reviewer codex       # start the second agent
+    callbox wait reviewer --idle 2000       # let it draw its prompt
+    callbox peek reviewer                   # ready for input?
+    callbox msg reviewer "review src/main.c; send me what you find"
+    callbox peek reviewer                   # follow its progress
+    callbox end reviewer                    # stop it when you are done
+    callbox purge reviewer                  # remove it, free the name
+
+  reviewer answers with callbox msg lead "...", which is typed into lead's
+  prompt like anything you type. Neither agent has to poll.
+
+WHAT THE COMMANDS DO
+  callbox -dt --name <name> <agent>
+      Starts the agent detached, on a terminal of its own. It prints the
+      call's id on stdout and its name on stderr, then returns.
+  callbox msg <call> <text>
+      Types the text into the agent's prompt and presses Enter, after a
+      header that names the sender and how to reply.
+  callbox peek <call>
+      Prints the agent's screen: its progress, its questions, its answer.
+  callbox wait <call> --idle <ms>
+      Blocks until the screen has been quiet that long. Quiet is not done:
+      judge completion from the agent's reply and its screen. callbox wait
+      with no condition waits for the agent to exit, which an interactive
+      agent does only when it is closed.
+  callbox end <call>
+      Stops the agent: TERM, then KILL after 5 seconds. It keeps its name
+      and its log until you purge it.
+
+MORE WAYS TO CHECK AND STEER
+    callbox ps                              # the agents that are running
+    callbox msg lead --received             # what lead has been sent
+    callbox send reviewer -k Escape         # interrupt it
+    callbox logs reviewer -n 50             # its newest output
+    callbox attach reviewer                 # take its terminal yourself
+
+SEE ALSO
+  callbox help messaging          how messages arrive; agents outside callbox
+  callbox help tui                drive any terminal app the same way

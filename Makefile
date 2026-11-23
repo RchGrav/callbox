@@ -38,8 +38,13 @@ VTERM_CFLAGS := $(filter-out -Werror -Wall -Wextra -Wpedantic -std=%,$(CFLAGS)) 
 # -DHOLD_TESTING and a different HOLD_BOOT_ID_PATH) can never be linked
 # into a release binary, and vice versa.
 VTERM_OBJS := $(patsubst third_party/libvterm/src/%.c,obj/vterm/%.o,$(VTERM_SRCS))
-OBJS      := $(patsubst src/%.c,obj/%.o,$(SRCS)) $(VTERM_OBJS)
-TEST_OBJS := $(patsubst src/%.c,obj-test/%.o,$(SRCS)) $(VTERM_OBJS)
+# The help pages are plain text in src/cli/help (readable on GitHub); a
+# generated C file compiles them in, so callbox reads no files to print help.
+HELP_TXT := $(sort $(wildcard src/cli/help/*.txt src/cli/help/*/*.txt))
+HELP_GEN := gen/help_text.c
+
+OBJS      := $(patsubst src/%.c,obj/%.o,$(SRCS)) obj/gen/help_text.o $(VTERM_OBJS)
+TEST_OBJS := $(patsubst src/%.c,obj-test/%.o,$(SRCS)) obj-test/gen/help_text.o $(VTERM_OBJS)
 
 INCLUDES := -Iinclude -Ithird_party/libvterm/include
 ALL_CPPFLAGS := $(CPPFLAGS) $(EXTRA_CPPFLAGS) $(INCLUDES) $(VERSION_CPPFLAG)
@@ -55,6 +60,18 @@ all: callbox
 obj/vterm/%.o: third_party/libvterm/src/%.c Makefile
 	@mkdir -p $(dir $@)
 	$(CC) -Ithird_party/libvterm/include $(VTERM_CFLAGS) $(DEPFLAGS) -c -o $@ $<
+
+$(HELP_GEN): $(HELP_TXT) scripts/gen_help.sh
+	@mkdir -p $(dir $@)
+	sh scripts/gen_help.sh src/cli/help $(HELP_TXT) > $@.tmp && mv $@.tmp $@
+
+obj/gen/help_text.o: $(HELP_GEN) Makefile
+	@mkdir -p $(dir $@)
+	$(CC) $(ALL_CPPFLAGS) $(DEPFLAGS) $(CFLAGS) -c -o $@ $<
+
+obj-test/gen/help_text.o: $(HELP_GEN) Makefile
+	@mkdir -p $(dir $@)
+	$(CC) $(ALL_CPPFLAGS) $(TEST_CPPFLAGS) $(DEPFLAGS) $(CFLAGS) -c -o $@ $<
 
 obj/%.o: src/%.c Makefile
 	@mkdir -p $(dir $@)
@@ -123,6 +140,6 @@ lint:
 
 clean:
 	rm -f callbox callbox-dynamic callbox-test screen-test
-	rm -rf obj obj-test
+	rm -rf obj obj-test gen
 
 .PHONY: all clean test test-040 check ci lint screen-test print-version

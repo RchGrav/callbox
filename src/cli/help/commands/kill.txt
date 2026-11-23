@@ -1,0 +1,4 @@
+usage: callbox kill [--print] <target>...
+
+Force calls down with KILL, at once. Several targets may be named. --print
+prints the kill command instead of running it.

@@ -1,0 +1,18 @@
+usage: callbox config get <setting>
+       callbox config set <setting> <value>
+       callbox config unset <setting>
+settings: detach-size COLS ROWS
+
+Your saved defaults, kept in ~/.config/callbox/config (one "name value" line
+each).
+
+  detach-size COLS ROWS   the terminal size of a detached TTY call (callbox -dt,
+                          -dwt) placed without --size. Order: --size, then
+                          this, then the invoking terminal's size, then 80 24.
+                          Foreground launches never use it, and changing it
+                          never resizes a running call (callbox resize does).
+
+get prints the saved value (exit 1 when unset); set checks the value before
+saving, so a refused one leaves what was saved; unset clears it. Under sudo a
+launch reads your settings, but changing them is done as yourself, without
+sudo.
