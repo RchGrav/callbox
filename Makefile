@@ -97,8 +97,12 @@ screen-test: tests/screen_test.c src/screen/screen.c src/console/compose.c src/c
 	$(CC) $(ALL_CPPFLAGS) $(TEST_CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o screen-test tests/screen_test.c src/screen/screen.c src/console/compose.c src/term/line.c $(VTERM_OBJS)
 	@./screen-test
 
-test-040: callbox-dynamic
-	@HOLD_BIN=./callbox-dynamic bash tests/test_040_dockerish.sh
+# The test build: only it honors HOLD_TEST_SYSTEM_STATE_DIR, so run as root
+# (the root CI lane) a release build wrote into the machine's real system
+# store. It used to pass by reusing a test-flag callbox-dynamic the suite's
+# build test left in the tree; that test now builds in a copy.
+test-040: callbox-test
+	@HOLD_BIN=./callbox-test bash tests/test_040_dockerish.sh
 
 print-version:
 	@printf '%s\n' '$(VERSION)'

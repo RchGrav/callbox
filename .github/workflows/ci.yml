@@ -93,6 +93,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+      - name: Install the TUIs the screen tests drive
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux whiptail vim-tiny micro
       - name: Run tests with ASan/UBSan to catch memory and UB regressions
         run: |
           make clean

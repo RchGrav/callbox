@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-HOLD_REAL_BIN="${HOLD_BIN:-./callbox-dynamic}"
+HOLD_REAL_BIN="${HOLD_BIN:-./callbox-test}"
 case "$HOLD_REAL_BIN" in
   /*) ;;
   *) HOLD_REAL_BIN="$PWD/$HOLD_REAL_BIN" ;;
@@ -77,15 +77,15 @@ sleep 0.3
 callbox rename named-smoke renamed-smoke >/dev/null 2>&1 || fail "rename failed"
 callbox ps -a | grep -q 'renamed-smoke' || fail "rename did not update the call name"
 
-if callbox -p 8080:80 -- /bin/true >/tmp/callbox-pub.out 2>/tmp/callbox-pub.err; then
+if callbox -p 8080:80 -- /bin/true >"$TEST_ROOT"/pub.out 2>"$TEST_ROOT"/pub.err; then
   fail "publish unexpectedly succeeded"
 fi
-grep -q 'does not publish or forward ports' /tmp/callbox-pub.err ||
+grep -q 'does not publish or forward ports' "$TEST_ROOT"/pub.err ||
   fail "publish rejection message missing"
-if callbox -v "$TEST_ROOT:/work" -- /bin/true >/tmp/callbox-vol.out 2>/tmp/callbox-vol.err; then
+if callbox -v "$TEST_ROOT:/work" -- /bin/true >"$TEST_ROOT"/vol.out 2>"$TEST_ROOT"/vol.err; then
   fail "volume unexpectedly succeeded"
 fi
-grep -q 'does not mount or remap volumes' /tmp/callbox-vol.err ||
+grep -q 'does not mount or remap volumes' "$TEST_ROOT"/vol.err ||
   fail "volume rejection message missing"
 
 server=$(callbox -d --name port-smoke -- python3 -c 'import socket,time; s=socket.socket(); s.bind(("127.0.0.1",0)); s.listen(); time.sleep(5)' 2>&1 | extract_full64 | cut -c1-12)

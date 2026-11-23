@@ -662,12 +662,23 @@ static int run_wait(const struct screen_target *t, const char *args, bool print_
     /* A closed console (the program ended, or closed its terminal) is not an
      * error here: the caller decides from the record or the last screen. */
     if (control_quiet(t, args, strlen(args), &reply, &len) != 0) {
-        if (errno == ENOENT) return WAIT_CONSOLE_CLOSED;
+        /* A broker that went away while we wrote the request breaks the
+         * connection instead (EPIPE or ECONNRESET; the FIFO transport is
+         * slow enough to show it after a send --wait ended the program). */
+        if (errno == ENOENT || errno == EPIPE || errno == ECONNRESET) return WAIT_CONSOLE_CLOSED;
         fprintf(stderr, "callbox: cannot reach %s's console: %s\n", t->label, strerror(errno));
         return 3;
     }
     int rc = 0;
     const char *r = (const char *)reply;
+    /* A broker shutting down answers a request it had not yet read with this
+     * instead of closing: the console closed, as above. Why: a send --wait
+     * whose wait arrived late (the FIFO transport is slower) said only "the
+     * call has ended", exit 1, where it means input sent, then ended (8). */
+    if (!strncmp(r, "error the call has ended", 24)) {
+        free(reply);
+        return WAIT_CONSOLE_CLOSED;
+    }
     const char *ec = strstr(r, "exit_code=");
     int code = ec ? atoi(ec + 10) : 0;
     if (!strncmp(r, "ok", 2)) {

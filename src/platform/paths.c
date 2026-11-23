@@ -114,7 +114,10 @@ int hold_find_binary_path(const char *argv0, char *out, size_t n) {
      * (126), not "command not found" (127), when no later entry runs: what
      * a shell and execvp report, and what the same file reports by its
      * absolute path. Why: 127 sends the person looking for a missing
-     * program when the fix is chmod. */
+     * program when the fix is chmod. Only a file that is there counts: a
+     * PATH directory this user cannot enter also answers EACCES, for a name
+     * that is not in it (root's home on another user's PATH), and that is
+     * still "not found", as bash reports it. */
     bool denied = false;
     for (const char *p = path;; p = strchr(p, ':') + 1) {
         const char *colon = strchr(p, ':');
@@ -124,7 +127,8 @@ int hold_find_binary_path(const char *argv0, char *out, size_t n) {
         if (len > 0 &&
             hold_checked_snprintf(candidate, sizeof(candidate), "%.*s/%s", (int)len, p, argv0) == 0) {
             if (access(candidate, X_OK) == 0 && absolute_copy(candidate, NULL, out, n) == 0) return 0;
-            if (errno == EACCES) denied = true;
+            struct stat st;
+            if (errno == EACCES && stat(candidate, &st) == 0) denied = true;
         }
         if (!colon) break;
     }

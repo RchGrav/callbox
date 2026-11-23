@@ -429,7 +429,16 @@ int hold_run_native_console(const char *sock_path) {
 
     /* The connection closing just after the detach keys is the detach. */
     if (a.detach_sent_ms && attach_now_ms() - a.detach_sent_ms < 2000) rc = 0;
-    if (g_gone && !a.heard && a.holding) read_parting_words(sock, &a);
+    if (g_gone && !a.heard && a.holding) {
+        /* Only a refusal is taken from what is read after the break. A broker
+         * whose program ended as we arrived may have left a screen repaint
+         * (sent before our stream request reached it); printing that would
+         * put a terminal redraw where the run's output belongs, which the
+         * caller prints from the log for a console that is gone. */
+        size_t before = a.held_len;
+        read_parting_words(sock, &a);
+        if (!parse_refusal(a.held, a.held_len, &g_refused_by)) a.held_len = before;
+    }
     if (a.holding && a.held_len > 0) {
         if (parse_refusal(a.held, a.held_len, &g_refused_by)) {
             g_refused = true;

@@ -2570,6 +2570,12 @@ test_cannot_start_126_by_path_and_restart() {
   [ "$rc" -eq 126 ] && [ -z "$out" ] || { echo "--restart -d: rc=$rc out=[$out] (want 126, no id)" >&2; return 1; }
   rc=0; "$HOLD_BIN" -d --restart always no-such-command-xyz >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 127 ] || { echo "--restart, not found: rc=$rc (want 127)" >&2; return 1; }
+  # A PATH directory this user cannot enter says EACCES for any name; a name
+  # in none of PATH is still not found (the root lane's PATH has /home/runner).
+  mkdir -p "$TEST_ROOT/locked"; chmod 000 "$TEST_ROOT/locked"
+  rc=0; PATH="$TEST_ROOT/locked:$PATH" "$HOLD_BIN" -d no-such-command-xyz >/dev/null 2>&1 || rc=$?
+  chmod 700 "$TEST_ROOT/locked"
+  [ "$rc" -eq 127 ] || { echo "behind a locked PATH dir, not found: rc=$rc (want 127)" >&2; return 1; }
   if "$HOLD_BIN" list -a | grep -q 'not-exec\|no-such-command'; then echo "a failed start left a record" >&2; return 1; fi
 }
 
@@ -2603,7 +2609,10 @@ test_concurrent_redials_start_once() {
   local i starts rc launched
   "$HOLD_BIN" -d --name burst -- sh -c 'echo x >> "$0"; sleep 30' "$TEST_ROOT/starts" >/dev/null || return 1
   "$HOLD_BIN" end burst >/dev/null 2>&1 || return 1
-  : > "$TEST_ROOT/starts"
+  name_ended_soon burst || return 1
+  # The root lane runs this body as root and the calls as a test user: the
+  # count file must stay writable by the program.
+  : > "$TEST_ROOT/starts"; chmod 666 "$TEST_ROOT/starts"
   # A loser that sees the call running before it takes the claim reports it
   # the -d way (the id, "already running", exit 0); one that loses the claim
   # itself exits 6. Either way it says "already running"; one launch does not.
@@ -3674,13 +3683,20 @@ PY
 # delete the binary this suite is running and leave a test build where the
 # release binary goes.
 test_build_artifact_coexistence() {
-  local src="$TEST_ROOT/tree"
+  local src="$TEST_ROOT/tree" jobs
   mkdir "$src" || return 1
   cp -R Makefile src include third_party "$src/" || return 1
   mkdir -p "$src/.github/scripts" && cp .github/scripts/resolve_version.sh "$src/.github/scripts/" || return 1
-  make -C "$src" callbox STATIC_LDFLAGS= EXTRA_CPPFLAGS=-DHOLD_TESTING VERSION=test >/dev/null || return 1
+  # Two object sets from scratch, so: in parallel, unoptimized, and without
+  # the outer build's flags (a sanitizer run passes them down in MAKEFLAGS).
+  # What is tested is the artifacts' names, not their code; a sanitizer
+  # build on a two-core runner outlasted the per-test timeout.
+  jobs=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)
+  MAKEFLAGS= make -j"$jobs" -C "$src" callbox CFLAGS='-std=c11 -O0' LDFLAGS= STATIC_LDFLAGS= \
+    EXTRA_CPPFLAGS=-DHOLD_TESTING VERSION=test >/dev/null || return 1
   [ -x "$src/callbox" ] || return 1
-  make -C "$src" callbox-dynamic callbox-test EXTRA_CPPFLAGS=-DHOLD_TESTING VERSION=test >/dev/null || return 1
+  MAKEFLAGS= make -j"$jobs" -C "$src" callbox-dynamic callbox-test CFLAGS='-std=c11 -O0' LDFLAGS= TEST_LDFLAGS= \
+    EXTRA_CPPFLAGS=-DHOLD_TESTING VERSION=test >/dev/null || return 1
   [ -x "$src/callbox" ] && [ -x "$src/callbox-dynamic" ] && [ -x "$src/callbox-test" ]
 }
 

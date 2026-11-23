@@ -53,7 +53,10 @@
 - `send --wait` says the input was sent when the wait then fails: "input
   sent; q then ended (exit code 0) before going quiet" (8), "input sent; busy
   did not go quiet within 1000 ms" (7). Why: it printed `wait`'s own text, so
-  a failed step read as if the keys had not arrived.
+  a failed step read as if the keys had not arrived. `wait` and `send --wait`
+  also count a console that closes while the request is on its way (the
+  broker's "the call has ended" reply, or a broken connection, as the FIFO
+  transport shows) as the call ending, not as an error (1 or 3).
 - `msg` removes a whole escape sequence from message text, not only its
   first byte: `\e[31mRED` arrives as `RED`, not `[31mRED`. Why: the leftover
   bytes were noise in the receiver's prompt that no sender meant as text.

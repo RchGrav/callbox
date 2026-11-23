@@ -38,6 +38,8 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - name: Install the TUIs the screen tests drive
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux whiptail vim-tiny micro
       - name: Build static and dynamic
         run: |
           make clean
@@ -57,6 +59,8 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - name: Install the TUIs the screen tests drive
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux whiptail vim-tiny micro
       - name: Run root-sensitive suite from a non-root sudoer
         run: bash scripts/test_root.sh
 
