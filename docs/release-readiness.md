@@ -4,7 +4,8 @@
 
 Reviewed on 2026-11-23, starting from `deb3ac3` (`v0.9.12`). This review
 covers the onboarding, help, command surface, messaging fixes, and validation
-in this change. It is not a claim that a 1.0 release has been certified.
+in this change, with the successful upstream CI results added during 1.0.0
+release preparation.
 
 ## Assessment
 
@@ -13,12 +14,18 @@ project has a functioning build, test, installer, and release pipeline.
 The help now makes their boundaries explicit. The three reproduced inbox
 bugs found during this review are fixed and have regression coverage.
 
-This is a stronger pre-1.0 release candidate. The remaining evidence for a
-1.0 decision is the existing platform/privilege CI on the final revision
-and a real cross-harness acceptance run. This environment could validate
-the messaging transport and a persistent stand-in harness, but not actual
-Claude Code/Codex input queueing or agent wakeups. No version or release tag
-was changed as part of this work.
+The implementation at `efc0388` passed the full upstream
+[CI workflow](https://github.com/RchGrav/callbox/actions/runs/45257369999)
+and [multi-platform workflow](https://github.com/RchGrav/callbox/actions/runs/45257369892),
+including privilege tests and all 13 platform builds. The maintainer has
+chosen to release 1.0.0 and test it through the published installer.
+Release preparation changes only the changelog and release documentation;
+the tested implementation is unchanged.
+
+Real cross-harness acceptance remains unverified. This environment
+validated the messaging transport and a persistent stand-in harness,
+but not actual Claude Code/Codex input queueing or agent wakeups. These
+are harness-dependent behaviors, not guarantees added by this release.
 
 ## What the review established
 
@@ -31,6 +38,7 @@ was changed as part of this work.
 | CI jobs and services | Executed the job flow with success and failure: printed child codes 0 and 2 propagated to the script. A Python HTTP server passed readiness/content checks; success and failing-test paths both logged output, stopped the service, and purged its record. |
 | Presentation | A runnable `sh`/`tr` quickstart, explicit launch modes, and direct links to the same guides replace competing command summaries. Four existing PNGs were reviewed and retained unchanged; Vim is the README hero. No new artwork or screenshots were introduced. |
 | Packaging baseline | [v0.9.12](https://github.com/RchGrav/callbox/releases/tag/v0.9.12) publishes 13 platform archives, an installer, and checksums. Its [CI](https://github.com/RchGrav/callbox/actions/runs/45244602235), [multi-platform build](https://github.com/RchGrav/callbox/actions/runs/45244602182), and [release](https://github.com/RchGrav/callbox/actions/runs/45244604485) completed successfully. Those runs establish the baseline, not validation of this change. |
+| Updated implementation | The [CI](https://github.com/RchGrav/callbox/actions/runs/45257369999) and [multi-platform build](https://github.com/RchGrav/callbox/actions/runs/45257369892) for `efc0388` both completed successfully. They exercise the updated implementation across the existing platform, privilege, analysis, and sanitizer lanes. The versioned release workflow separately downloads and smoke-tests the published installer. |
 
 The images were already in the repository in commits `35267e0` and
 `1e6e4c4`; repository and vendored font licensing were reviewed. The README
@@ -118,7 +126,7 @@ Markdown files resolved, and 16 executable shell example blocks passed
   service. `ports` and meaningful `stats` output are Linux-only.
 - Root/sudo, other PID namespaces, macOS, native Unix sockets, unavailable
   TUIs, and real external harnesses were not exercised locally. Clang,
-  cppcheck, and sanitizer lanes were not rerun here. A fresh
-  live-network installation and cross-platform release builds were also
-  not run here. Installer regression tests passed; baseline release CI is
-  linked above. See [CI parity](CI-PARITY.md) for the existing coverage.
+  cppcheck, and sanitizer lanes were not rerun locally. The upstream CI
+  and cross-platform builds linked above passed on the updated implementation;
+  they do not establish real external-harness behavior. Installer regression
+  tests passed. See [CI parity](CI-PARITY.md) for the existing coverage.
