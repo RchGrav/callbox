@@ -578,11 +578,112 @@ static int help_scripting(void) {
     return 0;
 }
 
+/* For a person starting an agent or a program and coming back to it. */
+static int help_you(void) {
+    printf(
+           "callbox help you\n"
+           "\n"
+           "START AN AGENT OR A PROGRAM YOURSELF\n"
+           "\n"
+           "  callbox -it claude              an agent, attached: messages to it are typed\n"
+           "                                  into its prompt (also codex, agy, pi, ...)\n"
+           "  callbox -it --name lead claude  ...under a name you choose\n"
+           "  callbox htop                    a full-screen program, attached, with the\n"
+           "                                  chat window: messages for it go there\n"
+           "  callbox -- PROG [args]          PROG, even if its name is a callbox command\n"
+           "  callbox shell                   your shell, with a chat window to your agents\n"
+           "  callbox -i PROG                 your input on a pipe (line-based programs)\n"
+           "\n"
+           "The call's name shows in the top-right corner when you start or attach to it\n"
+           "(and on stderr after a -d launch): it is how msg, peek, and attach reach it.\n"
+           "\n"
+           "KEYS, on any call you are attached to\n"
+           "  Ctrl-C                          goes to the program\n"
+           "  Ctrl-P Ctrl-Q                   leave it running (detach)\n"
+           "  Ctrl-P Ctrl-T                   the chat window (callbox shell, and a program\n"
+           "                                  started without a switch)\n"
+           "\n"
+           "COME BACK\n"
+           "  callbox ps                      what is running, by name\n"
+           "  callbox attach <target>         join it again\n"
+           "  callbox <name>                  an ended call: start it again (redial)\n"
+           "  callbox rename <target> NAME    give it a name you will remember\n");
+    return 0;
+}
+
+/* For an agent driving terminal programs and messaging other calls. */
+static int help_agents(void) {
+    printf(
+           "callbox help agents\n"
+           "\n"
+           "FOR AGENTS: DRIVE TERMINAL APPS AND TALK TO EACH OTHER\n"
+           "\n"
+           "Start what you drive on a headless terminal. It keeps running while you\n"
+           "work; every command below takes its name ($CALLBOX_NAME is your own).\n"
+           "\n"
+           "  callbox -dt --name app <cmd>    start it: the id on stdout, its name on stderr\n"
+           "  callbox -dt --size 120 40 ...   ...at that size (default 80x24)\n"
+           "  callbox peek app                its screen as text (--image out.png to look)\n"
+           "  callbox send app TEXT -k Enter  type into it (-k KEY, --paste, --mouse)\n"
+           "  callbox send app ... --wait MS  ...then wait until the screen settles\n"
+           "  callbox wait app --match TEXT   until TEXT is on the screen (--idle MS,\n"
+           "                                  --regex RE, --timeout MS)\n"
+           "  callbox resize app 120 40       change its terminal size\n"
+           "  callbox end app                 end it politely\n"
+           "\n"
+           "SUBAGENTS AND MESSAGES\n"
+           "  callbox -dt --name helper claude      a subagent on its own terminal\n"
+           "  callbox msg helper \"TEXT\"             typed into its prompt, after a header:\n"
+           "      [msg from NAME; reply: callbox msg NAME \"...\"]\n"
+           "  callbox msg helper --received [ID]    its message history\n"
+           "\n"
+           "Exit codes, --quiet, and what goes to stdout: callbox help scripting.\n");
+    return 0;
+}
+
+/* For keeping processes running in the background, as nohup or setsid would, with control kept. */
+static int help_background(void) {
+    printf(
+           "callbox help background\n"
+           "\n"
+           "BACKGROUND PROCESSES\n"
+           "\n"
+           "Like nohup or setsid, a call keeps running after you leave, in its own\n"
+           "session, with its output in a log. Unlike them, you keep control: see it,\n"
+           "read its output, end it politely, and start it again from its recipe.\n"
+           "\n"
+           "START\n"
+           "  callbox -d --name vm qemu-system-x86_64 ...   print the id and return\n"
+           "  callbox -dw <cmd>               ...and record its exit code (callbox wait vm)\n"
+           "  callbox -d --restart on-failure <cmd>   start it again when it fails\n"
+           "                                  (also always, unless-stopped; not with -t)\n"
+           "  callbox -dt <cmd>               on a terminal, for programs that need one\n"
+           "\n"
+           "SEE\n"
+           "  callbox ps                      running calls\n"
+           "  callbox list                    your calls, running and ended\n"
+           "  callbox logs vm [-f] [-n N]     its output (-f: follow it)\n"
+           "  callbox stats vm | ports vm     CPU and memory | listening sockets\n"
+           "  callbox inspect vm              everything, as JSON\n"
+           "\n"
+           "CONTROL\n"
+           "  callbox end vm                  TERM, then KILL if it has not gone in 5 s\n"
+           "  callbox kill vm                 KILL now\n"
+           "  callbox vm                      an ended call: start it again (redial)\n"
+           "  callbox save vm                 keep it when ended calls are purged\n"
+           "  callbox purge vm                drop its record and log (purge: every\n"
+           "                                  ended call you have not saved)\n");
+    return 0;
+}
+
 int hold_show_help(const char *topic) {
     if (!topic || !*topic) {
         hold_usage();
         return 0;
     }
+    if (!strcmp(topic, "you")) return help_you();
+    if (!strcmp(topic, "agents")) return help_agents();
+    if (!strcmp(topic, "background")) return help_background();
     if (!strcmp(topic, "targets")) return help_targets();
     if (!strcmp(topic, "system")) return help_system();
     if (!strcmp(topic, "scripting")) return help_scripting();

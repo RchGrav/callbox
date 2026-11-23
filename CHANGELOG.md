@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.7 - 2026-11-23
+
+### Added
+
+- A launch says the call's name. `-d` / `-dt` print the id on stdout as
+  before, then `name: NAME` on stderr; `-it` (and `callbox attach`) shows
+  `callbox: NAME` in the top-right corner for 5 seconds, then the screen as
+  the program drew it. Why: with several calls running, whoever started one
+  could not tell which name was theirs, the name msg, peek and attach take.
+- `callbox help you`, `callbox help agents`, `callbox help background`: the
+  help by use case - starting an agent or program yourself, driving
+  terminal apps and messaging from an agent, and background processes (like
+  nohup or setsid, with control kept). The main screen leads with the three.
+
+### Changed
+
+- The chat window pads names to 15 columns, so message times line up; a
+  longer name pushes its time out and is never cut.
+
 ## 0.9.6 - 2026-11-23
 
 ### Fixed

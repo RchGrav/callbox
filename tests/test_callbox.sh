@@ -889,7 +889,7 @@ test_argument_edges() {
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || { cat "$TEST_ROOT/bare-callbox.out" "$TEST_ROOT/bare-callbox.err" >&2; return 1; }
-  grep -q 'PLACE A CALL' "$TEST_ROOT/bare-callbox.out" || { cat "$TEST_ROOT/bare-callbox.out" >&2; return 1; }
+  grep -q 'START AN AGENT OR A PROGRAM' "$TEST_ROOT/bare-callbox.out" || { cat "$TEST_ROOT/bare-callbox.out" >&2; return 1; }
   set +e
   "$HOLD_BIN" purge -all >/dev/null 2>"$TEST_ROOT/prune-flag.err"
   rc=$?
@@ -5945,7 +5945,7 @@ EOF
 # callbox help launch lists the flags for placing a call.
 test_help_pages_fit_and_say_it() {
   local topic wide
-  for topic in "" launch targets system scripting list ps end stop kill tail logs inspect ports stats peek send wait msg resize config shell attach console purge save rename; do
+  for topic in "" you agents background launch targets system scripting list ps end stop kill tail logs inspect ports stats peek send wait msg resize config shell attach console purge save rename; do
     # shellcheck disable=SC2086
     "$HOLD_BIN" help $topic > "$TEST_ROOT/help.out" 2> "$TEST_ROOT/help.err" || { echo "callbox help $topic failed" >&2; return 1; }
     [ -s "$TEST_ROOT/help.out" ] || { echo "callbox help $topic printed nothing" >&2; return 1; }

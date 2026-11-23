@@ -1474,7 +1474,10 @@ static void draw_history(struct chat *c, const struct layout *L) {
                 bool mine = m->state != MSG_IN;
                 /* Yours under your call's name, not "you": the name the
                  * other side sees and answers. */
-                snprintf(head, sizeof(head), "%s", mine ? (c->self[0] ? c->self : "you") : t->label);
+                /* Padded to 15 (the longest generated name), so the time
+                 * starts at one column; a longer name pushes it out, never
+                 * cut. Why: times that line up read as a column. */
+                snprintf(head, sizeof(head), "%-15s", mine ? (c->self[0] ? c->self : "you") : t->label);
                 int used = put(c, row, c->x + 1, width, head, mine ? &ST_YOU : &ST_PEER);
                 used += put(c, row, c->x + 1 + used, width - used, " ", &ST_DIM);
                 used += put(c, row, c->x + 1 + used, width - used, when, &ST_DIM);

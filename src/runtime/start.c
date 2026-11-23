@@ -1139,9 +1139,16 @@ int hold_perform_start_options(const struct hold_invocation *inv,
 
     char display_id[ID_DISPLAY_HEX_LEN + 1];
     hold_run_id_display(r.id, display_id);
-    /* Docker's dialect: detach prints the full ID alone; foreground prints
-     * nothing of its own (the call's output is what follows). */
-    if (!tail) printf("%s\n", r.id);
+    /* Docker's dialect: detach prints the full ID alone on stdout (scripts
+     * read it: id=$(callbox -dt ...)); foreground prints nothing of its own
+     * (the call's output is what follows). The name follows on stderr. Why:
+     * it is what msg, peek and attach take, and with other calls running,
+     * whoever started this one could not tell which name was theirs. */
+    if (!tail) {
+        printf("%s\n", r.id);
+        fflush(stdout);
+        if (r.has_name && r.name[0]) hold_sig_note(inv, "name: %s\n", r.name);
+    }
     fflush(stdout);
 
     if (tail) {

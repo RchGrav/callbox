@@ -389,13 +389,18 @@ struct attach_client {
     bool needs_repaint;
     bool stream;       /* not a terminal: output as a stream, never a repaint */
     bool no_terminal;  /* nothing on the client's side answers terminal queries */
+    bool name_shown;   /* the corner name was drawn for this client */
+    int64_t name_until_ms; /* when to take it down again (0 = not up) */
     unsigned char pending[16384];
     size_t pending_len;
 };
 
 static bool forward_detach(struct broker *b);
 
+static int repaint_raw(struct broker *b, struct attach_client *c, const char *label);
 static void drop_attach(struct broker *b, struct attach_client *c) {
+    /* The name still up in its corner: the screen without it goes first. */
+    if (c->fd >= 0 && c->name_until_ms) (void)repaint_raw(b, c, NULL);
     if (c->fd >= 0) {
         if (c->output != c->fd) close(c->output);
         close(c->fd);
@@ -550,6 +555,38 @@ static int replay_attach(struct broker *b, struct attach_client *c) {
     return rc;
 }
 
+/* The screen as a repaint for a raw attach client; with label, that text is
+ * drawn in reverse video at the right end of the top row (show_name). */
+static int repaint_raw(struct broker *b, struct attach_client *c, const char *label) {
+    struct hold_snapshot snap;
+    if (take_snapshot(b, &snap) != 0) return -1;
+    size_t ll = label ? strlen(label) : 0;
+    if (ll > 0 && snap.cells && snap.rows > 0 && snap.cols > ll) {
+        int start = (int)snap.cols - (int)ll;
+        struct hold_cell *row = snap.cells;
+        if (start > 0 && row[start - 1].width == 2) { /* a wide char cut in half: blank it */
+            memset(&row[start - 1], 0, sizeof(row[0]));
+            row[start - 1].width = 1;
+            row[start - 1].flags = HOLD_CELL_FG_DEFAULT | HOLD_CELL_BG_DEFAULT;
+        }
+        for (size_t i = 0; i < ll; i++) {
+            struct hold_cell *cell = &row[start + (int)i];
+            memset(cell, 0, sizeof(*cell));
+            cell->ch[0] = (unsigned char)label[i];
+            cell->width = 1;
+            cell->attrs = HOLD_ATTR_REVERSE;
+            cell->flags = HOLD_CELL_FG_DEFAULT | HOLD_CELL_BG_DEFAULT;
+        }
+    }
+    char *buf = NULL;
+    size_t len = 0, cap = 0;
+    int rc = hold_snapshot_repaint(&snap, &buf, &len, &cap);
+    hold_snapshot_free(&snap);
+    if (rc == 0) rc = write_all_wait(c->output, buf, len);
+    free(buf);
+    return rc;
+}
+
 static int repaint_attach(struct broker *b, struct attach_client *c) {
     if (!b->ep.pty || c->stream) return replay_attach(b, c);
     if (b->chat) {
@@ -559,15 +596,7 @@ static int repaint_attach(struct broker *b, struct attach_client *c) {
         chat_attached(b->chat, rows, cols, now);
         return send_frame(b, c, now);
     }
-    struct hold_snapshot snap;
-    if (take_snapshot(b, &snap) != 0) return -1;
-    char *buf = NULL;
-    size_t len = 0, cap = 0;
-    int rc = hold_snapshot_repaint(&snap, &buf, &len, &cap);
-    hold_snapshot_free(&snap);
-    if (rc == 0) rc = write_all_wait(c->output, buf, len);
-    free(buf);
-    return rc;
+    return repaint_raw(b, c, NULL);
 }
 
 /* ---- control clients: one request, one reply ---------------------------- */
@@ -1511,6 +1540,35 @@ static void sniff_timeout(struct broker *b, struct control_client *c, struct att
     drop_control(c);
 }
 
+/* A terminal that attaches to a program's raw screen (-it, or callbox attach)
+ * sees the call's name in the top-right corner for chat-tip time, then the
+ * screen as the program drew it. Why: with several calls running, whoever
+ * started or joined this one could not tell which name was theirs - the
+ * name msg, peek and attach take. The name is written into a copy of the
+ * screen and sent as a repaint, and a repaint of the screen itself takes it
+ * down (also when the client goes first): the program is never asked to
+ * redraw, and the terminal's saved cursor is never touched. (Drawing it
+ * between ESC 7 and ESC 8 overwrote the cursor the alternate screen had
+ * saved, so leaving it put the shell's output in the wrong place.) A callbox
+ * shell or user-mode call has its own tip in the chat window. */
+#define BROKER_NAME_MS 5000
+static void show_name(struct broker *b, struct attach_client *c) {
+    c->name_shown = true;
+    if (b->chat || !b->ep.pty || c->stream || c->no_terminal || !b->store) return;
+    struct hold_run_record r;
+    char path[HOLD_PATH_MAX];
+    if (hold_load_record_by_id(b->store->record_dir, b->run_id, &r, path, sizeof(path)) != 0) return;
+    char label[ALIAS_MAX_LEN + 32];
+    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " callbox: %s ", r.name);
+    else {
+        char display[ID_DISPLAY_HEX_LEN + 1];
+        hold_run_id_display(r.id, display);
+        snprintf(label, sizeof(label), " callbox: %s ", display);
+    }
+    hold_free_run_record(&r);
+    if (repaint_raw(b, c, label) == 0 && c->fd >= 0) c->name_until_ms = now_ms() + BROKER_NAME_MS;
+}
+
 /* b->target is our child: waitpid lifecycle, killed on cleanup. Never returns. */
 static void broker_serve(struct broker *b) {
     /* The serve loop always ends in _exit, so no handler save/restore. */
@@ -1569,6 +1627,10 @@ static void broker_serve(struct broker *b) {
         int64_t timeout = 1000;
         int64_t msg_due = msgs_due_in(b);
         if (msg_due < timeout) timeout = msg_due;
+        if (cl.fd >= 0 && cl.name_until_ms) {
+            int64_t due = cl.name_until_ms - now;
+            if (due < timeout) timeout = due < 0 ? 0 : due;
+        }
         for (int i = 0; i < BROKER_MAX_CONTROL; i++) {
             ctl_idx[i] = -1;
             if (ctl[i].fd < 0) continue;
@@ -1731,9 +1793,14 @@ static void broker_serve(struct broker *b) {
                 drop_attach(b, &cl);
             }
         }
+        if (cl.fd >= 0 && cl.name_until_ms && now_ms() >= cl.name_until_ms) {
+            cl.name_until_ms = 0;
+            cl.needs_repaint = true; /* the screen as the program drew it: the name is gone */
+        }
         if (cl.fd >= 0 && cl.needs_repaint && cl.decided) {
             cl.needs_repaint = false;
             if (repaint_attach(b, &cl) != 0) drop_attach(b, &cl);
+            else if (!cl.name_shown) show_name(b, &cl);
         }
 
         if (inq_idx >= 0 && (pfds[inq_idx].revents & (POLLOUT | POLLERR | POLLHUP | POLLNVAL))) flush_program_input(b);
