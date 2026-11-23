@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- macOS: the boot id is `kern.bootsessionuuid`, exact for one boot, instead
+  of the boot time. Why: the boot time shifts when macOS adjusts the clock;
+  0.9.3 matched it within 60 seconds, which a large clock step can still
+  defeat, and the UUID needs no tolerance. Calls recorded before this keep
+  their boot-time id and are still matched within 60 seconds, so nothing
+  running needs a restart.
+
 ## 0.9.3 - 2026-11-23
 
 ### Fixed
