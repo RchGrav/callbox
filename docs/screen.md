@@ -16,9 +16,10 @@ attributes, the cursor, and the program's input modes.
 | `src/screen/screen.c` | The terminal wrapper: feed, resize, snapshot, mode-aware key/paste/mouse encoding, the HSNAP1 format, plain text, repaint. Depends on core only. |
 | `src/screen/render.c` | Snapshot to PNG: 8x16 cells (GNU Unifont subset, Noto Emoji subset for wide emoji, procedural box drawing/blocks/Braille), ruler, cursor ring, mouse reticle, footer, and a small fixed-Huffman deflate encoder. |
 | `src/console/broker.c` | Owns the PTY; one attach client plus up to 64 control clients (more are answered `error busy`, which is safe to retry because nothing was done; clients retry with backoff for up to 10 s); waits, queued messages, the final screen. |
-| `src/console/compose.c`, `chat.c` | Only for a `callbox shell`: the composited display and the chat window ([shell.md](shell.md)). |
+| `src/console/compose.c`, `chat.c` | For `callbox shell` and bare launches on a real terminal: the composited display and chat window ([shell.md](shell.md)). |
 | `src/console/control.c` | The client side of a control request. |
 | `src/runtime/screen_cmds.c` | `callbox peek / send / wait / resize / msg`. |
+| `src/runtime/inbox.c`, `src/store/inbox.c` | Outside sender identity, inbox history, `inbox --wait`, `monitor`, and reply waits. |
 
 ## The control protocol
 
@@ -84,8 +85,9 @@ The broker opens the PTY and creates the headless screen at that size before
 it forks the program, so a TUI that asks for its dimensions the moment it
 starts gets the right answer. `--size` is where the call starts, not a lock:
 `callbox resize`, and an attached terminal's window, change it afterwards.
-`--size` without `-t` is refused (a PTY is never allocated just because a
-size was given), a saved default never touches a call that is already
+`--size` requires a terminal mode: explicit `-t`, a bare launch, or
+`callbox shell`. It does not turn a plain `-d` call into a terminal.
+A saved default never touches a call that is already
 running, and a saved value that no longer reads as a size is not guessed at:
 the launch stops and says how to set or clear it.
 
@@ -131,14 +133,14 @@ screen is active; a sequence split across two reads is missed.
 
 ## Messages between calls
 
-(A `callbox shell` call is the exception to what follows about typing: the
-launch command sets its delivery mode, and a message for it goes to its chat
-inbox, at once, and is never typed. See [shell.md](shell.md).)
+(Calls with chat are the exception to what follows about typing: a bare
+launch on a real terminal or `callbox shell` sends messages to its chat
+window instead of typing into the program. See [shell.md](shell.md).)
 
 `callbox msg` hands text to the *receiver's* broker, which types it in at
-once. Waiting for a quiet screen would only block the sender until the
-receiver's turn ends: an agent harness queues what is typed while it works,
-and a busy agent's spinner never goes quiet. Two things can hold a message
+once, without waiting for a quiet screen. The receiving harness decides
+whether input received while busy is queued, handled immediately, or ignored;
+Callbox does not track its tasks. Two things can hold a message
 back. A sender whose call has no record yet gets up to 2 s, because a call
 that messages the instant it starts can beat its own record, and the
 header's name comes from that record. And
@@ -168,12 +170,25 @@ name of its own, made like a call's from its harness process (the first
 process above callbox that is not a shell or a wrapper), and an inbox under
 that name in `<store>/inbox/`. It sends that name with `op=1`; the receiver
 shows it in the same header, and `callbox msg NAME` from anywhere appends to
-the inbox instead of reaching a broker. `callbox inbox [--wait | --monitor]`
-and `callbox msg ... --wait-reply` read it. A name and its messages expire an
-hour after their last use. Why: an agent that runs outside callbox has no
+the inbox instead of reaching a broker. `callbox inbox` reads retained
+history and marks it read; `inbox --wait` returns one unread message.
+`callbox monitor` follows unread and new messages, flushing each to stdout;
+`inbox --monitor` remains an equivalent spelling. These readers share an
+unread position, rather than independent subscriptions. Use an explicit
+inbox name when reading from a different harness or terminal.
+
+`callbox msg ... --wait-reply` records the inbox end before sending, then
+waits for the first newer message from any sender. It does not correlate
+messages with requests. The name expires after an hour without use;
+individual messages expire one hour after delivery. Why: an agent that
+runs outside callbox has no
 prompt for a reply to be typed into, and the receiver should not need to know
 that; one way of replying works for everyone. Only when no name can be made
 does the header fall back to `[msg from outside callbox]`.
+
+Inbox identity lookup and creation share the call-name lock, so parallel
+first sends use one inbox and an active inbox name cannot also be allocated
+to a call in the same store. Existing records are not renamed automatically.
 
 The header is addressing, not proof. Only the console's own user can reach
 it (the socket checks the peer's uid; FIFOs are the user's), and anything
@@ -188,4 +203,6 @@ SENDER HEXTEXT` (FROMCALL is 1 when the sender is a call; it is where that
 earlier version wrote its verified flag, so older logs read the same).
 `callbox msg --received` reads it: the call's message history. Delivery is
 capped at 20 messages a minute per receiver, counted when a request is
-accepted, to stop two agents replying to each other in a loop.
+accepted. This slows message loops; it does not establish task completion
+or guarantee a conversation will end. Outside inbox delivery has no such
+rate limit.

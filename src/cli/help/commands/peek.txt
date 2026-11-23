@@ -2,8 +2,9 @@ usage: callbox peek <target> [--json] [--ruler] [--last-alt]
                  [--image FILE [--no-ruler] [--cursor-ring] [--scale N]
                                [--no-footer] [--no-mouse-marker] [--text]]
 
-Show a TTY call's screen as it is right now: the visible rows as plain text,
-one line per row. After a call ends, peek shows its last screen.
+Read a call's screen: the visible rows as plain text, one line per row.
+Terminal calls and -i pipe-input calls have a screen; plain -d and -dw
+calls do not. After a call ends, peek shows its last saved screen.
 
   --ruler          add zero-based column and row numbers
   --json           add the cursor, terminal modes, title, output counter and

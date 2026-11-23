@@ -878,6 +878,8 @@ int hold_cli_main(int argc, char **argv) {
         rc = hold_cmd_msg_action(&inv, &user_store, &system_store, cmd_argc, cmd_argv);
     } else if (!strcmp(canon, "inbox")) {
         rc = hold_cmd_inbox_action(&inv, &user_store, cmd_argc, cmd_argv);
+    } else if (!strcmp(canon, "monitor")) {
+        rc = hold_cmd_monitor_action(&inv, &user_store, cmd_argc, cmd_argv);
     } else if (!strcmp(canon, "resize")) {
         rc = hold_cmd_resize_action(&inv, &user_store, &system_store, cmd_argc, cmd_argv);
     } else if (!strcmp(canon, "config")) {

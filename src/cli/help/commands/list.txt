@@ -1,15 +1,15 @@
 usage: callbox list [-a|--all] [-s|--system] [-u|--user] [-l|--live] [name]
 
-list is callbox's scoped ledger, with a USER column (CALL ID, USER, COMMAND,
-CREATED, STATUS, PORTS, NAMES). By default you see your own calls, live and
-past. Scope flags:
+List recorded calls, including ended ones, with their owner, command, age,
+status, ports, and name. By default, list shows your personal calls.
 
-  -u/--user     your personal calls only (even under sudo: the invoking user's)
-  -s/--system   the global (root-managed) calls only
-  -a/--all      both scopes together
-  -l/--live     narrow any of the above to running calls (composes)
+  -u, --user       your personal calls (the invoking user's, even under sudo)
+  -s, --system     root-managed calls
+  -a, --all        both scopes
+  -l, --live       show only running calls in the selected scope
 
-Global calls a normal user is not entitled to read appear redacted: USER and
-COMMAND read 'hidden'. Run as root, list defaults to the global calls; -a also
-walks every user's store. An optional name narrows the listing. (For Docker's
-running view, see ps.)
+A name filters the listing. Root defaults to the root-managed store;
+root's -a also includes every user's store. Private root-managed calls
+appear with 'hidden' owner and command to other users.
+
+For a running-only view across personal and root-managed calls, use ps.

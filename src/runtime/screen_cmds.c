@@ -1103,10 +1103,10 @@ static int msg_action_impl(const struct hold_invocation *inv,
         } else if (!strcmp(a, "--wait-reply")) {
             wait_reply = true;
         } else if (!strcmp(a, "--timeout")) {
-            char *end = NULL;
-            reply_timeout_ms = i + 1 < argc ? strtol(argv[++i], &end, 10) : -1;
-            if (!end || *end || reply_timeout_ms < 0) {
-                fprintf(stderr, "callbox: error: --timeout takes milliseconds (0 = never)\n%s", msg_usage);
+            const char *v = i + 1 < argc ? argv[++i] : NULL;
+            if (hold_parse_inbox_timeout_ms(v, &reply_timeout_ms) != 0) {
+                fprintf(stderr, "callbox: error: --timeout takes milliseconds (0..%ld; 0 = never)\n%s",
+                        LONG_MAX, msg_usage);
                 goto out;
             }
         } else if (!strcmp(a, "--stdin")) {
@@ -1149,8 +1149,8 @@ static int msg_action_impl(const struct hold_invocation *inv,
     bool made = false;
     if (outside && hold_operator_name(user_store, true, opname, sizeof(opname), &made) != 0) opname[0] = '\0';
     if (wait_reply && !outside) {
-        fprintf(stderr, "callbox: --wait-reply is for a sender outside callbox: inside a call, the reply is typed "
-                        "into your prompt\n");
+        fprintf(stderr, "callbox: --wait-reply is for a sender outside callbox.\n"
+                        "Inside a call, replies arrive as program input or chat.\n");
         rc = HOLD_EXIT_USAGE;
         goto out;
     }

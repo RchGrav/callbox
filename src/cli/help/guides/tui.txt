@@ -1,73 +1,65 @@
 callbox help tui - troubleshoot a terminal app
 
-USE THIS WHEN
-  A full-screen program misbehaves and you cannot operate it directly:
-  your harness shows you command output, not a live screen. Callbox runs
-  the program on a terminal of its own. You read the screen, send keys and
-  mouse events, and check what changed. Work in a loop: look, act, wait,
-  check.
+Use this when your command tool can launch a full-screen app but cannot
+operate its terminal. Give the app a detached terminal, look at its screen,
+send input, and check the result. You can inspect colors and the cursor as
+well as text; a person can attach to the same call to try it themselves.
 
-EXAMPLE
-  This uses Vim, so it runs wherever Vim is installed. -u NONE and -i NONE
-  keep your own Vim settings and history out of it.
+START AND INSPECT
+  This example requires a Vim-compatible vi. It opens an empty buffer with
+  personal settings and history disabled, and mouse reporting enabled.
 
     callbox -dt --name editor --size 80 24 -- \
-      vim -u NONE -N -i NONE -c 'set mouse=a ttymouse=sgr'
-    callbox wait editor --idle 300          # the first screen is drawn
-    callbox peek editor --ruler             # read it, with coordinates
-    callbox peek editor --image before.png  # its colors and the cursor
+      vi -u NONE -N -i NONE -c 'set mouse=a ttymouse=sgr'
+    callbox wait editor --idle 300
+    callbox peek editor --ruler
+    callbox peek editor --image before.png --cursor-ring
+
+  -dt starts a terminal without attaching you to it. --size makes the
+  starting layout repeatable. peek reads the visible screen; --ruler adds
+  zero-based coordinates, and --image writes a color PNG.
+
+ACT AND VERIFY
     callbox send editor i 'Callbox test' -k Escape --wait 300
     callbox wait editor --match 'Callbox test'
-    callbox send editor --mouse click,4,0   # click column 4, row 0
-    callbox resize editor 100 30            # try another size
-    callbox peek editor --json              # cursor, modes, size
+    callbox send editor --mouse click,4,0
+    callbox peek editor --json
+    callbox resize editor 100 30
+    callbox wait editor --idle 300
+    callbox peek editor --image after.png --cursor-ring
+
+  send applies text and keys in order. Mouse coordinates are column,row;
+  the app must enable mouse reporting (otherwise send exits 9). --json
+  reports the cursor position, input modes, size, and output counter.
+  resize changes the terminal dimensions and notifies the app with SIGWINCH.
+
+  --wait 300 waits for output after the input, followed by 300 ms of quiet.
+  Quiet means ready to inspect, not correct: verify the text, cursor, or
+  image you expected. An input that draws nothing can time out even if it
+  was delivered. Screen waits default to 30 s; send --wait defaults to 10 s.
+
+FINISH OR HAND OVER
     callbox send editor ':q!' --enter
-    callbox wait editor                     # prints Vim's exit code
-    callbox peek editor --last-alt          # its last full-screen frame
-    callbox purge editor                    # remove it, free the name
+    callbox wait editor
+    callbox peek editor --last-alt
+    callbox purge editor
 
-  For your own app, replace Vim and its keys with the steps that reproduce
-  the problem. If the app already runs as a call, use that call's name.
+  wait without a condition waits for exit and prints the program's code.
+  --last-alt shows the saved full-screen frame after an app switches back.
+  purge removes the ended call and frees its name.
 
-WHAT THE COMMANDS DO
-  callbox -dt --size <cols> <rows> --name <name> <program>
-      Starts the program detached, on a terminal of a fixed size, so each
-      run draws the same screen. Every terminal call gets
-      TERM=xterm-256color; test another type with -e TERM=vt100.
-  callbox wait
-      Blocks until a condition holds: use it instead of sleep, and before
-      each peek. --idle [<ms>]: the program drew, then stayed quiet.
-      --match <text>: the text is on the screen. A screen wait gives up
-      after 30 seconds (--timeout <ms>). Exit 7: timed out. Exit 8: the
-      program ended first. With no condition: until it ends.
-  callbox peek
-      Prints the screen as text. --ruler adds column and row numbers,
-      counted from 0. --image <file> writes a color PNG with the cursor
-      marked. --json adds the cursor, the terminal modes (mouse, paste,
-      keypad), and the output counter. --last-alt: the last full-screen
-      frame of a program that has switched back.
-  callbox send
-      Types text and presses keys, in the order given. -k <key> takes
-      Enter, Tab, Escape, Up, F5, C-c, M-x, ... --wait <ms> then waits
-      until the program has answered and gone quiet. --mouse
-      <action>,<col>,<row> exits 9 if the program has mouse reporting off.
-  callbox resize
-      Changes the terminal size. The program receives SIGWINCH.
+  For your app, replace vi and its inputs with your reproduction steps.
+  If it already runs in Callbox, use its name. A person can join a running
+  terminal with callbox attach NAME; Ctrl-P Ctrl-Q leaves it running.
+  Callbox cannot adopt a process that was started outside it.
 
-WHEN THE SCREEN IS WRONG
-  Accept only output that comes after your key, never an older screen:
+WHEN A SCREEN IS MISLEADING
+  To require a redraw after an input, capture its output counter:
 
-    seq=$(callbox send editor -k Down --seq)
-    callbox wait editor --since "$seq" --idle 300
+    seq=$(callbox send app -k Down --seq)
+    callbox wait app --since "$seq" --idle 300
 
-  Read the bytes the program wrote, escape sequences included:
+  Use callbox logs app | cat -v to inspect the raw output. Some apps read
+  Escape followed quickly by another key as Alt: send Escape separately.
 
-    callbox logs editor | cat -v | tail -40
-
-  A curses program can read Escape and the key after it as one Alt key:
-  send -k Escape in a send of its own. A quiet screen is ready to read;
-  it is not proof that the result is right.
-
-SEE ALSO
-  callbox help share              let a person watch and test the screen
-  callbox peek -h, send -h, wait -h         every flag
+Next: callbox help share. Details: callbox help peek, send, wait, resize.

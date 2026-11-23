@@ -27,11 +27,16 @@ CHOOSE A MODE
   -dw              detached process with a recorded exit code
   -di              detached pipe input; attach can feed it later
 
+  Pipe-input calls also support peek, send, and msg. Their screen models
+  the captured output, but the program itself does not have a terminal.
+
   Terminal and pipe-input calls record exit codes. --rm and active restart
   policies also retain a waiter. Plain -d alone leaves no Callbox helper.
 
 SET UP THE PROGRAM
   --name NAME      assign a name (one is generated otherwise)
+                   Names stay reserved after exit until purge; --name alone
+                   does not protect a record from purge. save and rename do.
   --size COLS ROWS set terminal dimensions, each 1-1000; COLSxROWS also works
                    Default: --size, then saved detach-size for detached
                    terminals, then invoking terminal size, then 80 24.
@@ -68,5 +73,15 @@ COMMON OPTIONS
 Value options accept --flag=value. Every PTY call gets TERM=xterm-256color,
 whatever your own TERM is; -e TERM=... sets another. The detach-size
 setting applies only to new detached terminal calls; see callbox config -h.
+
+COMPATIBILITY
+  --console        start a detached terminal (the older spelling of -dt)
+                   This launch flag differs from the console command, which
+                   is an alias for attach.
+
+Callbox runs host programs with the invoker's rights. It does not provide
+container images, port publishing, volume mounts, or capability management.
+The program normally starts in your current directory; a launch under sudo
+starts in /. Pass an explicit working directory to the program when needed.
 
 More: callbox help targets, callbox help system, callbox help scripting

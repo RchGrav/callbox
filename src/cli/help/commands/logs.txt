@@ -7,5 +7,8 @@ cursor moves), as a terminal would receive them.
   -f, --follow     keep printing as a running call writes, until it ends
   -n N, --tail N   only the newest N lines
 
+For compatibility, --plain, --print, and -p are accepted; they do not change
+the output or remove terminal escape sequences. --tail=N also works.
+
 The log is a file: log_path in callbox inspect <target> names it. For the live
 screen of a TTY call, use callbox peek.

@@ -1,44 +1,24 @@
-# callbox — Playwright for the terminal
+# Callbox
 
-**The agent TUI tester: see, drive, and test terminal programs from scripts
-and AI agents.** callbox runs any command on its own headless terminal. Read its
-screen as text, JSON, or a color screenshot; type keys, paste, and click; wait
-for it to settle; and let AI coding agents message each other. One binary
-with no runtime dependencies (static on Linux). No daemon.
+**Run terminal apps your agents can see and control.**
 
 [![CI](https://github.com/RchGrav/callbox/actions/workflows/ci.yml/badge.svg)](https://github.com/RchGrav/callbox/actions/workflows/ci.yml)
-[![Release build](https://github.com/RchGrav/callbox/actions/workflows/release.yml/badge.svg)](https://github.com/RchGrav/callbox/actions/workflows/release.yml)
-[![Latest release](https://img.shields.io/github/v/release/RchGrav/callbox?label=release&color=brightgreen)](https://github.com/RchGrav/callbox/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/RchGrav/callbox/total?color=blue)](https://github.com/RchGrav/callbox/releases)
+[![Latest release](https://img.shields.io/github/v/release/RchGrav/callbox?label=release)](https://github.com/RchGrav/callbox/releases/latest)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/RchGrav/callbox?style=flat&logo=github)](https://github.com/RchGrav/callbox/stargazers)
 
-![Linux](https://img.shields.io/badge/Linux-x86__64%20%C2%B7%20arm64%20%C2%B7%20armhf%20%C2%B7%20riscv64%20%C2%B7%20mipsel-FCC624?logo=linux&logoColor=black)
-![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon%20%C2%B7%20Intel-000000?logo=apple&logoColor=white)
-![Single binary](https://img.shields.io/badge/single%20binary-no%20dependencies-success)
-![No daemon](https://img.shields.io/badge/daemon-none-success)
-![Written in C11](https://img.shields.io/badge/C11-~18k%20lines-00599C?logo=c&logoColor=white)
-[![Works with AI agents](https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Aider%20%C2%B7%20any%20shell%20agent-8A2BE2)](docs/guide.md#give-your-agent-callbox)
+Callbox gives a terminal program a name and a screen you can return to. An AI
+agent can read that screen as text or a color image, locate the cursor, send
+keys, and check what changed. You can attach to the same program to see and
+test its work yourself.
 
-![An agent drove vim through callbox: it clicked inside "world", changed the word, and saved. The ruler marks the cursor in red and the last click in cyan.](docs/images/vim-driven.png)
+It also runs background jobs and services, keeps their logs, and lets agents
+in different harnesses exchange messages through shell commands. Callbox runs
+ordinary programs on your machine, with no central daemon to start.
 
-*vim driven with `callbox send` and `callbox peek` alone: a click inside
-`"world"` (cyan), the word replaced, the file saved. The rulers give exact
-coordinates; the red marks and the ring (`--cursor-ring`) show the cursor.*
+<img src="docs/images/vim-driven.png" alt="Callbox's color view of Vim, with a red cursor ring, cyan mouse marker, and coordinate rulers." width="900">
 
-```sh
-callbox -dt --name app -- vim notes.txt   # run any TUI on its own headless terminal
-callbox wait app --idle                   # until it has drawn its first screen
-callbox peek app                          # its screen, as plain text
-callbox peek app --image app.png          # ...or as a color PNG with coordinate rulers
-callbox send app i "hello" -k Escape :wq --enter   # type, press keys, in order
-callbox wait app                          # until it exits; prints the exit code
-```
-
-What Playwright does for web pages, callbox does for terminal programs — and
-unlike `tmux send-keys` and `capture-pane`, it was built for automation: no
-session to manage, exact key encoding, waits instead of sleeps, and
-screenshots an agent can actually read.
+*A terminal screen from `callbox peek --image`. Red marks show the cursor;
+cyan marks show the last mouse input. The footer gives their coordinates.*
 
 ## Install
 
@@ -46,71 +26,88 @@ screenshots an agent can actually read.
 curl -LsSf https://github.com/RchGrav/callbox/releases/latest/download/install.sh | sh
 ```
 
-Linux (x86_64, arm64, armhf, riscv64, mipsel) and macOS; on Windows, use
-WSL. System-wide installs, checksums, and building from source:
-[docs/install.md](docs/install.md).
+Release builds are available for Linux and macOS. On Windows, run Callbox
+inside WSL. The installer checks the release checksum and prints the install
+location; follow its PATH instructions if needed.
 
-## Try it
+[Install options and checksums](docs/install.md) ·
+[Build from source](docs/install.md#manual-build) ·
+[Releases](https://github.com/RchGrav/callbox/releases)
 
-**Drive a terminal app.** Start it on a headless terminal, then read and
-type into it:
+## Try the screen and input loop
 
-```sh
-callbox -dt --name mon -- htop
-callbox peek mon                  # its screen, as text
-callbox send mon -k F6            # press a key (htop: sort by)
-callbox peek mon --image mon.png  # ...or look at it
-callbox end mon
-```
-
-**Let two agents talk.** Start one with `-it` and work with it; it can
-start another and message it, and the reply is typed back into its prompt:
+This example needs only a POSIX shell and `tr`. Start a detached terminal,
+send a command, wait for its result, and read the screen:
 
 ```sh
-callbox -it --name lead claude
-# then, from lead:
-callbox -dt --name reviewer codex
-callbox msg reviewer "review src/main.c"
+callbox -dt --name demo -- sh
+callbox send demo 'echo hello | tr a-z A-Z' --enter
+callbox wait demo --match HELLO
+callbox peek demo
 ```
 
-**Keep something running.** A background process with a name and a log,
-that you can stop and start again:
+The screen shows `HELLO`. `send` types into the running program; `wait`
+checks its visible output. For a color image with cursor coordinates, use
+`callbox peek demo --image demo.png`.
+
+Join the program with `callbox attach demo`. Press **Ctrl-P, then Ctrl-Q**
+to detach and leave it running. An agent can still inspect the screen and
+send input while you are attached.
+
+When finished:
 
 ```sh
-callbox -d --name web python3 -m http.server 8000
-callbox logs web -f               # follow its output
-callbox end web                   # stop it
-callbox web                       # start it again, as before
+callbox send demo exit --enter
+callbox wait demo                 # prints the program's exit code: 0
+callbox purge demo                # removes its record and log; frees the name
 ```
 
-## Learn more
+Use the same loop for an editor, a terminal UI, a REPL, or an agent harness.
+The [TUI guide](src/cli/help/guides/tui.txt) adds keyboard navigation, mouse
+input, resizing, and verification.
 
-`callbox help` lists the commands by what they are for. Five guides walk
-through a task with examples, and five reference pages hold the details:
+## Choose how a program runs
 
-| Guides: `callbox help ...` | |
-| --- | --- |
-| `tui` | troubleshoot a terminal app |
-| `share` | fix a terminal app with your agent, on one screen |
-| `agents` | start an agent and give it work |
-| `messaging` | message agents, inside or outside callbox |
-| `service` | run a service or a job in the background |
+A **call** is a program managed by Callbox, with a name, an ID, and a log.
+A call keeps its name after the program exits, until you purge its record.
 
-| Reference: `callbox help ...` | |
-| --- | --- |
-| `all` | every command and flag |
-| `launch` | every flag for starting a call |
-| `targets` | names, ids, and the start of either |
-| `scripting` | exit codes, stdout, and stderr |
-| `system` | root, sudo, and the global store |
+| You want to… | Start it with… | What you get |
+| --- | --- | --- |
+| Use a program yourself | `callbox --name app -- PROGRAM` | An attached terminal with a chat window for messages. |
+| Work with an agent in your terminal | `callbox -it --name lead -- AGENT` | An attached terminal; messages are typed into the agent's input. |
+| Let an agent drive a terminal app | `callbox -dt --name app -- PROGRAM` | A detached terminal you can inspect, control, and attach to later. |
+| Run a service or CI job | `callbox -dw --name job -- PROGRAM` | A background process with logs and a recorded exit code, without a terminal. |
 
-`callbox <command> -h` shows one command in full. The pages are plain text
-in [src/cli/help](src/cli/help), compiled into the binary.
+Plain `-d` runs a background process without keeping an exit-code waiter.
+Use `-dw` when a script needs to check the program's result. These processes
+have logs but no screen for `peek` or `send`.
 
-In depth: [the full guide](docs/guide.md) (screenshots, keys and mouse,
-waiting, CI, comparisons, FAQ), [docs index](docs/index.md),
-[contributing](CONTRIBUTING.md), and the [changelog](CHANGELOG.md).
+`callbox ps` shows running calls. `callbox logs NAME` reads output, and
+`callbox end NAME` stops a program. `callbox NAME` reconnects to a running
+call with a console, or starts an ended call again from its saved command.
+
+## Find the next step
+
+Start with `callbox help` for the short command overview. Each guide below
+is available in the terminal and as a plain-text page in this repository.
+
+| Goal | In the terminal | Read here |
+| --- | --- | --- |
+| Inspect and troubleshoot a terminal UI | `callbox help tui` | [Drive a TUI](src/cli/help/guides/tui.txt) |
+| Debug a TUI with your coding agent, on a shared screen | `callbox help share` | [Work on the same app](src/cli/help/guides/share.txt) |
+| Start another agent, give it work, and check progress | `callbox help agents` | [Work with another agent](src/cli/help/guides/agents.txt) |
+| Exchange messages from inside or outside Callbox | `callbox help messaging` | [Send and receive messages](src/cli/help/guides/messaging.txt) |
+| Run a background service or CI job and clean up | `callbox help service` | [Run in the background](src/cli/help/guides/service.txt) |
+
+**Every command and flag:** `callbox help all`. For one command, use
+`callbox COMMAND --help`. `callbox help launch` covers launch options;
+`callbox help targets`, `scripting`, and `system` explain targeting,
+exit codes, and root-managed calls.
+
+[In-depth guide](docs/guide.md) · [Documentation index](docs/index.md) ·
+[Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE). Vendored terminal and font components
+have their own licenses under [third_party](third_party/).

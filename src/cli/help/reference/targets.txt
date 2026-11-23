@@ -14,6 +14,10 @@ start of a name works when one call the verb can act on has it (callbox logs
 hel for helper). When more than one call matches, callbox lists them and
 exits 6 - it never picks one.
 
+Outside inboxes have names too. msg, inbox, and monitor accept an inbox's
+complete name; call IDs, prefixes, and user:/system: scopes apply to calls.
+An active inbox name cannot be assigned to a call in the same store.
+
 Verbs shorten the same way: callbox li is callbox list, when nothing else
 has that meaning. The top-level word is tried in this order: a verb; a call
 by whole name or id prefix (redial); a program on PATH; then the start of

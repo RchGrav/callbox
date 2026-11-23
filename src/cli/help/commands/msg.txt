@@ -2,35 +2,41 @@ usage: callbox msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]
                    [--wait-reply [--timeout MS]]
        callbox msg [<target>] --received [ID]
 
-Message another call, typically an agent harness running under callbox. The text
-is typed into its prompt at once and submitted with Enter (an agent harness
-that is busy queues it), behind a header (all on one line) that says who
-sent it and how to answer:
+Send text with a sender name and reply command. Input-enabled calls receive
+it in their prompt, followed by Enter; calls with a chat window receive it
+there instead. An outside sender's inbox receives stored text. Callbox
+delivers immediately; input queueing is up to the receiving harness.
 
-  [msg from <you>; reply: callbox msg <you> "..."] TEXT
+  [msg from NAME; reply: callbox msg NAME "..."] TEXT
 
-<you> is your own call, which callbox msg finds in $CALLBOX_ID (set in every
-call); the receiver shows that call's name as it is now. From outside any
-call, you get a name of your own and an inbox for the replies (callbox help
-inbox); the first message says how to read them.
-Multi-line text goes in as one bracketed paste when the program supports it.
-A callbox shell takes its messages in its chat window, never at its prompt.
+Inside a call, CALLBOX_ID (or CALLBOX_NAME) identifies the sender. Outside
+Callbox, the first send creates an inbox and prints its name on stderr.
+The receiver replies with the same msg command in either case.
 
-  --no-enter       type without submitting
-  --wait-reply     from outside any call: then wait for the first reply and
-                   print it (exit 0; 7 if --timeout MS passes first)
-  --stdin          read the text from stdin
-  --               the rest is text, even words that start with a dash
-  --received [ID]  the call's message history: every message delivered to it,
-                   or with ID (printed by callbox msg when it sends) that
-                   message's sender and full text. Run it inside the receiving
-                   call, or name the call: callbox msg CALL --received ID.
+  --stdin          read the message text from stdin
+  --no-enter       type without pressing Enter (for a call's program input)
+  --               treat remaining words as text, including words with dashes
+  --wait-reply     from outside Callbox, wait for the first new inbox message
+                   after sending and print it; any sender can satisfy this
+  --timeout MS     bound --wait-reply in milliseconds (0 = no limit, default)
+  --received [ID]  read a call's delivered-message history, or one message by
+                   its delivery ID. Name the call, or omit the target when
+                   running inside the receiving call.
+  -h, --help       show this page
 
-msg prints the message's id once it is delivered: delivery, not a report
-that the work is done. Plain -d and -dw calls have no console, so they take
-no messages (exit 10).
+TEXT arguments are joined with spaces. Multi-line text is pasted as one
+bracketed paste when the receiving program enables it; otherwise line breaks
+become spaces. Control characters and terminal escape sequences are removed.
 
-The header is addressing, not proof: whatever can reach a call's console runs
-as its user and could type the same text with callbox send. Control
-characters are removed from the text, and delivery is capped at 20 messages a
-minute per receiver.
+Sending to a call prints its message ID on stdout. Sending to an outside
+inbox succeeds without printing an ID. --wait-reply then prints the first
+new message; it does not correlate a reply with a request or sender.
+Delivery is not task completion. Plain -d and -dw calls have no input
+console and refuse messages (exit 10). --received reads call history,
+not outside inboxes; use inbox for those.
+
+A call accepts at most 20 messages per minute. This limit does not apply to
+outside inboxes. The header supplies an address, not proof of identity.
+--wait-reply exits 7 on timeout or 8 if the inbox expires while waiting.
+
+See callbox help messaging for inside and outside workflows.

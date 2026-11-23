@@ -1,5 +1,55 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `callbox monitor [NAME] [--timeout MS]` follows an outside sender's
+  unread and new inbox messages. `callbox inbox --monitor` remains supported.
+- Per-command help for `help` itself, including every guide and reference
+  topic. `help all` now includes every canonical command's complete page,
+  launch options, targeting, store selection, scripting, and aliases.
+
+### Changed
+
+- A shorter overview and five task guides: troubleshoot a TUI, work on a
+  shared screen, delegate to an agent, exchange messages across harnesses,
+  and manage background services and CI jobs. The plain-text pages remain
+  compiled into the binary and readable in the repository.
+- README onboarding starts with a runnable shell example, a real terminal
+  image, and clear launch modes. Detailed documentation links to the same
+  help pages instead of maintaining an incomplete second command reference.
+- Messaging help distinguishes delivery, unread messages, and task completion.
+  `--wait-reply` accepts the first new message from any sender; it does not
+  correlate requests. Harness input queueing and external wakeups are not
+  Callbox guarantees. Inbox messages can span lines and expire one hour
+  after delivery; names expire after an hour without use.
+- Complete help preserves compatibility options such as launch `--console`
+  and logs `--plain`/`--print`/`-p`, and explains pipe-input screens and
+  targeted versus sweeping `purge --force` behavior.
+
+### Fixed
+
+- Concurrent first messages from one outside harness now share one inbox
+  identity, rather than racing to create several names and splitting replies.
+- Launch and rename reject names held by active inboxes in the same store
+  with existing taken-name status 11. Expired inbox names can be reused.
+- Inbox and reply timeouts reject unrepresentable values instead of
+  overflowing into an immediate timeout. Representable large values work;
+  a monitor timeout reports the end of its window even if messages arrived.
+- Tests identify a background call's helper by process name instead of
+  matching `callbox` anywhere in a parent launcher command line.
+
+### Compatibility
+
+- Existing command and help-topic aliases remain supported. The new
+  `monitor` command makes `m` ambiguous with `msg`; use the full command.
+- `monitor` is now a reserved command name. Use `callbox -- monitor` to
+  launch an external program with that name. Previously recorded calls
+  named `monitor` remain manageable; redial them by ID or rename them.
+- Existing duplicate inbox identities or conflicting records are not
+  renamed or deleted automatically.
+
 ## 0.9.12 - 2026-11-23
 
 ### Changed

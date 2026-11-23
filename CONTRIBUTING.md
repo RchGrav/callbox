@@ -42,7 +42,7 @@ release, run `make ci` on a Mac and `scripts/linux.sh` as well.
 - `tests/screen_test.c` unit-tests the terminal screen, snapshots, input
   encoding, and the chat compositor (`make screen-test`).
 - `tests/test_040_dockerish.sh` checks the Docker-shaped surface against
-  `callbox-dynamic` (`make test-040`).
+  `callbox-test` (`make test-040`).
 - `tests/test_version_makefile.sh` and `tests/test_release_installer.sh` cover
   version resolution and `install.sh`.
 - `make test` runs all of the above.
