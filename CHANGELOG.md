@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.6 - 2026-11-23
+
+### Fixed
+
+- `callbox she` (any shortened `shell`) starts a callbox shell; it printed
+  the help. Why: `shell` was checked before the word was expanded.
+
+### Changed
+
+- The chat window labels your own messages with your call's name (the name
+  the other side sees and replies to) instead of "you".
+
 ## 0.9.5 - 2026-11-23
 
 ### Changed

@@ -2533,6 +2533,10 @@ test_shortened_top_level_words() {
   rc=0; "$HOLD_BIN" p >/dev/null 2>"$TEST_ROOT/sh.err" || rc=$?
   [ "$rc" -eq 6 ] || { echo "p: rc=$rc (want 6)" >&2; return 1; }
   grep -q 'peek' "$TEST_ROOT/sh.err" && grep -q 'purge' "$TEST_ROOT/sh.err" || { cat "$TEST_ROOT/sh.err" >&2; return 1; }
+  # she is callbox shell (it printed the help: shell was checked before the
+  # word was expanded); without a terminal, the shell's own refusal
+  rc=0; "$HOLD_BIN" she </dev/null >"$TEST_ROOT/she.out" 2>&1 || rc=$?
+  grep -q 'callbox shell needs a terminal' "$TEST_ROOT/she.out" || { echo "she is not shell (rc=$rc)" >&2; head -3 "$TEST_ROOT/she.out" >&2; return 1; }
   # the start of a call's name redials it
   out_has 'quokka-ran' "$HOLD_BIN" quok </dev/null || { echo "quok did not redial quokka" >&2; return 1; }
   # a program on PATH beats the start of a verb

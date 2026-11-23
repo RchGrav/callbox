@@ -84,6 +84,10 @@ enum grab { GRAB_NONE, GRAB_APP, GRAB_MOVE, GRAB_RESIZE, GRAB_CLOSE, GRAB_HELD }
 
 struct chat {
     struct chat_host host;
+    /* This call's name, as agents see it and reply to it: the label on your
+     * own messages. Looked up when the window opens (the record is written
+     * after the broker starts, and a rename changes it). */
+    char self[CHAT_LABEL_LEN];
     struct compositor *comp;
     bool attached;
     int trows, tcols; /* the attached terminal */
@@ -932,6 +936,7 @@ static void set_focus(struct chat *c, bool chat) {
 
 static void open_chat(struct chat *c) {
     c->visible = c->focused = true;
+    self_label(c, c->self, sizeof(c->self));
     place(c);
     if (c->current) show_thread(c, c->current);
     else {
@@ -1467,7 +1472,9 @@ static void draw_history(struct chat *c, const struct layout *L) {
                 struct tm tmv;
                 if (localtime_r(&m->at, &tmv)) strftime(when, sizeof(when), "%H:%M", &tmv);
                 bool mine = m->state != MSG_IN;
-                snprintf(head, sizeof(head), "%s", mine ? "you" : t->label);
+                /* Yours under your call's name, not "you": the name the
+                 * other side sees and answers. */
+                snprintf(head, sizeof(head), "%s", mine ? (c->self[0] ? c->self : "you") : t->label);
                 int used = put(c, row, c->x + 1, width, head, mine ? &ST_YOU : &ST_PEER);
                 used += put(c, row, c->x + 1 + used, width - used, " ", &ST_DIM);
                 used += put(c, row, c->x + 1 + used, width - used, when, &ST_DIM);
