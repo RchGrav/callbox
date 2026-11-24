@@ -42,6 +42,11 @@
 #define MUX_NAME_MS 2000     /* a name shown on arrival, focus or hover */
 #define MUX_FRAME_MS 16      /* output is drawn at most this often */
 #define MUX_LOOK_MS 250      /* how often chat looks at the inbox and its owner */
+/* How often a FIFO pane is read without poll saying so. Why: macOS's poll
+ * never reports a FIFO's writer closing (Linux says POLLHUP), so a pane whose
+ * process ended would stay on screen; a read returning 0 is the only sign.
+ * The same interval as the attach client's probe. */
+#define MUX_FIFO_PROBE_MS 250
 #define MUX_PICK_MAX 64
 
 #define KEY_LEAD 0x10   /* Ctrl-P */
@@ -93,6 +98,7 @@ struct mux {
     /* Ctrl-Space: a tap goes to the program; held, the keys and names show */
     bool nul_pending, holding;
     int64_t nul_first, nul_last;
+    int64_t fifo_probe_at; /* the next read of FIFO panes poll said nothing of */
     int view;  /* the window on screen */
     int focus; /* a slot on the window on screen */
     struct compositor *comp;
@@ -1469,13 +1475,16 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
             chat_tick(m->chat, m->now);
             if (chat_wants_frame(m->chat)) m->dirty = true;
         }
-        if (pr <= 0) {
-            m->dirty = true; /* timers: names that expire, notices */
-            continue;
-        }
+        bool probe = m->now >= m->fifo_probe_at;
+        if (probe) m->fifo_probe_at = m->now + MUX_FIFO_PROBE_MS;
+        if (pr <= 0) m->dirty = true; /* timers: names that expire, notices */
         for (int i = 0; i < MUX_MAX_PANES; i++) {
-            if (idx[i] < 0 || !(pfds[idx[i]].revents & (POLLIN | POLLHUP | POLLERR))) continue;
+            if (idx[i] < 0) continue;
             struct pane *p = m->slot[i];
+            /* a FIFO pane (separate read and write ends) is read on the probe
+             * too: the rfd is non-blocking, so nothing there is EAGAIN */
+            bool fifo_probe = probe && p->rfd != p->wfd;
+            if (!(pfds[idx[i]].revents & (POLLIN | POLLHUP | POLLERR)) && !fifo_probe) continue;
             char buf[16384];
             ssize_t k = read(p->rfd, buf, sizeof(buf));
             if (k > 0) {
@@ -1487,6 +1496,7 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
                 p->ended = true;
             }
         }
+        if (pr <= 0) continue;
         if (pfds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
             unsigned char buf[4096];
             ssize_t k = read(STDIN_FILENO, buf, sizeof(buf));

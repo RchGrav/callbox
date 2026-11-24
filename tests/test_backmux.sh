@@ -6517,8 +6517,15 @@ test_attach_messages_say_what_happened() {
   # and the process runs on
   "$HOLD_BIN" -dt --size 120 6 --name second -- "$HOLD_REAL_BIN" attach app </dev/null >/dev/null || return 1
   "$HOLD_BIN" wait second --match APP-UP --timeout 8000 >/dev/null || { echo "the newer attach did not get the process" >&2; "$HOLD_BIN" peek second >&2; return 1; }
-  "$HOLD_BIN" send around 'echo LEFT' -k Enter || return 1
-  "$HOLD_BIN" wait around --regex '^LEFT$' --timeout 8000 >/dev/null || { echo "the older attach did not let go" >&2; "$HOLD_BIN" peek around >&2; return 1; }
+  # The older attach lets go at once over a socket; over FIFO on macOS, at its
+  # next probe (250 ms: poll there never reports a FIFO's writer closing).
+  # Keys typed before then went to it, so type until the shell has them.
+  local tries
+  for tries in 1 2 3 4 5 6; do
+    "$HOLD_BIN" send around 'echo LEFT' -k Enter || return 1
+    "$HOLD_BIN" wait around --regex '^LEFT$' --timeout 1500 >/dev/null 2>&1 && break
+  done
+  "$HOLD_BIN" wait around --regex '^LEFT$' --timeout 100 >/dev/null || { echo "the older attach did not let go" >&2; "$HOLD_BIN" peek around >&2; return 1; }
   if "$HOLD_BIN" peek around | grep -q 'backmux:'; then echo "the hand-over printed a note" >&2; "$HOLD_BIN" peek around >&2; return 1; fi
   # leaving says nothing either: the process runs on, as list shows
   "$HOLD_BIN" send second -k C-p -k C-q || return 1
