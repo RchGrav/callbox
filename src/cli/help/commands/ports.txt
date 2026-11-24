@@ -1,4 +1,4 @@
-usage: callbox ports <target>
+usage: backmux ports <target>
 
 List the listening sockets in use by the call's process group, one per line
 ("127.0.0.1:8080/tcp"). Your own calls need no root. Linux only: on macOS

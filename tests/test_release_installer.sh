@@ -11,12 +11,12 @@ sha256_file() {
 
 make_fake_release() {
   local root="$1" artifact="$2" mode="${3:-good}" release_dir stage
-  release_dir="$root/RchGrav/callbox/releases/download/v1.2.3"
+  release_dir="$root/RchGrav/backmux/releases/download/v1.2.3"
   stage="$root/stage-$mode"
   mkdir -p "$release_dir" "$stage"
   case "$mode" in
     good)
-      cat >"$stage/callbox" <<'SH'
+      cat >"$stage/backmux" <<'SH'
 #!/bin/sh
 if [ "${1:-}" = "--version" ]; then
   printf '%s\n' 'v1.2.3'
@@ -24,15 +24,15 @@ if [ "${1:-}" = "--version" ]; then
 fi
 exit 0
 SH
-      chmod 0755 "$stage/callbox"
+      chmod 0755 "$stage/backmux"
       ;;
     missing-root-binary)
       mkdir -p "$stage/bin"
-      cat >"$stage/bin/callbox" <<'SH'
+      cat >"$stage/bin/backmux" <<'SH'
 #!/bin/sh
 printf '%s\n' 'wrong layout'
 SH
-      chmod 0755 "$stage/bin/callbox"
+      chmod 0755 "$stage/bin/backmux"
       ;;
   esac
   tar -C "$stage" -czf "$release_dir/$artifact" .
@@ -41,13 +41,13 @@ SH
 run_installer() {
   local root="$1" install_dir="$2" extra_env="${3:-}"
   env \
-    CALLBOX_GITHUB_BASE="file://$root" \
-    CALLBOX_REPO_NAME=callbox \
-    CALLBOX_INSTALL_TEST_OS=linux \
-    CALLBOX_INSTALL_TEST_ARCH=amd64 \
-    CALLBOX_INSTALL_TEST_LIBC=gnu \
-    CALLBOX_INSTALL_DIR="$install_dir" \
-    CALLBOX_UPDATE_PROFILE=0 \
+    BACKMUX_GITHUB_BASE="file://$root" \
+    BACKMUX_REPO_NAME=backmux \
+    BACKMUX_INSTALL_TEST_OS=linux \
+    BACKMUX_INSTALL_TEST_ARCH=amd64 \
+    BACKMUX_INSTALL_TEST_LIBC=gnu \
+    BACKMUX_INSTALL_DIR="$install_dir" \
+    BACKMUX_UPDATE_PROFILE=0 \
     $extra_env \
     sh ./install.sh 1.2.3
 }
@@ -63,7 +63,7 @@ expect_fail() {
 
 test_installer_fail_closed() {
   local root release_dir artifact sum install_dir
-  artifact="callbox-1.2.3-linux-amd64-gnu-static.tar.gz"
+  artifact="backmux-1.2.3-linux-amd64-gnu-static.tar.gz"
 
   root="$tmp/missing-sums"
   install_dir="$tmp/install-missing"
@@ -74,7 +74,7 @@ test_installer_fail_closed() {
   root="$tmp/malformed-sums"
   install_dir="$tmp/install-malformed"
   make_fake_release "$root" "$artifact" good
-  release_dir="$root/RchGrav/callbox/releases/download/v1.2.3"
+  release_dir="$root/RchGrav/backmux/releases/download/v1.2.3"
   printf 'not-a-sha  %s\n' "$artifact" >"$release_dir/SHA256SUMS"
   expect_fail malformed-sums run_installer "$root" "$install_dir"
   grep -q 'malformed SHA256SUMS' "$tmp/malformed-sums.err"
@@ -82,7 +82,7 @@ test_installer_fail_closed() {
   root="$tmp/mismatch-sums"
   install_dir="$tmp/install-mismatch"
   make_fake_release "$root" "$artifact" good
-  release_dir="$root/RchGrav/callbox/releases/download/v1.2.3"
+  release_dir="$root/RchGrav/backmux/releases/download/v1.2.3"
   printf '%064d  %s\n' 0 "$artifact" >"$release_dir/SHA256SUMS"
   expect_fail mismatch-sums run_installer "$root" "$install_dir"
   grep -q 'checksum mismatch' "$tmp/mismatch-sums.err"
@@ -90,23 +90,23 @@ test_installer_fail_closed() {
   root="$tmp/bad-layout"
   install_dir="$tmp/install-layout"
   make_fake_release "$root" "$artifact" missing-root-binary
-  release_dir="$root/RchGrav/callbox/releases/download/v1.2.3"
+  release_dir="$root/RchGrav/backmux/releases/download/v1.2.3"
   sum="$(sha256_file "$release_dir/$artifact")"
   printf '%s  %s\n' "$sum" "$artifact" >"$release_dir/SHA256SUMS"
   expect_fail bad-layout run_installer "$root" "$install_dir"
   grep -q 'archive layout is invalid' "$tmp/bad-layout.err"
 
-  expect_fail unsupported-platform env CALLBOX_INSTALL_TEST_OS=SunOS CALLBOX_INSTALL_DRY_RUN=1 sh ./install.sh 1.2.3
+  expect_fail unsupported-platform env BACKMUX_INSTALL_TEST_OS=SunOS BACKMUX_INSTALL_DRY_RUN=1 sh ./install.sh 1.2.3
   grep -q 'unsupported operating system' "$tmp/unsupported-platform.err"
 
   root="$tmp/good"
   install_dir="$tmp/install-good"
   make_fake_release "$root" "$artifact" good
-  release_dir="$root/RchGrav/callbox/releases/download/v1.2.3"
+  release_dir="$root/RchGrav/backmux/releases/download/v1.2.3"
   sum="$(sha256_file "$release_dir/$artifact")"
   printf '%s  %s\n' "$sum" "$artifact" >"$release_dir/SHA256SUMS"
   run_installer "$root" "$install_dir" >"$tmp/good.out" 2>"$tmp/good.err"
-  [ "$("$install_dir/callbox" --version)" = "v1.2.3" ]
+  [ "$("$install_dir/backmux" --version)" = "v1.2.3" ]
 }
 
 test_package_tarball_deterministic_when_gnu_tar() {
@@ -114,7 +114,7 @@ test_package_tarball_deterministic_when_gnu_tar() {
     return 0
   fi
   local bin out1 out2 a1 a2 s1 s2
-  bin="$tmp/fake-callbox"
+  bin="$tmp/fake-backmux"
   cat >"$bin" <<'SH'
 #!/bin/sh
 exit 0
@@ -124,7 +124,7 @@ SH
   out2="$tmp/pkg2"
   a1="$(.github/scripts/package_tarball.sh linux-amd64-gnu-static 1.2.3 "$bin" "$out1")"
   tar -tzf "$a1" | sed 's#^./##' | sort >"$tmp/pkg-files.txt"
-  grep -qx 'callbox' "$tmp/pkg-files.txt"
+  grep -qx 'backmux' "$tmp/pkg-files.txt"
   sleep 1
   a2="$(.github/scripts/package_tarball.sh linux-amd64-gnu-static 1.2.3 "$bin" "$out2")"
   s1="$(sha256_file "$a1")"
@@ -159,35 +159,35 @@ trap 'rm -rf "$tmp"' EXIT
 
 test_installer_uninstall_round_trip() {
   local root artifact release_dir sum install_dir fake_home
-  artifact="callbox-1.2.3-linux-amd64-gnu-static.tar.gz"
+  artifact="backmux-1.2.3-linux-amd64-gnu-static.tar.gz"
   root="$tmp/uninstall"
   install_dir="$tmp/uninstall-bin"
   fake_home="$tmp/uninstall-home"
   mkdir -p "$fake_home"
   make_fake_release "$root" "$artifact" good
-  release_dir="$root/RchGrav/callbox/releases/download/v1.2.3"
+  release_dir="$root/RchGrav/backmux/releases/download/v1.2.3"
   sum="$(sha256_file "$release_dir/$artifact")"
   printf '%s  %s\n' "$sum" "$artifact" >"$release_dir/SHA256SUMS"
 
   # Install with profile updates on so the PATH block exists to reverse (as a
   # normal user: run as root, the installer never edits shell profiles).
-  env CALLBOX_GITHUB_BASE="file://$root" CALLBOX_REPO_NAME=callbox \
-    CALLBOX_INSTALL_TEST_OS=linux CALLBOX_INSTALL_TEST_ARCH=amd64 CALLBOX_INSTALL_TEST_LIBC=gnu \
-    CALLBOX_INSTALL_DIR="$install_dir" HOME="$fake_home" SHELL=/bin/bash CALLBOX_INSTALL_TEST_UID=1000 \
+  env BACKMUX_GITHUB_BASE="file://$root" BACKMUX_REPO_NAME=backmux \
+    BACKMUX_INSTALL_TEST_OS=linux BACKMUX_INSTALL_TEST_ARCH=amd64 BACKMUX_INSTALL_TEST_LIBC=gnu \
+    BACKMUX_INSTALL_DIR="$install_dir" HOME="$fake_home" SHELL=/bin/bash BACKMUX_INSTALL_TEST_UID=1000 \
     sh ./install.sh 1.2.3 >"$tmp/uninstall-install.out" 2>"$tmp/uninstall-install.err"
-  [ -x "$install_dir/callbox" ]
-  grep -q '# callbox installer' "$fake_home/.bashrc"
+  [ -x "$install_dir/backmux" ]
+  grep -q '# backmux installer' "$fake_home/.bashrc"
   # The send-off prints the exact matching uninstall command.
   grep -q -- '--uninstall' "$tmp/uninstall-install.err"
 
-  env CALLBOX_INSTALL_DIR="$install_dir" HOME="$fake_home" SHELL=/bin/bash CALLBOX_INSTALL_TEST_UID=1000 \
+  env BACKMUX_INSTALL_DIR="$install_dir" HOME="$fake_home" SHELL=/bin/bash BACKMUX_INSTALL_TEST_UID=1000 \
     sh ./install.sh --uninstall >"$tmp/uninstall-run.out" 2>"$tmp/uninstall-run.err"
-  [ ! -e "$install_dir/callbox" ]
-  ! grep -q '# callbox installer' "$fake_home/.bashrc"
-  grep -q 'kept callbox state' "$tmp/uninstall-run.err"
+  [ ! -e "$install_dir/backmux" ]
+  ! grep -q '# backmux installer' "$fake_home/.bashrc"
+  grep -q 'kept backmux state' "$tmp/uninstall-run.err"
 
   # Idempotent: a second uninstall reports and exits 0.
-  env CALLBOX_INSTALL_DIR="$install_dir" HOME="$fake_home" SHELL=/bin/bash CALLBOX_INSTALL_TEST_UID=1000 \
+  env BACKMUX_INSTALL_DIR="$install_dir" HOME="$fake_home" SHELL=/bin/bash BACKMUX_INSTALL_TEST_UID=1000 \
     sh ./install.sh -u >"$tmp/uninstall-again.out" 2>"$tmp/uninstall-again.err"
   grep -q 'nothing to remove' "$tmp/uninstall-again.err"
 }

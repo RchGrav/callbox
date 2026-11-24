@@ -1,12 +1,12 @@
-callbox help scripting - exit codes, stdout, and stderr
+backmux help scripting - exit codes, stdout, and stderr
 
 stdout is for machine data. Human banners, confirmations, warnings, and
 errors go to stderr; --quiet suppresses normal human status.
 
-  id=$(callbox -d <cmd...>)       capture the bare 64-hex call id
-  id=$(callbox -dw <cmd...>)      ...and record its exit code for callbox wait
-  callbox end --print <id>        print kill -TERM -- -<pgid>
-  callbox kill --print <id>       print kill -KILL -- -<pgid>
+  id=$(backmux -d <cmd...>)       capture the bare 64-hex call id
+  id=$(backmux -dw <cmd...>)      ...and record its exit code for backmux wait
+  backmux end --print <id>        print kill -TERM -- -<pgid>
+  backmux kill --print <id>       print kill -KILL -- -<pgid>
 
 Exit codes:
   0  success (includes known name with nothing to do)
@@ -30,12 +30,12 @@ Exit codes:
 
 With several targets (end a b c), each is acted on alone: the ones that
 resolve are ended, the rest reported, and the exit code is the worst.
-callbox msg to a call prints its delivery ID. Sending to an outside inbox
+backmux msg to a call prints its delivery ID. Sending to an outside inbox
 does not print an ID. --wait-reply then prints the first new inbox message,
 from any sender. inbox and monitor print [HH:MM from NAME] TEXT; messages
 can span multiple lines. Status notes and the first inbox name go to stderr.
 
-An exit-only callbox wait returns 0 on success and prints the program's
+An exit-only backmux wait returns 0 on success and prints the program's
 exit code. Capture that value to propagate a job's result; use -dw to keep
 it, since plain -d has no exit record and wait prints -1.
 If another environment cannot determine whether the call ended, its status

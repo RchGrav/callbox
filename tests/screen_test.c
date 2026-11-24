@@ -1,9 +1,9 @@
 /* Unit tests for the screen layer (src/screen): the headless terminal, input
  * encoding by mode, HSNAP1 round trips, and repaint fidelity. */
-#include "callbox/config.h"
-#include "callbox/screen.h"
+#include "backmux/config.h"
+#include "backmux/screen.h"
 #include "../src/console/overlay.h"
-#include "callbox/term.h"
+#include "backmux/term.h"
 
 static int failures = 0;
 #define CHECK(cond, ...)                                                   \
@@ -230,7 +230,7 @@ static void test_resize_and_text_ruler(void) {
     hold_screen_free(s);
 }
 
-/* ---- the compositor of a callbox shell's display (src/console/compose.c) ------ */
+/* ---- the compositor of a backmux shell's display (src/console/compose.c) ------ */
 
 /* Is `term` showing exactly `want`? Characters, widths, attributes, colors. */
 static bool shows(struct hold_screen *term, const struct hold_snapshot *want, const char *what) {

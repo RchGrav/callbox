@@ -1,35 +1,35 @@
-# Callbox documentation
+# Backmux documentation
 
-Callbox runs named programs that you can return to, inspect, and stop.
+Backmux runs named programs that you can return to, inspect, and stop.
 Terminal calls have a screen for people and agents to read and control;
 background calls keep output in a log. Agents can exchange messages even
-when their harnesses run outside Callbox.
+when their harnesses run outside Backmux.
 
 ## Start with a task
 
-New to Callbox? [Install it](install.md), then run the
+New to Backmux? [Install it](install.md), then run the
 [README quickstart](../README.md#try-the-screen-and-input-loop).
 
 | Goal | Terminal help | Guide |
 | --- | --- | --- |
-| Troubleshoot a terminal UI | `callbox help tui` | [Drive a TUI](../src/cli/help/guides/tui.txt) |
-| Debug with your coding agent while using the app yourself | `callbox help share` | [Share a terminal app](../src/cli/help/guides/share.txt) |
-| Launch another agent and check its work | `callbox help agents` | [Work with another agent](../src/cli/help/guides/agents.txt) |
-| Send messages and receive replies across harnesses | `callbox help messaging` | [Exchange messages](../src/cli/help/guides/messaging.txt) |
-| Run a service or CI job, check it, and clean up | `callbox help service` | [Run in the background](../src/cli/help/guides/service.txt) |
+| Troubleshoot a terminal UI | `backmux help tui` | [Drive a TUI](../src/cli/help/guides/tui.txt) |
+| Debug with your coding agent while using the app yourself | `backmux help share` | [Share a terminal app](../src/cli/help/guides/share.txt) |
+| Launch another agent and check its work | `backmux help agents` | [Work with another agent](../src/cli/help/guides/agents.txt) |
+| Send messages and receive replies across harnesses | `backmux help messaging` | [Exchange messages](../src/cli/help/guides/messaging.txt) |
+| Run a service or CI job, check it, and clean up | `backmux help service` | [Run in the background](../src/cli/help/guides/service.txt) |
 
 ## Look up a command
 
-`callbox help` is the short overview. `callbox help all` prints the complete
+`backmux help` is the short overview. `backmux help all` prints the complete
 reference, including every command's detailed help and all launch flags.
-Use `callbox COMMAND --help` when you know which command you need.
+Use `backmux COMMAND --help` when you know which command you need.
 
 | Topic | Terminal help | Read here |
 | --- | --- | --- |
-| Launch modes and options | `callbox help launch` | [Launch reference](../src/cli/help/reference/launch.txt) |
-| Names, IDs, and prefixes | `callbox help targets` | [Target reference](../src/cli/help/reference/targets.txt) |
-| Exit codes, standard output, and scripts | `callbox help scripting` | [Scripting reference](../src/cli/help/reference/scripting.txt) |
-| User and root-managed calls | `callbox help system` | [System reference](../src/cli/help/reference/system.txt) |
+| Launch modes and options | `backmux help launch` | [Launch reference](../src/cli/help/reference/launch.txt) |
+| Names, IDs, and prefixes | `backmux help targets` | [Target reference](../src/cli/help/reference/targets.txt) |
+| Exit codes, standard output, and scripts | `backmux help scripting` | [Scripting reference](../src/cli/help/reference/scripting.txt) |
+| User and root-managed calls | `backmux help system` | [System reference](../src/cli/help/reference/system.txt) |
 
 The [in-depth guide](guide.md) explains screenshots, keyboard and mouse
 input, waiting, messaging, and CI, with worked examples. The help pages
@@ -38,7 +38,7 @@ is available without a network connection or separate documentation files.
 
 ## Understand the design
 
-- [Callbox identity](callbox-identity.md): the product model and command vocabulary.
+- [Backmux identity](backmux-identity.md): the product model and command vocabulary.
 - [Docker familiarity contract](docker-familiarity-contract.md): shared flag and table conventions.
 - [Console](console.md): terminal and pipe-backed calls, attaching, and detaching.
 - [Screens](screen.md): screen state, the control protocol, snapshots, and messages.
@@ -53,7 +53,7 @@ is available without a network connection or separate documentation files.
 
 ## Find the implementation
 
-Public headers live under `include/callbox/`; implementation is layered under
+Public headers live under `include/backmux/`; implementation is layered under
 `src/`, with `src/main.c` as the entry point. In dependency order:
 
 - `core/`: file I/O, JSON, SHA-256, IDs, names, and shared utilities

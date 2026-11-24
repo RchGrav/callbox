@@ -1,7 +1,7 @@
-#include "callbox/config.h"
-#include "callbox/core.h"
-#include "callbox/term.h"
-#include "callbox/screen.h"
+#include "backmux/config.h"
+#include "backmux/core.h"
+#include "backmux/term.h"
+#include "backmux/screen.h"
 
 /* The line editing a terminal does in its normal mode, for a client that
  * must read keys itself (to see the detach keys and Ctrl-C) while the program

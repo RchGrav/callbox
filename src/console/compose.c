@@ -1,9 +1,9 @@
-#include "callbox/config.h"
-#include "callbox/core.h"
-#include "callbox/screen.h"
+#include "backmux/config.h"
+#include "backmux/core.h"
+#include "backmux/screen.h"
 #include "overlay.h"
 
-/* The compositor of a callbox shell's display: one frame of cells per update,
+/* The compositor of a backmux shell's display: one frame of cells per update,
  * built from the shell's screen (the base layer) and whatever is drawn over
  * it, then written to the attached terminal as the difference from what that
  * terminal already shows. It is the only writer to that terminal, so a

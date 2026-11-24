@@ -1,7 +1,7 @@
-usage: callbox help [TOPIC]
+usage: backmux help [TOPIC]
 
 Show a help page without starting or changing a call. With no topic, show
-the overview. callbox -h and callbox --help show the same overview.
+the overview. backmux -h and backmux --help show the same overview.
 
   tui              troubleshoot a terminal app
   share            fix a TUI while a person watches and tests
@@ -14,7 +14,7 @@ the overview. callbox -h and callbox --help show the same overview.
   system           user and root-managed stores
   scripting        stdout, stderr, and exit codes
   examples         more application and automation examples
-  features         a closer look at Callbox's capabilities
+  features         a closer look at Backmux's capabilities
   COMMAND          that command's syntax and options
 
 Existing topic names still work: users = share, comms = messaging,

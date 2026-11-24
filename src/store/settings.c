@@ -1,20 +1,20 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/store.h"
-#include "callbox/core.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/store.h"
+#include "backmux/core.h"
 
-/* Per-user settings: "<home>/.config/callbox/config", one "name value" line per
+/* Per-user settings: "<home>/.config/backmux/config", one "name value" line per
  * setting. Plain text a person can read and edit; lines this build does not
- * know (comments, a newer callbox's settings) are kept as they are. Rewrites are
+ * know (comments, a newer backmux's settings) are kept as they are. Rewrites are
  * atomic (temp file + rename), so a reader never sees half a file and a
  * refused value never touches what was saved. */
 
-/* The file's real location. A person's ~/.config, the callbox directory in it,
+/* The file's real location. A person's ~/.config, the backmux directory in it,
  * or the file itself may be a symlink (dotfile managers make all three), and
  * $HOME may be reached through one: the deepest part of the path that exists
  * is resolved, and what does not exist yet is created beneath it. */
 int hold_settings_path(const char *home, char *out, size_t n) {
-    static const char *const tails[] = {"/.config/callbox/config", "/.config/callbox", "/.config", ""};
+    static const char *const tails[] = {"/.config/backmux/config", "/.config/backmux", "/.config", ""};
     char logical[HOLD_PATH_MAX], real[HOLD_PATH_MAX];
     if (!home || !*home) {
         errno = EINVAL;

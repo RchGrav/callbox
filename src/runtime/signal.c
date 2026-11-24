@@ -1,19 +1,19 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/runtime.h"
-#include "callbox/runtime_internal.h"
-#include "callbox/core.h"
-#include "callbox/platform.h"
-#include "callbox/store.h"
-#include "callbox/console.h"
-#include "callbox/term.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/runtime.h"
+#include "backmux/runtime_internal.h"
+#include "backmux/core.h"
+#include "backmux/platform.h"
+#include "backmux/store.h"
+#include "backmux/console.h"
+#include "backmux/term.h"
 
 /* ---- signal-target safety chain -------------------------------------- */
 
 enum signal_validation_state { SIGNAL_TARGET_RUNNING, SIGNAL_TARGET_EXITED };
 
 static int refuse_signal(const char *id, const char *why) {
-    fprintf(stderr, "callbox: error: call %s %s\n", id, why);
+    fprintf(stderr, "backmux: error: call %s %s\n", id, why);
     return 2;
 }
 
@@ -26,11 +26,11 @@ static int validate_signal_target(const char *id,
                                   enum signal_validation_state *state_out) {
     if (state_out) *state_out = SIGNAL_TARGET_RUNNING;
     if (r->pgid <= 1) {
-        fprintf(stderr, "callbox: error: invalid pgid %ld in record file\n", (long)r->pgid);
+        fprintf(stderr, "backmux: error: invalid pgid %ld in record file\n", (long)r->pgid);
         return 5;
     }
     if (r->sid <= 0) {
-        fprintf(stderr, "callbox: error: invalid sid %ld in record file\n", (long)r->sid);
+        fprintf(stderr, "backmux: error: invalid sid %ld in record file\n", (long)r->sid);
         return 5;
     }
 
@@ -109,14 +109,14 @@ static void not_running_here(const struct hold_run_record *r, bool can_tell) {
     const char *label = r->has_name && r->name[0] ? r->name : r->id;
     if (can_tell)
         fprintf(stderr,
-                "callbox: %s is not running in this environment: it runs in another PID namespace (the shell that "
+                "backmux: %s is not running in this environment: it runs in another PID namespace (the shell that "
                 "started it), and can be ended only from there. Calls started with -dt can be ended from any shell.\n",
                 label);
     else
         fprintf(stderr,
-                "callbox: %s is not running in this environment, and this shell cannot tell whether it still runs in "
+                "backmux: %s is not running in this environment, and this shell cannot tell whether it still runs in "
                 "the one that started it (no exit was recorded). End it from there; to drop the record, "
-                "callbox purge %s --force.\n", label, label);
+                "backmux purge %s --force.\n", label, label);
 }
 
 /* Whether the call has stopped running, as this shell can tell, within ms. */
@@ -177,7 +177,7 @@ static int signal_one(const struct hold_store *store,
         if (signal_through_broker(&r, sig) != 0) {
             if (call_ended_within(store, id, 0)) *already_done = true;
             else {
-                fprintf(stderr, "callbox: cannot reach %s's console to signal it; its exit is not confirmed\n",
+                fprintf(stderr, "backmux: cannot reach %s's console to signal it; its exit is not confirmed\n",
                         r.has_name ? r.name : r.id);
                 rc = 3;
             }
@@ -186,7 +186,7 @@ static int signal_one(const struct hold_store *store,
         if (!graceful || call_ended_within(store, id, STOP_TIMEOUT_MS)) goto out;
         if (signal_through_broker(&r, SIGKILL) != 0) {
             if (!call_ended_within(store, id, 0)) {
-                fprintf(stderr, "callbox: cannot reach %s's console to finish stopping it; its exit is not confirmed\n",
+                fprintf(stderr, "backmux: cannot reach %s's console to finish stopping it; its exit is not confirmed\n",
                         r.has_name ? r.name : r.id);
                 rc = 3;
             }
@@ -237,14 +237,14 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
                              bool all,
                              bool print_cmd) {
     if (argc <= 0) {
-        fprintf(stderr, "usage: callbox %s <target>...\n", command);
+        fprintf(stderr, "usage: backmux %s <target>...\n", command);
         return HOLD_EXIT_USAGE;
     }
     struct hold_resolved_target *targets = NULL;
     int ntargets = 0;
     /* Each target on its own, as docker stop a b c does: one that cannot be
      * resolved (or reached) is reported and skipped, the rest are still
-     * ended, and the exit code is the worst of them. Why: `callbox end a b
+     * ended, and the exit code is the worst of them. Why: `backmux end a b
      * c` with one mistyped name used to end none, leaving the others running
      * while it looked like a typo. */
     int worst = 0;
@@ -267,7 +267,7 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
                     enum run_state st = hold_eval_state(&r, hold_boot_id_or_null(boot));
                     bool unknown = st == STATE_UNKNOWN;
                     /* A known call that has already ended: nothing to do,
-                     * which is success (callbox help scripting: "includes
+                     * which is success (backmux help scripting: "includes
                      * known name with nothing to do"). Why: "no call
                      * matches" denied a call that list -a and purge find, and
                      * exit 5 failed a cleanup step whose goal already held. */
@@ -276,7 +276,7 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
                     if (ended) {
                         char display[ID_DISPLAY_HEX_LEN + 1];
                         hold_run_id_display(r.id, display);
-                        hold_sig_note(inv, "callbox: %s already exited\n", r.has_name ? r.name : display);
+                        hold_sig_note(inv, "backmux: %s already exited\n", r.has_name ? r.name : display);
                     }
                     hold_free_run_record(&r);
                     if (foreign && unknown) {
@@ -311,7 +311,7 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
     }
     if (ntargets == 0) {
         free(targets);
-        if (worst == 0 && !noted_ended) hold_sig_note(inv, "callbox: nothing to %s\n", command);
+        if (worst == 0 && !noted_ended) hold_sig_note(inv, "backmux: nothing to %s\n", command);
         return worst;
     }
     /* Root-managed targets a non-root caller cannot signal: reported, and
@@ -349,9 +349,9 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
         if (!print_cmd && rc == 0) hold_auto_remove_settle(&targets[i].store, targets[i].id, 3000);
         if (!print_cmd && rc == 0) {
             if (already_done) {
-                hold_sig_note(inv, "callbox: %s already exited\n", labels[i]);
+                hold_sig_note(inv, "backmux: %s already exited\n", labels[i]);
             } else {
-                hold_sig_note(inv, "callbox: %s %s\n", !strcmp(command, "kill") ? "killed" : "stopped", labels[i]);
+                hold_sig_note(inv, "backmux: %s %s\n", !strcmp(command, "kill") ? "killed" : "stopped", labels[i]);
             }
         }
         if (rc > worst) worst = rc;
@@ -379,7 +379,7 @@ int hold_resolve_single(const struct hold_invocation *inv,
     *hit = false;
     int rc = hold_resolve_action_token(inv, user_store, system_store, command, token, false, &targets, &ntargets);
     if (rc == 0 && ntargets == 0) {
-        hold_sig_note(inv, "callbox: nothing to %s\n", verb);
+        hold_sig_note(inv, "backmux: nothing to %s\n", verb);
     } else if (rc == 0) {
         *out = targets[0];
         *hit = true;
@@ -399,7 +399,7 @@ int hold_load_target_record(const struct hold_resolved_target *target,
     if (target->requires_root) return hold_report_requires_root(target->id);
     if (hold_load_record_by_id(target->store.record_dir, target->id, r, path, path_len) != 0) return 5;
     if (need_log && !r->has_log) {
-        fprintf(stderr, "callbox: record has no log path: %s\n", target->id);
+        fprintf(stderr, "backmux: record has no log path: %s\n", target->id);
         hold_free_run_record(r);
         return 5;
     }
@@ -435,7 +435,7 @@ int hold_print_run_log(const struct hold_run_record *r) {
 
 int hold_tail_log_until_exit(const struct hold_run_record *r, bool from_end, bool follow_until_exit) {
     int fd = open(r->log_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (fd < 0) hold_die_errno("callbox: failed to open log for tail");
+    if (fd < 0) hold_die_errno("backmux: failed to open log for tail");
     char boot[128] = {0};
     struct tail_state t = {.r = r, .boot_id = r->has_boot ? hold_boot_id_or_null(boot) : NULL};
     if (from_end) lseek(fd, 0, SEEK_END);
@@ -454,22 +454,22 @@ int hold_tail_log_until_exit(const struct hold_run_record *r, bool from_end, boo
     int run_errno = errno;
     close(fd);
     if (end == HOLD_CLIENT_ERROR && run_errno == EPIPE) {
-        /* The reader went away (`callbox logs x | head`): end quietly, as a
+        /* The reader went away (`backmux logs x | head`): end quietly, as a
          * writer to a closed pipe does. */
         signal(SIGPIPE, SIG_DFL);
         raise(SIGPIPE);
     }
     errno = run_errno;
-    if (end == HOLD_CLIENT_ERROR) hold_die_errno("callbox: failed while tailing log");
+    if (end == HOLD_CLIENT_ERROR) hold_die_errno("backmux: failed while tailing log");
     if (end == HOLD_CLIENT_SIGNALED) hold_term_reraise_stop();
     return 0;
 }
 
 /* ---- following a call you launched ---------------------------------------
- * A plain call launched in the foreground: callbox follows its log, and the
+ * A plain call launched in the foreground: backmux follows its log, and the
  * keys mean what they mean everywhere you are on a call - Ctrl-C goes to the
  * program, Ctrl-P Ctrl-Q leaves it running. At a terminal the keys are read
- * one by one (output is untouched); without one, a SIGINT sent to callbox is
+ * one by one (output is untouched); without one, a SIGINT sent to backmux is
  * passed on, as docker run's sig-proxy does. */
 
 struct launch_follow {
@@ -480,7 +480,7 @@ struct launch_follow {
 static int follow_interrupt(void *ctx) {
     struct launch_follow *f = ctx;
     enum signal_validation_state st;
-    /* the same safety chain as callbox end: never signal a reused pid */
+    /* the same safety chain as backmux end: never signal a reused pid */
     if (validate_signal_target(f->t.r->id, f->t.r, false, &st) == 0 && st == SIGNAL_TARGET_RUNNING)
         (void)kill(-f->t.r->pgid, SIGINT);
     return 0;
@@ -493,14 +493,14 @@ static int follow_detach(void *ctx) {
 
 int hold_follow_launched_call(const struct hold_invocation *inv, const struct hold_run_record *r, const char *label) {
     int fd = open(r->log_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (fd < 0) hold_die_errno("callbox: failed to open log for tail");
+    if (fd < 0) hold_die_errno("backmux: failed to open log for tail");
     /* This run's output only: a redial appends to the same log, and what a
      * launch shows is the run it started, not every earlier run's too. */
     if (r->log_start > 0) (void)lseek(fd, (off_t)r->log_start, SEEK_SET);
     char boot[128] = {0};
     struct launch_follow f = {.t = {.r = r, .boot_id = r->has_boot ? hold_boot_id_or_null(boot) : NULL}};
     /* The keyboard is ours only when we are the terminal's foreground job:
-     * `callbox -w cmd &` must not touch the terminal (the shell would stop
+     * `backmux -w cmd &` must not touch the terminal (the shell would stop
      * it for doing so). */
     bool keyboard = isatty(STDIN_FILENO) && tcgetpgrp(STDIN_FILENO) == getpgrp();
     struct hold_term_saved saved;
@@ -528,18 +528,18 @@ int hold_follow_launched_call(const struct hold_invocation *inv, const struct ho
     close(fd);
     if (end == HOLD_CLIENT_SIGNALED) hold_term_reraise_stop();
     if (end == HOLD_CLIENT_ERROR && run_errno == EPIPE) {
-        /* `callbox -w cmd | head`: the reader has what it wanted. The call is
+        /* `backmux -w cmd | head`: the reader has what it wanted. The call is
          * not ours to end; say where it is, then end as a writer to a closed
          * pipe does (141) - the same as an attached launch. */
         if (!tail_call_ended(&f.t))
-            hold_sig_note(inv, "callbox: %s keeps running; end it with: callbox end %s\n", label, label);
+            hold_sig_note(inv, "backmux: %s keeps running; end it with: backmux end %s\n", label, label);
         signal(SIGPIPE, SIG_DFL);
         raise(SIGPIPE);
     }
     errno = run_errno;
-    if (end == HOLD_CLIENT_ERROR) hold_die_errno("callbox: failed while tailing log");
+    if (end == HOLD_CLIENT_ERROR) hold_die_errno("backmux: failed while tailing log");
     if (f.detached)
-        hold_sig_note(inv, "callbox: %s keeps running; follow it again: callbox --tail %s\n", label, label);
+        hold_sig_note(inv, "backmux: %s keeps running; follow it again: backmux --tail %s\n", label, label);
     return 0;
 }
 
@@ -613,8 +613,8 @@ static char *build_stdio_object(pid_t pid) {
 /* Print the record file as a one-object JSON array. With a live "Stdio"
  * object, splice it in before the object's closing brace: the record is a
  * single top-level object, so the last '}' in the file is its terminator. */
-/* The record as stored, with what callbox observes now: "state" is the evaluated
- * state (as callbox list shows it) and, when the record says otherwise - a call
+/* The record as stored, with what backmux observes now: "state" is the evaluated
+ * state (as backmux list shows it) and, when the record says otherwise - a call
  * killed before its exit was stamped still reads "running" - the stored value
  * is kept as "recorded_state". A running call also gets its live stdio. */
 static int write_inspect(const char *path, const char *observed, const char *stdio_obj) {
@@ -678,7 +678,7 @@ int hold_cmd_inspect_action(const struct hold_invocation *inv,
     rc = write_inspect(path, hold_state_str(st), stdio_obj);
     free(stdio_obj);
     hold_free_run_record(&r);
-    if (rc != 0) hold_die_errno("callbox: failed to inspect run record");
+    if (rc != 0) hold_die_errno("backmux: failed to inspect run record");
     return 0;
 }
 
@@ -706,9 +706,9 @@ static off_t offset_of_last_lines(int fd, long lines) {
     return 0;
 }
 
-static const char logs_usage[] = "usage: callbox logs <target> [--follow|-f] [--tail|-n N]\n";
+static const char logs_usage[] = "usage: backmux logs <target> [--follow|-f] [--tail|-n N]\n";
 
-/* callbox logs: the call's captured output as plain bytes. -n N starts at the
+/* backmux logs: the call's captured output as plain bytes. -n N starts at the
  * newest N lines; -f keeps following until the call ends (Ctrl-C stops). */
 int hold_cmd_view_action(const struct hold_invocation *inv,
                          const struct hold_store *user_store,
@@ -735,7 +735,7 @@ int hold_cmd_view_action(const struct hold_invocation *inv,
         } else if (!strcmp(a, "--help") || !strcmp(a, "-h")) {
             return HOLD_RC_SHOW_HELP;
         } else if (a[0] == '-' && a[1]) {
-            fprintf(stderr, "callbox: error: unknown flag '%s'\n%s", a, logs_usage);
+            fprintf(stderr, "backmux: error: unknown flag '%s'\n%s", a, logs_usage);
             return HOLD_EXIT_USAGE;
         } else if (!token) {
             token = a;
@@ -748,7 +748,7 @@ int hold_cmd_view_action(const struct hold_invocation *inv,
             errno = 0;
             tail = strtol(v, &end, 10);
             if (!*v || *end || errno || tail < 0) {
-                fprintf(stderr, "callbox: error: invalid log line limit\n");
+                fprintf(stderr, "backmux: error: invalid log line limit\n");
                 return HOLD_EXIT_USAGE;
             }
         }
@@ -769,12 +769,12 @@ int hold_cmd_view_action(const struct hold_invocation *inv,
     bool running = hold_eval_state(&r, hold_boot_id_or_null(boot)) == STATE_RUNNING;
     if (tail >= 0) {
         int fd = open(r.log_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-        if (fd < 0) hold_die_errno("callbox: failed to open log");
+        if (fd < 0) hold_die_errno("backmux: failed to open log");
         off_t from = tail == 0 ? lseek(fd, 0, SEEK_END) : offset_of_last_lines(fd, tail);
         char buf[8192];
         ssize_t got;
         while ((got = pread(fd, buf, sizeof(buf), from)) > 0) {
-            if (hold_write_all(STDOUT_FILENO, buf, (size_t)got) != 0) hold_die_errno("callbox: failed writing log");
+            if (hold_write_all(STDOUT_FILENO, buf, (size_t)got) != 0) hold_die_errno("backmux: failed writing log");
             from += got;
         }
         close(fd);

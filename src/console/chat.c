@@ -1,18 +1,18 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/core.h"
-#include "callbox/store.h"
-#include "callbox/console.h"
-#include "callbox/screen.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/core.h"
+#include "backmux/store.h"
+#include "backmux/console.h"
+#include "backmux/screen.h"
 #include "overlay.h"
 
-/* A callbox shell's chat: the floating window, its conversations, and the
+/* A backmux shell's chat: the floating window, its conversations, and the
  * routing of everything the attached terminal sends.
  *
  * Conversations are kept per sender: a message from a call goes to that
  * call's conversation (keyed by its id, so a rename keeps it), and messages
- * from outside any call share one. What the person sends goes out over the ordinary callbox msg transport,
- * from this call, so an agent answers with a plain `callbox msg`.
+ * from outside any call share one. What the person sends goes out over the ordinary backmux msg transport,
+ * from this call, so an agent answers with a plain `backmux msg`.
  *
  * Nothing here writes to the shell except the person's own keystrokes and
  * the mouse events the shell's program asked for: an incoming message is
@@ -563,7 +563,7 @@ static void refresh_picks(struct chat *c) {
     struct pick_scan scan = {c};
     if (c->host.store) (void)hold_for_each_record(c->host.store->record_dir, pick_record, &scan);
     /* Every conversation stays readable: one with a call that has since
-     * ended, and those callbox could not tie to a call. */
+     * ended, and those backmux could not tie to a call. */
     for (int i = 0; i < c->nthreads; i++) {
         struct chat_thread *t = c->threads[i];
         struct pick_entry *e = NULL;
@@ -647,7 +647,7 @@ static void hex_into(char *out, const char *s, size_t n) {
     }
 }
 
-/* The helper process of one send. callbox msg's transport is a blocking
+/* The helper process of one send. backmux msg's transport is a blocking
  * request (the receiver answers once the text is typed into its prompt; a
  * busy console is retried for up to 10 s), so it runs beside the broker,
  * which must keep the shell's display alive. It names this call as the
@@ -707,7 +707,7 @@ static void self_label(const struct chat *c, char *out, size_t n) {
     }
 }
 
-/* text, then the shell's clean screen as plain rows: what callbox peek prints,
+/* text, then the shell's clean screen as plain rows: what backmux peek prints,
  * so never the chat window. */
 static char *with_screen(const struct chat *c, const char *text, size_t len, size_t *out_len) {
     struct hold_snapshot snap;
@@ -761,7 +761,7 @@ static void send_message(struct chat *c) {
         return;
     }
     if (t->kind == TH_OUTSIDE) {
-        set_notice(c, "sent from outside callbox: no call to answer");
+        set_notice(c, "sent from outside backmux: no call to answer");
         return;
     }
     struct chat_msg *m = add_msg(t, MSG_SENDING, c->input, len);
@@ -916,8 +916,8 @@ void chat_poll_done(struct chat *c, const struct pollfd *pfds, int n, int64_t no
 void chat_inbound(struct chat *c, const char *sender_id, const char *label, bool operator, const char *text, size_t len) {
     struct chat_thread *t = sender_id && *sender_id
                                 ? get_thread(c, operator ? TH_OPERATOR : TH_CALL, sender_id, label ? label : sender_id)
-                                : get_thread(c, TH_OUTSIDE, "", "outside callbox");
-    if (!t) return; /* every conversation is in use: callbox msg --received still has it */
+                                : get_thread(c, TH_OUTSIDE, "", "outside backmux");
+    if (!t) return; /* every conversation is in use: backmux msg --received still has it */
     if (len > CHAT_MAX_INBOUND) len = CHAT_MAX_INBOUND;
     while (len > 0 && (text[len - 1] == '\n' || text[len - 1] == '\r' || text[len - 1] == ' ')) len--;
     struct chat_msg *m = add_msg(t, MSG_IN, text, len);
@@ -1238,7 +1238,7 @@ static size_t consume_paste(struct chat *c, const unsigned char *p, size_t n) {
     return n - keep; /* 0: only a possible marker so far - wait for more */
 }
 
-/* The lead key was not followed by one of callbox's keys: it was the
+/* The lead key was not followed by one of backmux's keys: it was the
  * program's all along. It goes through (to the shell; chat has no use for
  * it) ahead of whatever was typed after it. */
 static void lead_was_typed(struct chat *c) {

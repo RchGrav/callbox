@@ -16,6 +16,6 @@ fi
 
 mkdir -p "$output_dir"
 
-sed "s/^INSTALLER_VERSION=.*/INSTALLER_VERSION=\"\${CALLBOX_INSTALLER_VERSION:-${tag}}\"/" \
+sed "s/^INSTALLER_VERSION=.*/INSTALLER_VERSION=\"\${BACKMUX_INSTALLER_VERSION:-${tag}}\"/" \
   install.sh >"${output_dir}/install.sh"
 chmod 0755 "${output_dir}/install.sh"

@@ -2,7 +2,7 @@
 
 [Docs index](index.md) | [Contributing](../CONTRIBUTING.md)
 
-Callbox's tests run in lanes split by privilege model. A root run can hide
+Backmux's tests run in lanes split by privilege model. A root run can hide
 bugs that only ordinary users hit, and a plain user run skips the root
 tests, so each lane covers what the others cannot.
 
@@ -52,8 +52,8 @@ no invoking user, so it cannot test provenance.
 | `build-and-test` (gcc, clang) | Static and dynamic `-Werror` builds, then `make test`, as the non-root runner. |
 | `privilege-delegation-test` | `bash scripts/test_root.sh`. |
 | `root-runner` | `make test` as root with the `SUDO_*` variables removed. The suite then acts as a throwaway user per test. |
-| `fifo-console` | `make test` with `CALLBOX_CONSOLE_TRANSPORT=fifo`, then `tests/test_callbox.sh` with Unix sockets denied through an `LD_PRELOAD` shim, so the FIFO fallback runs for real. |
-| `macos-runtime` (arm64, x86_64) | `.github/scripts/test_macos_ci.sh`: a `-Werror` clang build, launch and screen smoke tests, `screen-test`, the version and installer tests, and installer dry runs. It does not run `tests/test_callbox.sh`. |
+| `fifo-console` | `make test` with `BACKMUX_CONSOLE_TRANSPORT=fifo`, then `tests/test_backmux.sh` with Unix sockets denied through an `LD_PRELOAD` shim, so the FIFO fallback runs for real. |
+| `macos-runtime` (arm64, x86_64) | `.github/scripts/test_macos_ci.sh`: a `-Werror` clang build, launch and screen smoke tests, `screen-test`, the version and installer tests, and installer dry runs. It does not run `tests/test_backmux.sh`. |
 | `sanitizers` | `make test` under ASan/UBSan with gcc. |
 | `static-analysis` | cppcheck. |
 | `layer-dependencies` | `bash scripts/lint_layers.sh`. |

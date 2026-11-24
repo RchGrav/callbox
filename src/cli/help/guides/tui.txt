@@ -1,4 +1,4 @@
-callbox help tui - troubleshoot a terminal app
+backmux help tui - troubleshoot a terminal app
 
 Use this when your command tool can launch a full-screen app but cannot
 operate its terminal. Give the app a detached terminal, look at its screen,
@@ -9,24 +9,24 @@ START AND INSPECT
   This example requires a Vim-compatible vi. It opens an empty buffer with
   personal settings and history disabled, and mouse reporting enabled.
 
-    callbox -dt --name editor --size 80 24 -- \
+    backmux -dt --name editor --size 80 24 -- \
       vi -u NONE -N -i NONE -c 'set mouse=a ttymouse=sgr'
-    callbox wait editor --idle 300
-    callbox peek editor --ruler
-    callbox peek editor --image before.png --cursor-ring
+    backmux wait editor --idle 300
+    backmux peek editor --ruler
+    backmux peek editor --image before.png --cursor-ring
 
   -dt starts a terminal without attaching you to it. --size makes the
   starting layout repeatable. peek reads the visible screen; --ruler adds
   zero-based coordinates, and --image writes a color PNG.
 
 ACT AND VERIFY
-    callbox send editor i 'Callbox test' -k Escape --wait 300
-    callbox wait editor --match 'Callbox test'
-    callbox send editor --mouse click,4,0
-    callbox peek editor --json
-    callbox resize editor 100 30
-    callbox wait editor --idle 300
-    callbox peek editor --image after.png --cursor-ring
+    backmux send editor i 'Backmux test' -k Escape --wait 300
+    backmux wait editor --match 'Backmux test'
+    backmux send editor --mouse click,4,0
+    backmux peek editor --json
+    backmux resize editor 100 30
+    backmux wait editor --idle 300
+    backmux peek editor --image after.png --cursor-ring
 
   send applies text and keys in order. Mouse coordinates are column,row;
   the app must enable mouse reporting (otherwise send exits 9). --json
@@ -39,27 +39,27 @@ ACT AND VERIFY
   was delivered. Screen waits default to 30 s; send --wait defaults to 10 s.
 
 FINISH OR HAND OVER
-    callbox send editor ':q!' --enter
-    callbox wait editor
-    callbox peek editor --last-alt
-    callbox purge editor
+    backmux send editor ':q!' --enter
+    backmux wait editor
+    backmux peek editor --last-alt
+    backmux purge editor
 
   wait without a condition waits for exit and prints the program's code.
   --last-alt shows the saved full-screen frame after an app switches back.
   purge removes the ended call and frees its name.
 
   For your app, replace vi and its inputs with your reproduction steps.
-  If it already runs in Callbox, use its name. A person can join a running
-  terminal with callbox attach NAME; Ctrl-P Ctrl-Q leaves it running.
-  Callbox cannot adopt a process that was started outside it.
+  If it already runs in Backmux, use its name. A person can join a running
+  terminal with backmux attach NAME; Ctrl-P Ctrl-Q leaves it running.
+  Backmux cannot adopt a process that was started outside it.
 
 WHEN A SCREEN IS MISLEADING
   To require a redraw after an input, capture its output counter:
 
-    seq=$(callbox send app -k Down --seq)
-    callbox wait app --since "$seq" --idle 300
+    seq=$(backmux send app -k Down --seq)
+    backmux wait app --since "$seq" --idle 300
 
-  Use callbox logs app | cat -v to inspect the raw output. Some apps read
+  Use backmux logs app | cat -v to inspect the raw output. Some apps read
   Escape followed quickly by another key as Alt: send Escape separately.
 
-Next: callbox help share. Details: callbox help peek, send, wait, resize.
+Next: backmux help share. Details: backmux help peek, send, wait, resize.

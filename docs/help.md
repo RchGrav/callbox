@@ -2,7 +2,7 @@
 
 [Docs index](index.md) | [Contributing](../CONTRIBUTING.md)
 
-Callbox's help has three levels: a short overview, task guides, and a
+Backmux's help has three levels: a short overview, task guides, and a
 complete reference. Keep each level useful on its own. The overview helps
 someone choose a next action; a guide carries one workflow from setup to
 verification and cleanup; per-command pages describe syntax and options.
@@ -11,7 +11,7 @@ verification and cleanup; per-command pages describe syntax and options.
 
 | Surface | Source | Rendering |
 | --- | --- | --- |
-| `callbox help`, `-h`, `--help` | [overview.txt](../src/cli/help/overview.txt) | `hold_usage` in [runtime/commands.c](../src/runtime/commands.c) adds the version banner. |
+| `backmux help`, `-h`, `--help` | [overview.txt](../src/cli/help/overview.txt) | `hold_usage` in [runtime/commands.c](../src/runtime/commands.c) adds the version banner. |
 | Five workflows | [guides/](../src/cli/help/guides/) | `help tui`, `share`, `agents`, `messaging`, `service`. |
 | One command | [commands/](../src/cli/help/commands/) | `help COMMAND` or `COMMAND --help`; aliases share the canonical page. |
 | Complete reference | [reference/all.txt](../src/cli/help/reference/all.txt) plus the other reference and command pages | `show_all_help` in [cli/specs.c](../src/cli/specs.c) assembles them from the command table. |
@@ -52,7 +52,7 @@ result. The important boundaries in these guides are:
 | Outside sender identity, inbox history, monitor, and reply waits | [runtime/inbox.c](../src/runtime/inbox.c), [store/inbox.c](../src/store/inbox.c), [runtime/screen_cmds.c](../src/runtime/screen_cmds.c) | `test_operator_inbox_round_trip`, `test_operator_monitor_stream_and_seen`, `test_operator_inbox_timeout_bounds`, `test_operator_inbox_names_do_not_shadow_calls`, `test_operator_inbox_parallel_registration`. |
 | Logs, stopping, saved records, and purge | [runtime/signal.c](../src/runtime/signal.c), [runtime/list.c](../src/runtime/list.c), [runtime/call.c](../src/runtime/call.c) | Log, signal escalation, save/rename, and targeted/sweeping purge tests. |
 
-The black-box tests live in [tests/test_callbox.sh](../tests/test_callbox.sh).
+The black-box tests live in [tests/test_backmux.sh](../tests/test_backmux.sh).
 The help test compares compiled output with each source page, verifies
 canonical command and alias coverage, checks full-reference inclusion, and
 checks line lengths. Syntax checks alone do not prove that an example works:
@@ -60,9 +60,9 @@ run the application, inspect its screen, and verify its expected result.
 
 ```sh
 make -j4 CFLAGS='-std=c11 -Wall -Wextra -Wpedantic -Werror -O2' \
-  callbox callbox-dynamic callbox-test
-HOLD_TEST_ONLY=help_pages_fit_and_say_it HOLD_BIN=./callbox-test \
-  bash tests/test_callbox.sh
+  backmux backmux-dynamic backmux-test
+HOLD_TEST_ONLY=help_pages_fit_and_say_it HOLD_BIN=./backmux-test \
+  bash tests/test_backmux.sh
 make test
 make lint
 ```

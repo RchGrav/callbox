@@ -1,22 +1,22 @@
-usage: callbox msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]
+usage: backmux msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]
                    [--wait-reply [--timeout MS]]
-       callbox msg [<target>] --received [ID]
+       backmux msg [<target>] --received [ID]
 
 Send text with a sender name and reply command. Input-enabled calls receive
 it in their prompt, followed by Enter; calls with a chat window receive it
-there instead. An outside sender's inbox receives stored text. Callbox
+there instead. An outside sender's inbox receives stored text. Backmux
 delivers immediately; input queueing is up to the receiving harness.
 
-  [msg from NAME; reply: callbox msg NAME "..."] TEXT
+  [msg from NAME; reply: backmux msg NAME "..."] TEXT
 
-Inside a call, CALLBOX_ID (or CALLBOX_NAME) identifies the sender. Outside
-Callbox, the first send creates an inbox and prints its name on stderr.
+Inside a call, BACKMUX_ID (or BACKMUX_NAME) identifies the sender. Outside
+Backmux, the first send creates an inbox and prints its name on stderr.
 The receiver replies with the same msg command in either case.
 
   --stdin          read the message text from stdin
   --no-enter       type without pressing Enter (for a call's program input)
   --               treat remaining words as text, including words with dashes
-  --wait-reply     from outside Callbox, wait for the first new inbox message
+  --wait-reply     from outside Backmux, wait for the first new inbox message
                    after sending and print it; any sender can satisfy this
   --timeout MS     bound --wait-reply in milliseconds (0 = no limit, default)
   --received [ID]  read a call's delivered-message history, or one message by
@@ -39,4 +39,4 @@ A call accepts at most 20 messages per minute. This limit does not apply to
 outside inboxes. The header supplies an address, not proof of identity.
 --wait-reply exits 7 on timeout or 8 if the inbox expires while waiting.
 
-See callbox help messaging for inside and outside workflows.
+See backmux help messaging for inside and outside workflows.

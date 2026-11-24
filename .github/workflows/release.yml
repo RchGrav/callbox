@@ -45,7 +45,7 @@ jobs:
           make clean
           make
           make clean
-          make callbox-dynamic
+          make backmux-dynamic
       - name: Assert release tests run as non-root
         run: test "$(id -u)" -ne 0
       - name: Run test suite
@@ -74,34 +74,34 @@ jobs:
         include:
           - target: linux-amd64-gnu-static
             dockcross_image: ""
-            make_target: callbox
+            make_target: backmux
             static_ldflags: -static
-            package_binary: callbox
+            package_binary: backmux
           - target: linux-amd64-gnu-dynamic
             dockcross_image: ""
-            make_target: callbox-dynamic
+            make_target: backmux-dynamic
             static_ldflags: ''
-            package_binary: callbox-dynamic
+            package_binary: backmux-dynamic
           - target: linux-arm64-gnu-static
             dockcross_image: dockcross/linux-arm64
-            make_target: callbox
+            make_target: backmux
             static_ldflags: -static
-            package_binary: callbox
+            package_binary: backmux
           - target: linux-arm64-gnu-dynamic
             dockcross_image: dockcross/linux-arm64
-            make_target: callbox-dynamic
+            make_target: backmux-dynamic
             static_ldflags: ''
-            package_binary: callbox-dynamic
+            package_binary: backmux-dynamic
           - target: linux-armhf-gnu-static
             dockcross_image: dockcross/linux-armv7
-            make_target: callbox
+            make_target: backmux
             static_ldflags: -static
-            package_binary: callbox
+            package_binary: backmux
           - target: linux-armhf-gnu-dynamic
             dockcross_image: dockcross/linux-armv7
-            make_target: callbox-dynamic
+            make_target: backmux-dynamic
             static_ldflags: ''
-            package_binary: callbox-dynamic
+            package_binary: backmux-dynamic
     steps:
       - uses: actions/checkout@v5
         with:
@@ -172,7 +172,7 @@ jobs:
       - name: Package tarball
         run: |
           mkdir -p dist
-          ./.github/scripts/package_tarball.sh "${{ matrix.target }}" "${{ needs.version.outputs.value }}" callbox dist
+          ./.github/scripts/package_tarball.sh "${{ matrix.target }}" "${{ needs.version.outputs.value }}" backmux dist
 
       - name: Upload musl artifact
         uses: actions/upload-artifact@v6
@@ -214,12 +214,12 @@ jobs:
         run: |
           make clean
           make CC=clang STATIC_LDFLAGS='' CFLAGS='-std=c11 -Wall -Wextra -Wpedantic -Werror -O2'
-          file callbox
+          file backmux
 
       - name: Package tarball
         run: |
           mkdir -p dist
-          ./.github/scripts/package_tarball.sh "${{ matrix.target }}" "${{ needs.version.outputs.value }}" callbox dist
+          ./.github/scripts/package_tarball.sh "${{ matrix.target }}" "${{ needs.version.outputs.value }}" backmux dist
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v6
@@ -266,7 +266,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd dist
-          sha256sum callbox-*.tar.gz install.sh > SHA256SUMS
+          sha256sum backmux-*.tar.gz install.sh > SHA256SUMS
 
       - name: Publish release artifacts
         uses: softprops/action-gh-release@v2
@@ -276,7 +276,7 @@ jobs:
           overwrite_files: true
           files: |
             dist/install.sh
-            dist/callbox-*.tar.gz
+            dist/backmux-*.tar.gz
             dist/SHA256SUMS
 
       - name: Smoke-test GitHub one-line installer
@@ -293,6 +293,6 @@ jobs:
             [ "$i" -lt 30 ] || { echo "install.sh never became downloadable" >&2; exit 1; }
             sleep 10
           done
-          CALLBOX_INSTALL_DIR="$install_tmp/bin" CALLBOX_UPDATE_PROFILE=0 sh "$install_tmp/install.sh"
-          installed_version="$("$install_tmp/bin/callbox" --version)"
+          BACKMUX_INSTALL_DIR="$install_tmp/bin" BACKMUX_UPDATE_PROFILE=0 sh "$install_tmp/install.sh"
+          installed_version="$("$install_tmp/bin/backmux" --version)"
           test "$installed_version" = "${RELEASE_TAG}"

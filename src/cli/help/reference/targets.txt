@@ -1,4 +1,4 @@
-callbox help targets - names, ids, and the start of either
+backmux help targets - names, ids, and the start of either
 
   <target>          resolve in the current context
   user:<target>     force user-local lookup
@@ -10,15 +10,15 @@ A call id addresses one call directly, always. A call name resolves to the
 single call recorded under that name, narrowed by the verb: end/kill/logs
 look at running or logged calls, inspect looks at retained records, and purge
 looks at removable past call data. Failing a whole name or an id prefix, the
-start of a name works when one call the verb can act on has it (callbox logs
-hel for helper). When more than one call matches, callbox lists them and
+start of a name works when one call the verb can act on has it (backmux logs
+hel for helper). When more than one call matches, backmux lists them and
 exits 6 - it never picks one.
 
 Outside inboxes have names too. msg, inbox, and monitor accept an inbox's
 complete name; call IDs, prefixes, and user:/system: scopes apply to calls.
 An active inbox name cannot be assigned to a call in the same store.
 
-Verbs shorten the same way: callbox li is callbox list, when nothing else
+Verbs shorten the same way: backmux li is backmux list, when nothing else
 has that meaning. The top-level word is tried in this order: a verb; a call
 by whole name or id prefix (redial); a program on PATH; then the start of
 exactly one verb or (alone) one call's name. Several fits are listed, exit 6.

@@ -303,7 +303,7 @@ INTERNAL void vterm_state_setpen(VTermState *state, const long args[], int argco
       break;
     }
 
-    case 2: // Faint on (callbox patch)
+    case 2: // Faint on (backmux patch)
       state->pen.dim = 1;
       setpenattr_bool(state, VTERM_ATTR_DIM, 1);
       break;
@@ -366,7 +366,7 @@ INTERNAL void vterm_state_setpen(VTermState *state, const long args[], int argco
       setpenattr_int(state, VTERM_ATTR_UNDERLINE, state->pen.underline);
       break;
 
-    case 22: // Bold off, and faint off (normal intensity; callbox patch)
+    case 22: // Bold off, and faint off (normal intensity; backmux patch)
       state->pen.bold = 0;
       setpenattr_bool(state, VTERM_ATTR_BOLD, 0);
       state->pen.dim = 0;

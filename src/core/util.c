@@ -1,6 +1,6 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/core.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/core.h"
 
 void hold_sig_note(const struct hold_invocation *inv, const char *fmt, ...) {
     if (inv && inv->quiet) return;
@@ -187,7 +187,7 @@ void hold_format_duration_human(int64_t seconds, char *out, size_t n) {
 
 /* Parse an RFC3339 UTC instant ("2026-07-03T01:23:45Z", fractional seconds and
  * the trailing Z ignored) into unix nanoseconds. Returns false on any garbage
- * or the zero-value placeholder Callbox writes for records without a timestamp. */
+ * or the zero-value placeholder Backmux writes for records without a timestamp. */
 bool hold_parse_rfc3339_utc_to_ns(const char *s, int64_t *out_ns) {
     if (!s || !*s) return false;
     struct tm tm;
@@ -285,8 +285,8 @@ int hold_parse_term_size(const char *first, const char *second, int *cols, int *
     return used;
 }
 
-/* Message text (callbox msg, and an operator inbox) is text from a sender
- * callbox does not trust: keep newlines and
+/* Message text (backmux msg, and an operator inbox) is text from a sender
+ * backmux does not trust: keep newlines and
  * tabs, drop every other control - C0 bytes, DEL, and C1 (U+0080-U+009F) -
  * so it can never type Escape into the receiver, submit early with a carriage
  * return, end a bracketed paste, or drive the terminal (titles, clears).

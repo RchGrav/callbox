@@ -1,10 +1,10 @@
-callbox help launch - every flag for starting a call
+backmux help launch - every flag for starting a call
 
-  callbox [options] [--] PROGRAM [ARGS...]
-  callbox [options] CALL
+  backmux [options] [--] PROGRAM [ARGS...]
+  backmux [options] CALL
 
 Put options before PROGRAM; everything after it is passed to that program.
--- forces a fresh program launch, even if its name is a Callbox command or
+-- forces a fresh program launch, even if its name is a Backmux command or
 an existing call. Shell expressions need an explicit shell: sh -c '...'.
 A lone CALL reconnects if running, or restarts its recorded command and mode
 if ended. A running call without a console is followed through its log.
@@ -31,7 +31,7 @@ CHOOSE A MODE
   the captured output, but the program itself does not have a terminal.
 
   Terminal and pipe-input calls record exit codes. --rm and active restart
-  policies also retain a waiter. Plain -d alone leaves no Callbox helper.
+  policies also retain a waiter. Plain -d alone leaves no Backmux helper.
 
 SET UP THE PROGRAM
   --name NAME      assign a name (one is generated otherwise)
@@ -59,7 +59,7 @@ CONTROL AN ATTACHED CALL
                    change detach keys (default ctrl-p,ctrl-q); one key such
                    as ctrl-] detaches immediately. Chat needs two
                    keys, with its chat key different from both.
-  --chat-key KEY   for callbox shell only: choose the key after the lead key
+  --chat-key KEY   for backmux shell only: choose the key after the lead key
                    that opens chat (default ctrl-t)
   -f, --tail CALL  follow a call's new log output without attaching or redial;
                    Ctrl-C stops following, leaving the call running
@@ -67,21 +67,21 @@ CONTROL AN ATTACHED CALL
 COMMON OPTIONS
   --quiet          suppress status notes on stderr, keeping data on stdout
   --system         select root-managed state; actions require root
-  -h, --help       show help (also callbox COMMAND --help)
+  -h, --help       show help (also backmux COMMAND --help)
   -V, --version    print the version
 
 Value options accept --flag=value. Every PTY call gets TERM=xterm-256color,
 whatever your own TERM is; -e TERM=... sets another. The detach-size
-setting applies only to new detached terminal calls; see callbox config -h.
+setting applies only to new detached terminal calls; see backmux config -h.
 
 COMPATIBILITY
   --console        start a detached terminal (the older spelling of -dt)
                    This launch flag differs from the console command, which
                    is an alias for attach.
 
-Callbox runs host programs with the invoker's rights. It does not provide
+Backmux runs host programs with the invoker's rights. It does not provide
 container images, port publishing, volume mounts, or capability management.
 The program normally starts in your current directory; a launch under sudo
 starts in /. Pass an explicit working directory to the program when needed.
 
-More: callbox help targets, callbox help system, callbox help scripting
+More: backmux help targets, backmux help system, backmux help scripting

@@ -1,49 +1,49 @@
-callbox help messaging - exchange messages from any harness
+backmux help messaging - exchange messages from any harness
 
 Use this to hand off work and receive reports across terminal agents.
 Anything that can run a command can send a message. A receiving agent needs
-an input-enabled call; a sender outside Callbox receives replies in an inbox.
+an input-enabled call; a sender outside Backmux receives replies in an inbox.
 
 PREPARE A RECEIVER
   This example uses an installed, configured Codex harness:
 
-    callbox -dt --name reviewer codex
-    callbox wait reviewer --idle 1000
-    callbox peek reviewer
+    backmux -dt --name reviewer codex
+    backmux wait reviewer --idle 1000
+    backmux peek reviewer
 
   Check that its prompt is ready. If it is already running as a call, use
-  that call's name instead. callbox ps lists running calls, not inboxes.
+  that call's name instead. backmux ps lists running calls, not inboxes.
 
-SEND FROM A HARNESS OUTSIDE CALLBOX
+SEND FROM A HARNESS OUTSIDE BACKMUX
   Run this in your existing harness's command tool:
 
-    callbox msg reviewer "Review the current diff and reply with findings."
+    backmux msg reviewer "Review the current diff and reply with findings."
 
   The first send prints your generated inbox name on stderr. reviewer sees
   a header with that name and the command to reply to it. It answers with
-  callbox msg NAME "...", using the actual name from the header.
+  backmux msg NAME "...", using the actual name from the header.
 
 WAIT FOR A REPLY OR FOLLOW THE CONVERSATION
   In the same harness, wait for one unread message:
 
-    callbox inbox --wait --timeout 600000
+    backmux inbox --wait --timeout 600000
 
   To keep receiving messages, run a monitor as a long-running command in
   your harness's background command facility, then wait on that command
   using the harness's own tools:
 
-    callbox monitor --timeout 600000
+    backmux monitor --timeout 600000
 
   monitor prints unread messages, then new ones, flushing each to stdout.
-  In a separate terminal use callbox monitor NAME with the inbox name from
+  In a separate terminal use backmux monitor NAME with the inbox name from
   the first send; a different harness can have a different default inbox.
-  Ctrl-C stops the monitor. callbox inbox shows retained history and marks
+  Ctrl-C stops the monitor. backmux inbox shows retained history and marks
   it read. These readers share unread progress, so use one reader at a time
   when you want to consume each reply once. inbox --monitor also works.
 
   For a single blocking send-and-wait operation:
 
-    callbox msg reviewer "Report your review status." \
+    backmux msg reviewer "Report your review status." \
       --wait-reply --timeout 600000
 
   This waits for the first new message in your inbox after sending, from
@@ -52,16 +52,16 @@ WAIT FOR A REPLY OR FOLLOW THE CONVERSATION
 
 UNDERSTAND WHERE A MESSAGE GOES
   Inside -it or -dt calls, messages are typed into the program and Enter
-  submits them. Bare launches on a real terminal and callbox shell put
+  submits them. Bare launches on a real terminal and backmux shell put
   messages in chat. Plain -d and -dw calls have no input console and refuse
-  messages. Callbox delivers input; it does not manage a harness's work queue.
+  messages. Backmux delivers input; it does not manage a harness's work queue.
 
   An outside inbox is created on first send, not by monitor. Its name
   expires after an hour without use; individual messages expire one hour
   after delivery. No timeout means keep waiting. Timeout exits 7.
-  callbox wait is different: it waits for a call's screen or process exit.
+  backmux wait is different: it waits for a call's screen or process exit.
 
-  When the reviewer is no longer needed: callbox end reviewer, then
-  callbox purge reviewer. This removes the call, not your outside inbox.
+  When the reviewer is no longer needed: backmux end reviewer, then
+  backmux purge reviewer. This removes the call, not your outside inbox.
 
-Next: callbox help agents. Details: callbox help msg, inbox, monitor.
+Next: backmux help agents. Details: backmux help msg, inbox, monitor.

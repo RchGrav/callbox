@@ -1,8 +1,8 @@
-#include "callbox/config.h"
-#include "callbox/core.h"
-#include "callbox/term.h"
+#include "backmux/config.h"
+#include "backmux/core.h"
+#include "backmux/term.h"
 
-/* The person's terminal, while a callbox client has it: the input mode it is
+/* The person's terminal, while a backmux client has it: the input mode it is
  * put in and handed back from, and the signals that must not leave it in that
  * mode. One copy, so the attach client and the log follower restore a
  * terminal the same way. */

@@ -4,12 +4,12 @@ A call gives a program a name and a captured log. It can keep running when
 you detach; use its name to inspect it, reconnect, or stop it.
 
 START A CALL
-  callbox PROGRAM [ARGS...]         attached terminal, with a chat window
-  callbox -it --name NAME PROGRAM   attached agent; messages go to its input
-  callbox -dt --name NAME PROGRAM   detached terminal for peek and send
-  callbox -dw --name NAME PROGRAM   background job; keep its exit code
+  backmux PROGRAM [ARGS...]         attached terminal, with a chat window
+  backmux -it --name NAME PROGRAM   attached agent; messages go to its input
+  backmux -dt --name NAME PROGRAM   detached terminal for peek and send
+  backmux -dw --name NAME PROGRAM   background job; keep its exit code
 
-WORK WITH CALLS (callbox COMMAND)
+WORK WITH CALLS (backmux COMMAND)
   ps                               list running calls (list: ended ones too)
   peek CALL                        read the screen; --image FILE saves a PNG
   send CALL TEXT --enter            type text and press Enter
@@ -24,14 +24,14 @@ WORK WITH CALLS (callbox COMMAND)
   CALL is a name or ID; unique prefixes work.
 
 FOLLOW A WORKFLOW
-  callbox help tui                  troubleshoot a terminal app
-  callbox help share                fix a TUI while a person watches and tests
-  callbox help agents               start an agent and give it work
-  callbox help messaging            exchange messages from any harness
-  callbox help service              run background services and CI jobs
+  backmux help tui                  troubleshoot a terminal app
+  backmux help share                fix a TUI while a person watches and tests
+  backmux help agents               start an agent and give it work
+  backmux help messaging            exchange messages from any harness
+  backmux help service              run background services and CI jobs
 
 LOOK UP DETAILS
-  callbox help COMMAND              syntax and options for one command
-  callbox help launch               launch modes, flags, and restarting calls
-  callbox help all                  complete command and option reference
-  https://github.com/RchGrav/callbox
+  backmux help COMMAND              syntax and options for one command
+  backmux help launch               launch modes, flags, and restarting calls
+  backmux help all                  complete command and option reference
+  https://github.com/RchGrav/backmux

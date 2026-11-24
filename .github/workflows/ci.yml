@@ -25,7 +25,7 @@ jobs:
           make clean
           make CC=${{ matrix.cc }} CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
           make clean
-          make callbox-dynamic CC=${{ matrix.cc }} CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
+          make backmux-dynamic CC=${{ matrix.cc }} CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
           make test CC=${{ matrix.cc }} CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
 
   privilege-delegation-test:
@@ -59,11 +59,11 @@ jobs:
       - name: Install the TUIs the screen tests drive
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux whiptail vim-tiny micro
       - name: Suite with every console forced onto FIFOs
-        run: CALLBOX_CONSOLE_TRANSPORT=fifo make test CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
+        run: BACKMUX_CONSOLE_TRANSPORT=fifo make test CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O2"
       - name: Suite with Unix sockets denied, as some sandboxes do (the fallback runs for real)
         run: |
           cc -shared -fPIC -o socket-ban.so tests/socket_ban_shim.c -ldl
-          LD_PRELOAD="$PWD/socket-ban.so" HOLD_TEST_SOCKETS_DENIED=1 bash tests/test_callbox.sh
+          LD_PRELOAD="$PWD/socket-ban.so" HOLD_TEST_SOCKETS_DENIED=1 bash tests/test_backmux.sh
 
   macos-runtime:
     name: macOS runtime test (${{ matrix.arch }})

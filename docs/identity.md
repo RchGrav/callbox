@@ -1,8 +1,8 @@
 # Identity and validation
 
-[Docs index](index.md) | [Previous: Store](store.md) | Related: [Launcher](launcher.md), [callbox identity](callbox-identity.md)
+[Docs index](index.md) | [Previous: Store](store.md) | Related: [Launcher](launcher.md), [backmux identity](backmux-identity.md)
 
-Callbox records process identity at launch and checks it before signaling a local process. A call ID or name selects a record, which must match the live process before Callbox sends a signal. From another PID namespace, Callbox asks the call's broker to signal its own program instead.
+Backmux records process identity at launch and checks it before signaling a local process. A call ID or name selects a record, which must match the live process before Backmux sends a signal. From another PID namespace, Backmux asks the call's broker to signal its own program instead.
 
 An unavailable process or lock probe does not mean that a call has exited. When status is `Unknown`, its console may still be reachable through the authenticated broker connection.
 
@@ -77,7 +77,7 @@ flowchart TD
 Notes on the diagram:
 
 - **Boot check:** applies only when the record has a boot ID and the current boot ID can be read.
-- **Marked failed:** means `state: failed` or a `launch_error` in the record. Callbox does not write either; the evaluator still honors them.
+- **Marked failed:** means `state: failed` or a `launch_error` in the record. Backmux does not write either; the evaluator still honors them.
 - **Leader present:** the leader's stat is readable and it is not a zombie, or `kill(pid, 0)` succeeds or fails with `EPERM`.
 - **Process identity:** compare the recorded starttime, or the executable device and inode when no starttime was recorded and the executable can be inspected.
 
@@ -85,7 +85,7 @@ Notes on the diagram:
 
 **Another PID namespace.** Some sandboxes give each shell its own PID namespace. There the recorded pid means nothing, and may even name an unrelated process, so it is never consulted. The filesystem is shared, and `flock` locks are held in the kernel, so a lock on the log can still show that the call is alive.
 
-These processes hold the lifetime lock: the waiter or restart supervisor of a call started under the console fallback (Unix sockets denied, or `CALLBOX_CONSOLE_TRANSPORT=fifo`), and a broker whose endpoint is a FIFO. This includes both TTY calls (`-t`) and calls with input on a pipe (`-i`). These calls record `liveness_lock: true`.
+These processes hold the lifetime lock: the waiter or restart supervisor of a call started under the console fallback (Unix sockets denied, or `BACKMUX_CONSOLE_TRANSPORT=fifo`), and a broker whose endpoint is a FIFO. This includes both TTY calls (`-t`) and calls with input on a pipe (`-i`). These calls record `liveness_lock: true`.
 
 The probe has three outcomes: held, successfully checked and unlocked, or unavailable. A held lock shows the call is running. An unlocked lifetime lock gives `Exited (?)` when no exit was recorded. A missing or unreadable log, or an error from the lock operation, gives `Unknown`; it does not establish that a live supervisor released its lock.
 
@@ -126,7 +126,7 @@ Otherwise `validate_signal_target` checks the live process before any signal:
 
 When the leader is gone but the group lives, nothing is left to compare the recorded identity against, and a process group cannot be checked and signaled in one atomic step. Matching the recorded `pgid` and `sid` within the same boot is the best available check.
 
-Callbox then sends the signal to the whole group with `kill(-pgid, sig)`. `ESRCH` means the call already exited; `EPERM` gives exit 3.
+Backmux then sends the signal to the whole group with `kill(-pgid, sig)`. `ESRCH` means the call already exited; `EPERM` gives exit 3.
 
 **`end`** (alias `stop`) escalates in steps:
 
@@ -143,7 +143,7 @@ Afterwards, `hold_report_session_escapees` warns about processes still in the se
 
 ## Why this design works
 
-PID reuse is the core hazard. Callbox has no daemon to keep live state, so it records identity at launch and combines it with live probes before every signal. When the machine state is ambiguous, refusing is the safe result.
+PID reuse is the core hazard. Backmux has no daemon to keep live state, so it records identity at launch and combines it with live probes before every signal. When the machine state is ambiguous, refusing is the safe result.
 
 ## Implementation map
 

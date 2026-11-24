@@ -1,12 +1,12 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/console.h"
-#include "callbox/core.h"
-#include "callbox/store.h"
-#include "callbox/platform.h"
-#include "callbox/term.h"
-#include "callbox/screen.h"
-#include "callbox/console_internal.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/console.h"
+#include "backmux/core.h"
+#include "backmux/store.h"
+#include "backmux/platform.h"
+#include "backmux/term.h"
+#include "backmux/screen.h"
+#include "backmux/console_internal.h"
 #include "overlay.h"
 
 #include <regex.h>
@@ -15,15 +15,15 @@
  * the indexed log, and keeps a headless terminal (the screen layer) in step
  * with it. Clients reach it over the call's private Unix socket:
  *
- *   - one attach client at a time (callbox attach / callbox -it): framed or raw
+ *   - one attach client at a time (backmux attach / backmux -it): framed or raw
  *     terminal bridge, repainted from the live screen when it connects;
- *   - any number of control clients (callbox peek / send / wait / resize): one
+ *   - any number of control clients (backmux peek / send / wait / resize): one
  *     length-prefixed request, one length-prefixed reply, then close.
  *
  * When the target exits, the final screen is written beside the log so the
  * last frame stays inspectable after the socket is gone.
  *
- * A callbox shell (options->chat) differs in two ways, both confined to the
+ * A backmux shell (options->chat) differs in two ways, both confined to the
  * `b->chat` branches below: its attach client is sent composed frames (the
  * screen with the chat window over it, see overlay.h) instead of the PTY's
  * raw bytes, and a message for it goes to the chat inbox instead of being
@@ -37,12 +37,12 @@
  * client, and its slot is freed (a large one still arriving is not). */
 #define BROKER_READ_MS 10000
 #define BROKER_MAX_MSGS 16
-/* callbox msg loop guard: at most this many deliveries per receiver per minute. */
+/* backmux msg loop guard: at most this many deliveries per receiver per minute. */
 #define BROKER_MSG_RATE 20
 /* A sender that messages the instant it starts may beat its call's record,
  * and the header's name comes from that record: wait this long for it. */
 #define BROKER_MSG_SENDER_GRACE_MS 2000
-/* A callbox shell's display is redrawn at most this often: output that arrives
+/* A backmux shell's display is redrawn at most this often: output that arrives
  * faster is coalesced into the next frame. */
 #define BROKER_FRAME_MS 12
 
@@ -109,7 +109,7 @@ struct broker {
         bool submit;
         bool has_claim;
         bool operator; /* the claim is an operator's name (a sender outside any call), not a call */
-        char claim[ALIAS_MAX_LEN + ID_STR_LEN + 1]; /* the sender's call: its CALLBOX_ID */
+        char claim[ALIAS_MAX_LEN + ID_STR_LEN + 1]; /* the sender's call: its BACKMUX_ID */
         int64_t start_ms;
         struct control_client *waiter; /* reply here if still the same client */
         uint64_t waiter_gen;
@@ -117,7 +117,7 @@ struct broker {
     int64_t sent_ms[BROKER_MSG_RATE];
     int sent_idx;
     uint32_t msg_count; /* feeds each message's id */
-    struct chat *chat;  /* a callbox shell's chat and compositor; NULL for every other call */
+    struct chat *chat;  /* a backmux shell's chat and compositor; NULL for every other call */
     off_t log_start;    /* where this run's output starts in the log */
     /* A program on pipes: input waiting for room in its stdin pipe. The
      * broker never blocks on that pipe - its one loop also drains the
@@ -212,7 +212,7 @@ static bool authorize_client(const struct broker *b, int client) {
     if (hold_console_peer_uid(client, &peer_uid) == 0 && uid_allowed(b, peer_uid)) {
         return true;
     }
-    static const char msg[] = "callbox: console attach denied\n";
+    static const char msg[] = "backmux: console attach denied\n";
     (void)hold_write_all(client, msg, sizeof(msg) - 1);
     return false;
 }
@@ -348,7 +348,7 @@ static void apply_size(struct broker *b, int rows, int cols, bool by_agent) {
     b->size_by_agent = by_agent;
     if (b->chat) {
         /* A size from the attached terminal is that terminal's window; a
-         * callbox resize changes only the shell's PTY, shown clipped or padded. */
+         * backmux resize changes only the shell's PTY, shown clipped or padded. */
         if (!by_agent) chat_terminal_resized(b->chat, rows, cols);
         chat_screen_changed(b->chat);
     }
@@ -383,7 +383,7 @@ static int take_snapshot(const struct broker *b, struct hold_snapshot *snap) {
 struct attach_client {
     int output;
     int fd;            /* -1 = no client attached */
-    bool input_closed; /* its input ended; it may still be reading (printf ... | callbox attach) */
+    bool input_closed; /* its input ended; it may still be reading (printf ... | backmux attach) */
     pid_t peer_pid;    /* 0 = unknown */
     bool decided;
     bool framed;
@@ -415,7 +415,7 @@ static void drop_attach(struct broker *b, struct attach_client *c) {
     c->fd = -1;
 }
 
-/* What the attached terminal sent: the program's input - except in a callbox
+/* What the attached terminal sent: the program's input - except in a backmux
  * shell, where chat decides whether it is the shell's or its own. */
 static int attach_input(struct broker *b, const void *buf, size_t n) {
     if (b->chat) {
@@ -516,7 +516,7 @@ static int process_attach_input(struct broker *b, struct attach_client *c, const
     return process_framed(b, c);
 }
 
-/* A callbox shell's display: one composed frame (what changed since the last)
+/* A backmux shell's display: one composed frame (what changed since the last)
  * to the attach client. Only a failed write is an error; a frame that could
  * not be built is simply tried again. */
 static int send_frame(struct broker *b, struct attach_client *c, int64_t now) {
@@ -836,7 +836,7 @@ static void handle_resize(struct broker *b, struct control_client *c, const char
 }
 
 /* "signal sig=N": the chain of command for a shell that cannot see our
- * program's pid (another PID namespace) - callbox end/kill ask us, and we signal
+ * program's pid (another PID namespace) - backmux end/kill ask us, and we signal
  * the program's process group, which we can always see. */
 static void handle_signal(struct broker *b, struct control_client *c, const char *args) {
     const char *v = kv_get(args, "sig");
@@ -980,11 +980,11 @@ static int match_record_name(const char *id, const char *path, struct hold_run_r
     return 0;
 }
 
-/* Who is speaking: the sender's call (its CALLBOX_ID, or a name), named as
+/* Who is speaking: the sender's call (its BACKMUX_ID, or a name), named as
  * its record names it now - so a renamed call is shown, and answered, by its
  * new name. Not a proof: anything that can reach this console runs as the
  * console's user (the socket admits no one else), and could as well type
- * any text with callbox send. Why no more than that: the session and
+ * any text with backmux send. Why no more than that: the session and
  * ancestry check this replaced guarded only against the user's own
  * processes, cost every agent a longer header and a verify step, and read
  * as "safe" when it meant only "from". 1 found, -1 no record (yet: a call
@@ -1096,7 +1096,7 @@ static void make_msg_id(struct broker *b, const struct pending_msg *m, char out[
 
 /* A root broker serving a call in a user's store (sudo from that user's
  * home) gives the files it creates beside the log the log's owner, so the
- * user can still read them (callbox peek, callbox msg --received). */
+ * user can still read them (backmux peek, backmux msg --received). */
 static void own_like_log(const struct broker *b, int fd) {
     struct stat st;
     if (geteuid() == 0 && b->logfd >= 0 && fstat(b->logfd, &st) == 0 && st.st_uid != 0)
@@ -1104,9 +1104,9 @@ static void own_like_log(const struct broker *b, int fd) {
 }
 
 /* <id>.msgs beside <id>.log: one line per delivered message, "ID UNIXTIME
- * FROMCALL SENDER HEXTEXT" - the call's message history (callbox msg
+ * FROMCALL SENDER HEXTEXT" - the call's message history (backmux msg
  * --received). FROMCALL is 1 when the sender is a call; the field is where an
- * older callbox put its verified flag, so logs from before read the same. */
+ * older backmux put its verified flag, so logs from before read the same. */
 static void record_received(const struct broker *b, const char *id, bool from_call, const char *label,
                             const char *text, size_t len) {
     size_t ll = b->log_path ? strlen(b->log_path) : 0;
@@ -1136,7 +1136,7 @@ static void record_received(const struct broker *b, const char *id, bool from_ca
     free(line);
 }
 
-/* A queued message has been handed over: its sender's callbox msg returns, and
+/* A queued message has been handed over: its sender's backmux msg returns, and
  * the queue slot is free. */
 static void msg_done(struct pending_msg *m, const char *id) {
     struct control_client *w = m->waiter;
@@ -1150,12 +1150,12 @@ static void msg_done(struct pending_msg *m, const char *id) {
  * newlines flattened so it cannot submit early; then Enter. The header says
  * who sent it and how to reply - addressing, nothing more (see
  * resolve_sender). FROM is the sender call's name, or NULL when the message
- * came from outside any call callbox knows. */
+ * came from outside any call backmux knows. */
 static void deliver_msg(struct broker *b, struct pending_msg *m, const char *from, const char *sender_id) {
     char id[7], header[400];
     make_msg_id(b, m, id);
     if (b->chat) {
-        /* A callbox shell: the message goes to the chat inbox, filed under the
+        /* A backmux shell: the message goes to the chat inbox, filed under the
          * call that sent it. It is shown, never typed: nothing a sender writes
          * reaches the shell's input. */
         record_received(b, id, from != NULL, from ? from : "", m->text, m->len);
@@ -1164,9 +1164,9 @@ static void deliver_msg(struct broker *b, struct pending_msg *m, const char *fro
         return;
     }
     if (from)
-        snprintf(header, sizeof(header), "[msg from %.100s; reply: callbox msg %.100s \"...\"] ", from, from);
+        snprintf(header, sizeof(header), "[msg from %.100s; reply: backmux msg %.100s \"...\"] ", from, from);
     else
-        snprintf(header, sizeof(header), "[msg from outside callbox] ");
+        snprintf(header, sizeof(header), "[msg from outside backmux] ");
     size_t hl = strlen(header);
     char *full = malloc(hl + m->len + 1);
     if (!full) {
@@ -1383,8 +1383,8 @@ static void write_beside_log(const struct broker *b, const char *suffix, const u
     }
 }
 
-/* <id>.screen beside <id>.log: the last screen, for callbox peek after exit;
- * <id>.altscreen: the last full-screen frame, for callbox peek --last-alt. */
+/* <id>.screen beside <id>.log: the last screen, for backmux peek after exit;
+ * <id>.altscreen: the last full-screen frame, for backmux peek --last-alt. */
 static void write_final_screen(struct broker *b) {
     struct hold_snapshot snap;
     unsigned char *blob = NULL;
@@ -1434,8 +1434,8 @@ static bool console_taken(struct broker *b, struct attach_client *cl) {
 static void refuse_attach(struct control_client *c, const struct attach_client *cl) {
     char msg[80];
     int n = cl->peer_pid > 0
-                ? snprintf(msg, sizeof(msg), "callbox: console already attached (by pid %ld)\n", (long)cl->peer_pid)
-                : snprintf(msg, sizeof(msg), "callbox: console already attached\n");
+                ? snprintf(msg, sizeof(msg), "backmux: console already attached (by pid %ld)\n", (long)cl->peer_pid)
+                : snprintf(msg, sizeof(msg), "backmux: console already attached\n");
     (void)hold_write_all(c->fd, msg, (size_t)n);
     drop_control(c);
 }
@@ -1492,7 +1492,7 @@ static void sniff_timeout(struct broker *b, struct control_client *c, struct att
     drop_control(c);
 }
 
-/* A terminal that attaches to a program's raw screen (-it, or callbox attach)
+/* A terminal that attaches to a program's raw screen (-it, or backmux attach)
  * sees the call's name in the top-right corner for chat-tip time, then the
  * screen as the program drew it. Why: with several calls running, whoever
  * started or joined this one could not tell which name was theirs - the
@@ -1501,7 +1501,7 @@ static void sniff_timeout(struct broker *b, struct control_client *c, struct att
  * down (also when the client goes first): the program is never asked to
  * redraw, and the terminal's saved cursor is never touched. (Drawing it
  * between ESC 7 and ESC 8 overwrote the cursor the alternate screen had
- * saved, so leaving it put the shell's output in the wrong place.) A callbox
+ * saved, so leaving it put the shell's output in the wrong place.) A backmux
  * shell or user-mode call has its own tip in the chat window. */
 #define BROKER_NAME_MS 5000
 static void show_name(struct broker *b, struct attach_client *c) {
@@ -1511,11 +1511,11 @@ static void show_name(struct broker *b, struct attach_client *c) {
     char path[HOLD_PATH_MAX];
     if (hold_load_record_by_id(b->store->record_dir, b->run_id, &r, path, sizeof(path)) != 0) return;
     char label[ALIAS_MAX_LEN + 32];
-    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " callbox: %s ", r.name);
+    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " backmux: %s ", r.name);
     else {
         char display[ID_DISPLAY_HEX_LEN + 1];
         hold_run_id_display(r.id, display);
-        snprintf(label, sizeof(label), " callbox: %s ", display);
+        snprintf(label, sizeof(label), " backmux: %s ", display);
     }
     hold_free_run_record(&r);
     if (repaint_raw(b, c, label) == 0 && c->fd >= 0) c->name_until_ms = now_ms() + BROKER_NAME_MS;
@@ -1604,7 +1604,7 @@ static void broker_serve(struct broker *b) {
             }
         }
 
-        /* A callbox shell: its sends in flight, its timers, and the next frame
+        /* A backmux shell: its sends in flight, its timers, and the next frame
          * when one is owed sooner than the frame rate allows. */
         nfds_t chat_idx = nfds;
         int chat_nfds = 0;
@@ -1626,7 +1626,7 @@ static void broker_serve(struct broker *b) {
             }
             break;
         }
-        /* Nothing happened: the exit check below uses this. (A callbox shell's
+        /* Nothing happened: the exit check below uses this. (A backmux shell's
          * own timers do not count as the program stirring.) */
         bool quiet = pr == 0;
         if (b->chat) {
@@ -1765,7 +1765,7 @@ static void broker_serve(struct broker *b) {
                 b->last_output_ms = now_ms();
                 feed_screen(b, buf, (size_t)n);
                 if (b->chat) {
-                    /* A callbox shell's terminal is drawn from the screen, never
+                    /* A backmux shell's terminal is drawn from the screen, never
                      * from these bytes, so it cannot answer the program's
                      * queries: the screen always does. */
                     flush_screen_output(b);

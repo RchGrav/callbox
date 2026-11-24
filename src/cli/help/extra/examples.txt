@@ -1,56 +1,56 @@
-callbox help examples - more ways to use Callbox
+backmux help examples - more ways to use Backmux
 
 For the main workflows, start with help tui, share, agents, messaging, or
 service. The examples below assume the named programs, files, and project
 scripts already exist. Replace app-specific prompts with your app's output.
 
 TEST A TERMINAL APP
-    callbox -dt --size 100 30 --name app -- ./my-tui
-    callbox wait app --match "Main menu" --timeout 5000
-    callbox send app 2 --enter
-    callbox wait app --match "Saved" --timeout 5000 ||
-        callbox peek app --image fail.png
-    callbox end app
-    callbox purge app
+    backmux -dt --size 100 30 --name app -- ./my-tui
+    backmux wait app --match "Main menu" --timeout 5000
+    backmux send app 2 --enter
+    backmux wait app --match "Saved" --timeout 5000 ||
+        backmux peek app --image fail.png
+    backmux end app
+    backmux purge app
 
 RUN A DEVELOPMENT SERVER
-    callbox -d --name api -- npm run dev
-    callbox logs api -f
+    backmux -d --name api -- npm run dev
+    backmux logs api -f
     # Ctrl-C stops following the log.
-    callbox end api
-    callbox api
+    backmux end api
+    backmux api
     # Later, stop it and release its name.
-    callbox end api
-    callbox purge api
+    backmux end api
+    backmux purge api
 
 KEEP A VM RUNNING
-    callbox -d --name vm -- qemu-system-x86_64 -m 4G disk.qcow2
-    callbox logs vm -n 50
-    callbox stats vm --no-stream
-    callbox end vm
-    callbox purge vm
+    backmux -d --name vm -- qemu-system-x86_64 -m 4G disk.qcow2
+    backmux logs vm -n 50
+    backmux stats vm --no-stream
+    backmux end vm
+    backmux purge vm
 
-  stats reports process-group CPU and memory on Linux. Callbox keeps the
+  stats reports process-group CPU and memory on Linux. Backmux keeps the
   process running; VM disks and the VM's own shutdown procedure remain
   QEMU's responsibility.
 
 COLLECT A LONG JOB'S RESULT
-    callbox -dw --name backup -- ./backup.sh
-    code=$(callbox wait backup)
-    callbox logs backup -n 50
-    callbox purge backup
+    backmux -dw --name backup -- ./backup.sh
+    code=$(backmux wait backup)
+    backmux logs backup -n 50
+    backmux purge backup
     exit "$code"
 
 DRIVE SEVERAL SERIAL CONSOLES
     for i in 1 2 3 4; do
-        callbox -dt --name node$i -- qemu-system-x86_64 -nographic -m 512M \
+        backmux -dt --name node$i -- qemu-system-x86_64 -nographic -m 512M \
             -drive file=node$i.qcow2 -nic user,model=virtio
     done
-    callbox wait node3 --match "login:" --timeout 120000
-    callbox send node3 root --enter
-    callbox peek node3
-    callbox attach node3
+    backmux wait node3 --match "login:" --timeout 120000
+    backmux send node3 root --enter
+    backmux peek node3
+    backmux attach node3
 
   This assumes each disk boots a serial console and accepts that login.
   Ctrl-P Ctrl-Q detaches. Shut down the guests normally before removing
-  their ended calls with callbox purge.
+  their ended calls with backmux purge.

@@ -5,7 +5,7 @@
 /* Shared domain types crossing module boundaries. Definitions only, no code.
  * config.h supplies the fixed-width integer / POSIX types and the size macros
  * (HOLD_PATH_MAX, ID_STR_LEN, ALIAS_MAX_LEN, ...) used below. */
-#include "callbox/config.h"
+#include "backmux/config.h"
 
 struct hold_recipe {
     int argc;
@@ -17,12 +17,12 @@ struct hold_recipe {
     bool mode_detach;
     bool mode_wait; /* a waiter records the exit code (-w; implied by foreground, --rm, --restart) */
     bool allow_multi;
-    bool mode_chat;  /* user mode (callbox <cmd>, -it, callbox shell): composited display; callbox msg
+    bool mode_chat;  /* user mode (backmux <cmd>, -it, backmux shell): composited display; backmux msg
                         lands in its chat inbox */
-    bool mode_shell; /* placed with callbox shell (chat's hints name the shell, not "the program") */
-    int chat_key;    /* callbox shell: the key after the lead key that opens chat */
+    bool mode_shell; /* placed with backmux shell (chat's hints name the shell, not "the program") */
+    int chat_key;    /* backmux shell: the key after the lead key that opens chat */
     bool has_chat_key;
-    bool has_keys;   /* callbox shell: its broker reads the lead key itself (lead_key, then detach_key) */
+    bool has_keys;   /* backmux shell: its broker reads the lead key itself (lead_key, then detach_key) */
     int lead_key, detach_key;
     bool has_size;   /* placed with --size: redial replays it */
     int size_cols, size_rows;

@@ -1,5 +1,5 @@
-#include "callbox/config.h"
-#include "callbox/screen.h"
+#include "backmux/config.h"
+#include "backmux/screen.h"
 
 #include "font_data.h"
 
@@ -555,7 +555,7 @@ static void emit_match(struct bitw *w, int len, int dist) {
     bw_bits(w, (uint32_t)(dist - dist_base[di]), dist_extra[di]);
 }
 
-/* The largest framebuffer callbox will render: 1 GiB of RGB. */
+/* The largest framebuffer backmux will render: 1 GiB of RGB. */
 #define PNG_MAX_FB_BYTES ((uint64_t)1 << 30)
 
 #define HASH_BITS 15

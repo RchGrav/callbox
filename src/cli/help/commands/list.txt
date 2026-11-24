@@ -1,4 +1,4 @@
-usage: callbox list [-a|--all] [-s|--system] [-u|--user] [-l|--live] [name]
+usage: backmux list [-a|--all] [-s|--system] [-u|--user] [-l|--live] [name]
 
 List recorded calls, including ended ones, with their owner, command, age,
 status, ports, and name. By default, list shows your personal calls.

@@ -1,7 +1,7 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/platform.h"
-#include "callbox/core.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/platform.h"
+#include "backmux/core.h"
 
 static int realpath_copy(const char *path, char *out, size_t n) {
     char *resolved = realpath(path, NULL);

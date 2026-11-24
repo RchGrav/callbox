@@ -80,10 +80,10 @@
 #endif
 #define JSON_MAX_DEPTH 64
 /* A PTY call's terminal size, in character cells. --size, the saved
- * detach-size default and callbox resize all take 1..HOLD_TERM_MAX_DIM columns
+ * detach-size default and backmux resize all take 1..HOLD_TERM_MAX_DIM columns
  * and rows; with nothing to go on, a call starts at the default below. */
-/* Exit codes with one meaning everywhere (callbox help scripting lists them all).
- * A command line callbox cannot act on - an unknown option, a missing or
+/* Exit codes with one meaning everywhere (backmux help scripting lists them all).
+ * A command line backmux cannot act on - an unknown option, a missing or
  * malformed value, the wrong number of arguments - is a usage error. "No
  * such call" keeps its own code, so a script can tell the two apart. */
 #define HOLD_EXIT_USAGE 1
@@ -110,9 +110,9 @@
 #define HOLD_TERM_DEFAULT_ROWS 24
 #ifndef HOLD_SYSTEM_STATE_DIR
 #if defined(__APPLE__)
-#define HOLD_SYSTEM_STATE_DIR "/var/db/callbox"
+#define HOLD_SYSTEM_STATE_DIR "/var/db/backmux"
 #else
-#define HOLD_SYSTEM_STATE_DIR "/var/lib/callbox"
+#define HOLD_SYSTEM_STATE_DIR "/var/lib/backmux"
 #endif
 #endif
 

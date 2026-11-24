@@ -2,10 +2,10 @@
 
 [Docs index](index.md) | Related: [Screens](screen.md), [Launcher](launcher.md)
 
-A call placed with `-t` - and every user-mode launch, `callbox <cmd>` with no
+A call placed with `-t` - and every user-mode launch, `backmux <cmd>` with no
 session flags - runs on a pseudo-terminal owned by its **console broker**:
-`callbox <cmd>` and `callbox -it <cmd>` attach to it at once, `callbox -dt
-<cmd>` leaves it running in the background, and `callbox attach <target>`
+`backmux <cmd>` and `backmux -it <cmd>` attach to it at once, `backmux -dt
+<cmd>` leaves it running in the background, and `backmux attach <target>`
 picks it back up later (`console` is an alias). A call placed with `-i` (no
 `-t`) has a broker too, holding its input pipe instead of a PTY (see [Programs
 on pipes](#programs-on-pipes)). `Ctrl-P Ctrl-Q` detaches without stopping the
@@ -19,11 +19,11 @@ listener owned by anyone but root or the socket's owner, so a swapped-in
 listener cannot impersonate the broker. The broker:
 
 - appends every output byte to the call's log;
-- feeds the same bytes to a headless terminal, which `callbox peek`, `send`,
+- feeds the same bytes to a headless terminal, which `backmux peek`, `send`,
   `wait`, `resize`, and `msg` use (see [screen.md](screen.md));
 - serves one attach client at a time, plus short-lived control clients and
   the registrations of nested attaches (below). A second attach is told
-  where the console is held: `callbox: web is already attached in another
+  where the console is held: `backmux: web is already attached in another
   terminal (pid N). Detach it there: Ctrl-P Ctrl-Q.`, or `...from inside the
   call X...` when the holder runs inside another call;
 - repaints a newly attached terminal from the live screen (cells, colors,
@@ -39,24 +39,24 @@ the broker answers by closing the connection. `Ctrl-P` is a lead key: it is
 held until the next key arrives, with no timer: not everyone types fast, and Docker
 and similar tools leave the lead key untimed too. `Ctrl-Q` then detaches,
 `Ctrl-P` again sends one `Ctrl-P` to the program (the quick way through), and any other key sends
-both through. (A `callbox shell`'s broker reads these keys itself, so it can
+both through. (A `backmux shell`'s broker reads these keys itself, so it can
 show what the lead key offers while it waits; see [shell.md](shell.md).)
 
 Ctrl-C means one thing wherever you are on a call: it goes to the program. On
 a PTY the key reaches the program's terminal, which signals it. For a program
 on pipes, the attach client turns Ctrl-C into an interrupt frame and the
-broker sends SIGINT to the program's process group. Following a log (`callbox
+broker sends SIGINT to the program's process group. Following a log (`backmux
 tail`, `--tail`, `logs -f`) is not being on a call: there, Ctrl-C stops
 following.
 Two cases need more than that.
 
-**Nested attach.** Attach to one call from inside another — `callbox attach
-ktui` typed in a `callbox shell` — and there are two clients in a row, with the
+**Nested attach.** Attach to one call from inside another — `backmux attach
+ktui` typed in a `backmux shell` — and there are two clients in a row, with the
 detach keys reaching the outer one first. Taken there, they would put the
 shell in the background with the inner attach still running inside it,
 holding its call's console where no key can reach it. So an interactive
 attach client (stdin and stdout both terminals) started inside a call
-(`CALLBOX_ID` names it, and its console endpoint exists) tells that call's
+(`BACKMUX_ID` names it, and its console endpoint exists) tells that call's
 broker so: a
 `nested keys=<its detach keys>` control request on a connection it keeps
 open while attached (the broker accepts it only from a process in its own
@@ -73,7 +73,7 @@ one is detached the same way: nobody is looking at it any more.
 
 **A client that vanishes.** A closed window or a killed process sends no
 detach frame. The broker sees the connection's input end, which a client
-that only reads (`printf 'q\n' | callbox attach web`) also produces, so that
+that only reads (`printf 'q\n' | backmux attach web`) also produces, so that
 alone is not the client leaving. It keeps watching for the connection to
 hang up, and for the client's process to stop existing (what macOS and FIFOs
 can report), on every pass and again before turning another client away. A
@@ -88,11 +88,11 @@ switching. A connection that sends nothing for 250 ms becomes a raw attach,
 so a client that only reads (`socat -u`) still sees the screen; anything it
 sends later is typed as raw input.
 
-When the program of a foreground `-it` launch ends, `callbox` exits with its
+When the program of a foreground `-it` launch ends, `backmux` exits with its
 exit status, as a launch without `-t` does. The alternate screen goes with
 the attach, so the call's last screen (the frame its broker saved) is then
 printed on the terminal's own screen, where it stays to be read; the same
-when a call ends under a `callbox attach`. A program that is over before the
+when a call ends under a `backmux attach`. A program that is over before the
 attach reaches it is not an error: its console is gone, so the last screen
 (or, with no terminal attached, its log) is all there is to show, and the
 exit status is still its own.
@@ -100,10 +100,10 @@ exit status is still its own.
 A program that closes its terminal and runs on (a daemon dropping its
 stdio) has nothing more to show, and nothing typed can reach it. Its broker
 lets the attached client go at once, without waiting for the program to
-exit, and the client says so: `callbox: web has closed its terminal and runs
-on; there is nothing to attach - see 'callbox logs web'`.
+exit, and the client says so: `backmux: web has closed its terminal and runs
+on; there is nothing to attach - see 'backmux logs web'`.
 
-A `callbox shell` call uses the same broker, attach client, and wire protocol,
+A `backmux shell` call uses the same broker, attach client, and wire protocol,
 with one difference in what travels: its attach client is sent frames the
 broker composes (the screen with the chat window over it) instead of the
 PTY's bytes, and what it sends back is routed between the shell and chat.
@@ -128,13 +128,13 @@ directions.
 
 ## Programs on pipes
 
-`callbox -i <cmd>` (without `-t`) puts the program on pipes under a broker:
+`backmux -i <cmd>` (without `-t`) puts the program on pipes under a broker:
 its stdin is a pipe the broker holds, and its stdout and stderr a pipe the
 broker copies into the log and the headless screen (reading `\n` as `\r\n`,
 as a PTY would, so `peek` and `wait --match` work). Why a broker for a
 program without a PTY: so the program never holds your terminal (handed your
 terminal directly, it would keep reading your keystrokes after you left), so
-Ctrl-P Ctrl-Q can detach it, and so `callbox attach` can reconnect its input
+Ctrl-P Ctrl-Q can detach it, and so `backmux attach` can reconnect its input
 and output later. `-di` starts it in the background with its input open.
 
 The attach client for such a call keeps your terminal's lines and scrollback
@@ -149,7 +149,7 @@ comes next, as `docker attach` does.
 
 A launch that attaches from a script (stdin or stdout not a terminal) asks
 for the same stream on a PTY call too (`P` frame), so a script gets the
-output, not cursor moves. `callbox attach` keeps its repaint of the live
+output, not cursor moves. `backmux attach` keeps its repaint of the live
 screen.
 
 ## Where Unix sockets are denied
@@ -157,7 +157,7 @@ screen.
 Some sandboxes refuse Unix-domain sockets: `socket`, `bind`, or `listen`
 fails with `EPERM`, `EACCES`, or `EAFNOSUPPORT`. There the broker serves
 the same console over FIFOs instead, automatically.
-`CALLBOX_CONSOLE_TRANSPORT=fifo` forces that transport for tests. FIFO is a
+`BACKMUX_CONSOLE_TRANSPORT=fifo` forces that transport for tests. FIFO is a
 supported way to operate a call when sockets are unavailable: peek, send,
 wait, resize, msg, and attach with detach and reattach retain their usual
 behavior. A successful test with sockets available does not exercise the
@@ -182,7 +182,7 @@ only if that process holds the channel's `in` FIFO open (Linux
 `/proc/<pid>/fd`, macOS libproc). If the pid cannot be observed, it remains
 unknown; this does not reject an otherwise authorized control request.
 Channels left half-made by a client that died are removed by the broker
-when it exits and by `callbox purge`.
+when it exits and by `backmux purge`.
 
 On macOS, `poll()` never reports end-of-file on a FIFO (Linux does), so on
 quiet passes the attach client and the broker probe their FIFOs with
@@ -196,19 +196,19 @@ mechanism to the client loop on one platform.
 
 When the program can produce no more output — it exited, or it closed its
 terminal and runs on — the broker stops listening at once (either transport)
-and saves the final screen before waiting for the process, so `callbox peek`
+and saves the final screen before waiting for the process, so `backmux peek`
 answers immediately with that screen and says whether the program still runs.
 
 ## Across PID namespaces
 
 Some sandboxes give each shell its own PID namespace over a shared
 filesystem. A process ID from another namespace may be invisible here, or
-may identify an unrelated process. Callbox records the launching namespace
+may identify an unrelated process. Backmux records the launching namespace
 (`pid_ns`, the inode of `/proc/self/ns/pid`) and, from a different namespace,
 uses the shared store and the call's broker instead of consulting that pid:
 
 - **Alive?** Under the fallback (Unix sockets denied, or
-  `CALLBOX_CONSOLE_TRANSPORT=fifo`), a shared lock on the call's log, held for
+  `BACKMUX_CONSOLE_TRANSPORT=fifo`), a shared lock on the call's log, held for
   its life, says it runs. A supervisor holds it — the broker of a `-t` or
   `-i` call whose endpoint came up as a FIFO, or the waiter that a `-w`,
   `--rm`, `--restart`, or foreground launch leaves behind. A recorded exit
@@ -231,7 +231,7 @@ uses the shared store and the call's broker instead of consulting that pid:
 - **Can't tell.** No exit recorded and nothing vouching for the call — a
   plain `-d` call whose lock is gone, a call with an unavailable lock probe,
   or a call placed without the fallback — reads `Unknown`. Purge sweeps
-  leave it alone; a targeted `callbox purge NAME --force` removes its record.
+  leave it alone; a targeted `backmux purge NAME --force` removes its record.
   Control goes through an available broker, never a foreign pid.
 
 Without the fallback, nothing is added: no lock is taken, and calls run
@@ -245,7 +245,7 @@ macOS (no PID namespaces), local evidence decides.
 
 The `fifo-console` CI job runs the suite with FIFO explicitly selected and
 again with Unix sockets denied by `tests/socket_ban_shim.c`. The second run
-exercises automatic fallback. In `tests/test_callbox.sh`:
+exercises automatic fallback. In `tests/test_backmux.sh`:
 
 - `test_fifo_console_full_capability` exercises the FIFO console itself.
 - `test_other_pid_namespace_follows_chain_of_command` checks live calls,

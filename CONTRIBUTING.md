@@ -1,6 +1,6 @@
-# Contributing to callbox
+# Contributing to backmux
 
-callbox is a small, security-sensitive C11 tool. Every change should come
+backmux is a small, security-sensitive C11 tool. Every change should come
 with tests strong enough that a later change cannot regress it unnoticed.
 
 ## Checks
@@ -29,20 +29,20 @@ separate jobs, and adds lanes `make ci` does not have. See
 [docs/CI-PARITY.md](docs/CI-PARITY.md) for every lane.
 
 On macOS, `make ci` is the only place the `__APPLE__` code is sanitized, and
-GitHub's macOS job does not run `tests/test_callbox.sh`. cppcheck and the
+GitHub's macOS job does not run `tests/test_backmux.sh`. cppcheck and the
 Linux code paths run only under `scripts/linux.sh` or Linux CI. Before a
 release, run `make ci` on a Mac and `scripts/linux.sh` as well.
 
 ## Tests
 
-- `tests/test_callbox.sh` is the black-box regression suite. It runs the built
+- `tests/test_backmux.sh` is the black-box regression suite. It runs the built
   binary and checks stdout, stderr, exit codes, and the filesystem.
   `HOLD_TEST_ONLY='<regex>'` runs only the tests whose function name or
   description match.
 - `tests/screen_test.c` unit-tests the terminal screen, snapshots, input
   encoding, and the chat compositor (`make screen-test`).
 - `tests/test_040_dockerish.sh` checks the Docker-shaped surface against
-  `callbox-test` (`make test-040`).
+  `backmux-test` (`make test-040`).
 - `tests/test_version_makefile.sh` and `tests/test_release_installer.sh` cover
   version resolution and `install.sh`.
 - `make test` runs all of the above.
@@ -69,7 +69,7 @@ Conventions:
 
 ## Architecture
 
-Source is layered under `src/`, with public headers in `include/callbox/`:
+Source is layered under `src/`, with public headers in `include/backmux/`:
 
 `core`/`screen` → `platform` → `store` → `term` → `console` → `access` →
 `runtime` → `cli`/`main`

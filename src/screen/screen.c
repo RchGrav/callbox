@@ -1,5 +1,5 @@
-#include "callbox/config.h"
-#include "callbox/screen.h"
+#include "backmux/config.h"
+#include "backmux/screen.h"
 
 #include "vterm.h"
 /* Read-only access to libvterm's input modes (DECCKM, keypad, bracketed paste,

@@ -1,13 +1,13 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/runtime.h"
-#include "callbox/runtime_internal.h"
-#include "callbox/core.h"
-#include "callbox/store.h"
-#include "callbox/platform.h"
-#include "callbox/observe.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/runtime.h"
+#include "backmux/runtime_internal.h"
+#include "backmux/core.h"
+#include "backmux/store.h"
+#include "backmux/platform.h"
+#include "backmux/observe.h"
 
-/* callbox stats <target>: a docker-stats-like live view of the call's process
+/* backmux stats <target>: a docker-stats-like live view of the call's process
  * group - CPU %, resident memory, and process count - refreshing in place once
  * a second until Ctrl-C. Falls back to a single plain frame when stdout is not
  * a TTY or --no-stream is given, so it stays script-safe. Aggregation is over
@@ -121,7 +121,7 @@ int hold_cmd_stats_action(const struct hold_invocation *inv,
     snprintf(name, sizeof(name), "%s", r.has_name && r.name[0] ? r.name : "-");
 
     if (st != STATE_RUNNING) {
-        hold_sig_note(inv, "callbox: %s is not running\n", display_id);
+        hold_sig_note(inv, "backmux: %s is not running\n", display_id);
         print_stats_frame(display_id, name, "--", "0B", 0, false);
         hold_free_run_record(&r);
         free(targets);

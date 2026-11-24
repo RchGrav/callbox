@@ -1,13 +1,13 @@
-callbox help all - complete command and option reference
+backmux help all - complete command and option reference
 
 This reference includes launch options, target resolution, store selection,
 scripting conventions, and every command's full help. Command and help-topic
 aliases are listed at the end. Each section is also available on its own.
 
-  callbox help COMMAND              one command (or callbox COMMAND --help)
-  callbox help launch               start, detach, and restart programs
-  callbox help targets              names, IDs, prefixes, and lookup order
-  callbox help system               user and root-managed stores
-  callbox help scripting            output conventions and exit codes
+  backmux help COMMAND              one command (or backmux COMMAND --help)
+  backmux help launch               start, detach, and restart programs
+  backmux help targets              names, IDs, prefixes, and lookup order
+  backmux help system               user and root-managed stores
+  backmux help scripting            output conventions and exit codes
 
-For complete workflows: callbox help tui, share, agents, messaging, service.
+For complete workflows: backmux help tui, share, agents, messaging, service.

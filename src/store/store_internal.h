@@ -2,8 +2,8 @@
 #ifndef HOLD_STORE_INTERNAL_H
 #define HOLD_STORE_INTERNAL_H
 
-#include "callbox/config.h"
-#include "callbox/types.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
 
 /* The one record schema: a single field table (record.c) drives the private
  * writer, the strict reader, and — through the shared emit helpers — the

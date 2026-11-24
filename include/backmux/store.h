@@ -2,8 +2,8 @@
 #ifndef HOLD_STORE_H
 #define HOLD_STORE_H
 
-#include "callbox/config.h"
-#include "callbox/types.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
 
 int hold_init_user_store_from_home(const char *home, struct hold_store *store);
 int hold_ensure_user_store_for_current_user(struct hold_store *store);
@@ -23,7 +23,7 @@ int hold_store_lock(const char *record_dir);
 void hold_store_unlock(int fd);
 
 /* Two-phase creation, step 1: derive a collision-free hashed run id
- * (callbox-run-v1 material: exe, cwd, timestamp_ns, launcher pid, argc, argv[],
+ * (backmux-run-v1 material: exe, cwd, timestamp_ns, launcher pid, argc, argv[],
  * counter; <=1024 probes) and hold its .<id>.reserve marker (O_EXCL 0600).
  * A candidate colliding with ANY existing store material (record, .log,
  * .reserve, .sock, public projection) is skipped. Commit is
@@ -80,7 +80,7 @@ int hold_resolve_record_id(const char *dir, const char *token, char *resolved, s
 typedef int (*hold_record_fn)(const char *id, const char *path, struct hold_run_record *r, void *ctx);
 int hold_for_each_record(const char *record_dir, hold_record_fn fn, void *ctx);
 
-/* Per-user settings (settings.c): "<home>/.config/callbox/config", one
+/* Per-user settings (settings.c): "<home>/.config/backmux/config", one
  * "name value" line per setting; the person's own symlinks along that path
  * are followed. get: 0 with the value, 1 when unset, -1 on error. put
  * rewrites the file atomically, 0600 (value NULL removes the setting); it

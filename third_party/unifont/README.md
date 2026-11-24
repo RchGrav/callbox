@@ -6,7 +6,7 @@ https://unifoundry.com/pub/unifont/unifont-16.0.04/font-builds/). The
 compiled font is used under the SIL Open Font License 1.1 (see `OFL.txt`); Unifont is also available under GPLv2+
 with the font embedding exception.
 
-`callbox peek --image` renders terminal cells with these 8x16 / 16x16 glyphs.
+`backmux peek --image` renders terminal cells with these 8x16 / 16x16 glyphs.
 `src/screen/font_data.h` is generated from the hex file by
 `scripts/gen_font.py`, which keeps the whole Basic Multilingual Plane (every
 modern script; no surrogates or private use) plus, from the upper plane, math

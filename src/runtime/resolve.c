@@ -1,12 +1,12 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/runtime.h"
-#include "callbox/runtime_internal.h"
-#include "callbox/core.h"
-#include "callbox/platform.h"
-#include "callbox/store.h"
-#include "callbox/console.h"
-#include "callbox/access.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/runtime.h"
+#include "backmux/runtime_internal.h"
+#include "backmux/core.h"
+#include "backmux/platform.h"
+#include "backmux/store.h"
+#include "backmux/console.h"
+#include "backmux/access.h"
 
 /* Target resolution: the privilege/scope/intent matrix. The store owns raw
  * id/prefix scanning (hold_resolve_record_id); this file owns WHICH stores a
@@ -52,7 +52,7 @@ bool hold_record_matches_alias_intent(const char *command, const struct hold_run
          * process or log lock. signal_one routes foreign calls to the broker. */
         return st == STATE_RUNNING || (st == STATE_UNKNOWN && r->has_console);
     }
-    /* tail of an ended call prints its whole log (callbox help tail), so it
+    /* tail of an ended call prints its whole log (backmux help tail), so it
      * finds any call with a log, as logs does - and --tail of an ended call
      * must find it rather than fall through to a redial. */
     if (!strcmp(command, "view") || !strcmp(command, "tail")) {
@@ -132,7 +132,7 @@ static int ambiguous_cb(const char *id, const char *path, struct hold_run_record
 /* Several calls match: say so, and which, so the next try can be exact -
  * "no call matches" would be false, and acting on one of them a guess. */
 int hold_report_ambiguous(const struct hold_store *store, const char *token, bool name_prefix) {
-    fprintf(stderr, "callbox: error: more than one call matches '%s':\n", token ? token : "");
+    fprintf(stderr, "backmux: error: more than one call matches '%s':\n", token ? token : "");
     if (store && store->record_dir[0] && token) {
         struct ambiguous_walk w = {token, name_prefix ? MATCH_NAME_PREFIX : MATCH_ID_OR_NAME, 0};
         hold_for_each_record(store->record_dir, ambiguous_cb, &w);
@@ -235,19 +235,19 @@ static int append_public_run_name_target(struct hold_resolved_target **targets,
     if (matches > 1) {
         /* (the public projection is not walked for the list: other users'
          * calls are named, not shown) */
-        fprintf(stderr, "callbox: error: more than one call is named '%s'\n", name);
+        fprintf(stderr, "backmux: error: more than one call is named '%s'\n", name);
         return -2;
     }
     return append_resolved_target(targets, count, RESOLVE_SYSTEM_MANAGED, system_store, matched, true) == 0 ? 1 : -1;
 }
 
 int hold_report_not_found(const char *token) {
-    fprintf(stderr, "callbox: error: no call matches '%s'\n", token ? token : "");
+    fprintf(stderr, "backmux: error: no call matches '%s'\n", token ? token : "");
     return 5;
 }
 
 int hold_report_requires_root(const char *token) {
-    fprintf(stderr, "callbox: error: '%s' is root-managed; operate on it as root\n", token ? token : "");
+    fprintf(stderr, "backmux: error: '%s' is root-managed; operate on it as root\n", token ? token : "");
     return 3;
 }
 
@@ -273,7 +273,7 @@ static int build_scope_candidates(const struct hold_invocation *inv,
         if (scope == ID_TOKEN_USER) {
             struct hold_store user_store;
             if (hold_init_invoking_user_store(inv, &user_store) != 0) {
-                fprintf(stderr, "callbox: error: user:%s requires sudo provenance\n", atom);
+                fprintf(stderr, "backmux: error: user:%s requires sudo provenance\n", atom);
                 return -1;
             }
             cands[n++] = (struct resolve_candidate){RESOLVE_USER_LOCAL, user_store, false};
@@ -311,7 +311,7 @@ static int resolve_action_token(const struct hold_invocation *inv,
     const char *atom = NULL;
     enum id_token_scope scope = hold_parse_id_token(token, &atom);
     if (scope == ID_TOKEN_INVALID || (!hold_valid_id_prefix(atom) && !hold_valid_alias(atom))) {
-        fprintf(stderr, "callbox: error: invalid target '%s'\n", token ? token : "");
+        fprintf(stderr, "backmux: error: invalid target '%s'\n", token ? token : "");
         return 5;
     }
 
@@ -343,7 +343,7 @@ static int resolve_action_token(const struct hold_invocation *inv,
             if (id_rc == -2) {
                 if (!report_missing) return 6;
                 if (cands[i].public_scan) {
-                    fprintf(stderr, "callbox: error: more than one call matches '%s'; give more of the id\n", token);
+                    fprintf(stderr, "backmux: error: more than one call matches '%s'; give more of the id\n", token);
                     return 6;
                 }
                 return hold_report_ambiguous(&cands[i].store, atom, false);
@@ -352,7 +352,7 @@ static int resolve_action_token(const struct hold_invocation *inv,
     }
 
     /* The start of a name, when it is unique among the calls this verb can
-     * act on: less typing (`callbox logs hel` for helper), and never a
+     * act on: less typing (`backmux logs hel` for helper), and never a
      * guess - several matches are listed instead. Not for a redial
      * ("start-existing"): there a word that names no call is a program to
      * run, and the top level weighs name starts against PATH itself. Own
@@ -402,13 +402,13 @@ bool hold_token_resolves(const struct hold_invocation *inv,
 
 /* ---- a shortened word at the top level ------------------------------------
  *
- * `callbox <word>` where word is no verb: a call by its whole name or an id
+ * `backmux <word>` where word is no verb: a call by its whole name or an id
  * prefix (redial), else a program on PATH, else - only then - the start of
  * a verb or of a call's name, when exactly one fits. In that order so that
  * nothing that worked before changes meaning: a whole name, an id, and a
  * program all still win; a shortened word is only ever what would have been
- * "command not found". Why at all: less typing (`callbox li`, `callbox
- * pee term`, `callbox hel` for helper), and never a guess - several fits are
+ * "command not found". Why at all: less typing (`backmux li`, `backmux
+ * pee term`, `backmux hel` for helper), and never a guess - several fits are
  * listed instead, and nothing runs. */
 
 struct short_name_walk {
@@ -474,7 +474,7 @@ int hold_shorten_word(const char *word, bool lone, const char *const *verbs, siz
         snprintf(name_out, name_n, "%s", w.name);
         return 2;
     }
-    fprintf(stderr, "callbox: error: '%s' is the start of more than one thing:\n", word);
+    fprintf(stderr, "backmux: error: '%s' is the start of more than one thing:\n", word);
     if (nverb_hits) {
         fprintf(stderr, "  commands:");
         for (size_t i = 0; i < nverb_hits; i++) fprintf(stderr, " %s", verb_hits[i]);

@@ -1,19 +1,19 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/core.h"
-#include "callbox/platform.h"
-#include "callbox/store.h"
-#include "callbox/runtime.h"
-#include "callbox/runtime_internal.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/core.h"
+#include "backmux/platform.h"
+#include "backmux/store.h"
+#include "backmux/runtime.h"
+#include "backmux/runtime_internal.h"
 
 /* An agent outside any call (Claude Code in a plain terminal, a script) can
  * message a call, but has no call to type the reply into. It gets a name, made
  * like a call's, and an inbox under that name (store/inbox.c); the receiver
- * sees an ordinary header and replies with an ordinary callbox msg. Why: one
+ * sees an ordinary header and replies with an ordinary backmux msg. Why: one
  * way of talking for everyone - the receiver needs to know nothing about
  * where the sender runs.
  *
- * The name belongs to the sender's harness: the first process above callbox
+ * The name belongs to the sender's harness: the first process above backmux
  * that is not a shell or a wrapper, identified by its name, pid, and start
  * time (so every command one Claude Code session runs shares one name, and a
  * reused pid is a new name). Where that walk finds nothing, the name is
@@ -24,7 +24,7 @@
 static bool is_wrapper(const char *comm) {
     static const char *const skip[] = {"sh",    "bash",  "zsh",    "dash",  "fish", "ksh",  "mksh",  "tcsh",
                                        "csh",   "env",   "timeout", "nohup", "nice", "stdbuf", "xargs", "time",
-                                       "script", "sudo", "su", "runuser", "doas", "callbox", NULL};
+                                       "script", "sudo", "su", "runuser", "doas", "backmux", NULL};
     for (int i = 0; skip[i]; i++)
         if (!strcmp(comm, skip[i])) return true;
     return false;
@@ -97,12 +97,12 @@ out:
 
 void hold_operator_first_note(const char *name) {
     fprintf(stderr,
-            "callbox: you are %s, outside any call. Replies to you wait in your inbox\n"
+            "backmux: you are %s, outside any call. Replies to you wait in your inbox\n"
             "for 60 minutes:\n"
-            "  callbox inbox                    read them\n"
-            "  callbox inbox --wait             wait for the next one\n"
-            "  callbox monitor                  print each one as it arrives, until stopped\n"
-            "  callbox msg <call> TEXT --wait-reply   wait for the next new message\n",
+            "  backmux inbox                    read them\n"
+            "  backmux inbox --wait             wait for the next one\n"
+            "  backmux monitor                  print each one as it arrives, until stopped\n"
+            "  backmux msg <call> TEXT --wait-reply   wait for the next new message\n",
             name);
 }
 
@@ -147,21 +147,21 @@ int hold_inbox_wait(const struct hold_store *store, const char *name, off_t from
         off_t next = off;
         int got = hold_inbox_read(store, name, off, &next, print_one, &p);
         if (got < 0) {
-            fprintf(stderr, "callbox: cannot read the inbox of %s: %s\n", name, strerror(errno));
+            fprintf(stderr, "backmux: cannot read the inbox of %s: %s\n", name, strerror(errno));
             return 1;
         }
         off = next;
         if (next > from_off) (void)hold_inbox_mark_seen(store, name, next);
         if (got > 0 && !forever_each) return 0;
         if (!hold_inbox_live(store, name)) {
-            fprintf(stderr, "callbox: the inbox of %s has expired\n", name);
+            fprintf(stderr, "backmux: the inbox of %s has expired\n", name);
             return 8;
         }
         if (timeout_ms > 0 && mono_ms() - started >= timeout_ms) {
             if (forever_each)
-                fprintf(stderr, "callbox: monitoring %s ended after %ld ms\n", name, timeout_ms);
+                fprintf(stderr, "backmux: monitoring %s ended after %ld ms\n", name, timeout_ms);
             else
-                fprintf(stderr, "callbox: no reply for %s within %ld ms\n", name, timeout_ms);
+                fprintf(stderr, "backmux: no reply for %s within %ld ms\n", name, timeout_ms);
             return 7;
         }
         struct timespec sl = {.tv_sec = 0, .tv_nsec = INBOX_POLL_MS * 1000000L};
@@ -169,10 +169,10 @@ int hold_inbox_wait(const struct hold_store *store, const char *name, off_t from
     }
 }
 
-/* ---- callbox inbox ---------------------------------------------------------- */
+/* ---- backmux inbox ---------------------------------------------------------- */
 
-static const char inbox_usage[] = "usage: callbox inbox [<name>] [--wait | --monitor] [--timeout <ms>]\n";
-static const char monitor_usage[] = "usage: callbox monitor [<name>] [--timeout <ms>]\n";
+static const char inbox_usage[] = "usage: backmux inbox [<name>] [--wait | --monitor] [--timeout <ms>]\n";
+static const char monitor_usage[] = "usage: backmux monitor [<name>] [--timeout <ms>]\n";
 
 static int inbox_action_impl(const struct hold_store *user_store, int argc, char **argv, bool monitor_mode) {
     const char *usage = monitor_mode ? monitor_usage : inbox_usage;
@@ -187,12 +187,12 @@ static int inbox_action_impl(const struct hold_store *user_store, int argc, char
         else if (!strcmp(a, "--timeout") || !strncmp(a, "--timeout=", 10)) {
             const char *v = a[9] == '=' ? a + 10 : (i + 1 < argc ? argv[++i] : NULL);
             if (hold_parse_inbox_timeout_ms(v, &timeout_ms) != 0) {
-                fprintf(stderr, "callbox: error: --timeout takes milliseconds (0..%ld; 0 = never)\n%s",
+                fprintf(stderr, "backmux: error: --timeout takes milliseconds (0..%ld; 0 = never)\n%s",
                         LONG_MAX, usage);
                 return HOLD_EXIT_USAGE;
             }
         } else if (a[0] == '-') {
-            fprintf(stderr, "callbox: error: unknown flag '%s'\n%s", a, usage);
+            fprintf(stderr, "backmux: error: unknown flag '%s'\n%s", a, usage);
             return HOLD_EXIT_USAGE;
         } else if (!name_arg) name_arg = a;
         else {
@@ -201,26 +201,26 @@ static int inbox_action_impl(const struct hold_store *user_store, int argc, char
         }
     }
     if (wait && monitor) {
-        fprintf(stderr, "callbox: error: --wait and --monitor do not go together\n%s", usage);
+        fprintf(stderr, "backmux: error: --wait and --monitor do not go together\n%s", usage);
         return HOLD_EXIT_USAGE;
     }
     char name[ALIAS_MAX_LEN + 1];
     if (name_arg) {
         if (!hold_valid_alias(name_arg) || !hold_inbox_live(user_store, name_arg)) {
-            fprintf(stderr, "callbox: %s has no inbox (inboxes expire an hour after their last use)\n", name_arg);
+            fprintf(stderr, "backmux: %s has no inbox (inboxes expire an hour after their last use)\n", name_arg);
             return HOLD_EXIT_NO_TARGET;
         }
         snprintf(name, sizeof(name), "%s", name_arg);
     } else {
-        const char *in_call = getenv("CALLBOX_ID");
+        const char *in_call = getenv("BACKMUX_ID");
         if (in_call && *in_call) {
-            fprintf(stderr, "callbox: you run inside a call: messages arrive as program input or chat,\n"
+            fprintf(stderr, "backmux: you run inside a call: messages arrive as program input or chat,\n"
                             "not in an outside inbox\n");
             return HOLD_EXIT_USAGE;
         }
         int rc = hold_operator_name(user_store, false, name, sizeof(name), NULL);
         if (rc != 0) {
-            fprintf(stderr, "callbox: you have no inbox yet: one is made the first time you send with callbox msg "
+            fprintf(stderr, "backmux: you have no inbox yet: one is made the first time you send with backmux msg "
                             "from outside a call\n");
             return HOLD_EXIT_NO_TARGET;
         }

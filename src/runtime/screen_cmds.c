@@ -1,18 +1,18 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/runtime.h"
-#include "callbox/runtime_internal.h"
-#include "callbox/core.h"
-#include "callbox/platform.h"
-#include "callbox/store.h"
-#include "callbox/console.h"
-#include "callbox/access.h"
-#include "callbox/screen.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/runtime.h"
+#include "backmux/runtime_internal.h"
+#include "backmux/core.h"
+#include "backmux/platform.h"
+#include "backmux/store.h"
+#include "backmux/console.h"
+#include "backmux/access.h"
+#include "backmux/screen.h"
 
 #include <ctype.h>
 #include <regex.h>
 
-/* The screen verbs: callbox peek / send / wait / resize. Each resolves one call,
+/* The screen verbs: backmux peek / send / wait / resize. Each resolves one call,
  * then talks to its console broker over the control protocol. An ended call's
  * last screen is read from <id>.screen beside its log. */
 
@@ -54,7 +54,7 @@ static void close_screen_target(struct screen_target *t) {
 }
 
 static int no_screen(const struct screen_target *t) {
-    fprintf(stderr, "callbox: %s has no terminal screen; place TTY calls with -t (e.g. callbox -dt <cmd>)\n", t->label);
+    fprintf(stderr, "backmux: %s has no terminal screen; place TTY calls with -t (e.g. backmux -dt <cmd>)\n", t->label);
     return HOLD_EXIT_NO_SCREEN;
 }
 
@@ -115,22 +115,22 @@ static int control(const struct screen_target *t, const char *req, size_t len, u
             /* The broker stops listening once no more output can come. */
             enum run_state st = current_state(t);
             if (st == STATE_UNKNOWN) {
-                fprintf(stderr, "callbox: cannot reach %s's console; its process state is unknown\n", t->label);
+                fprintf(stderr, "backmux: cannot reach %s's console; its process state is unknown\n", t->label);
                 return 3;
             }
             if (st == STATE_RUNNING)
-                fprintf(stderr, "callbox: %s closed its terminal, so its console takes no more requests "
-                                "(the program is still running; callbox peek shows its last screen)\n", t->label);
+                fprintf(stderr, "backmux: %s closed its terminal, so its console takes no more requests "
+                                "(the program is still running; backmux peek shows its last screen)\n", t->label);
             else
-                fprintf(stderr, "callbox: %s has ended\n", t->label);
+                fprintf(stderr, "backmux: %s has ended\n", t->label);
             return WAIT_EXIT_ENDED;
         }
         if (errno == EMSGSIZE) {
-            fprintf(stderr, "callbox: %s: too much text for one request (limit about %u KiB); split it across several sends\n",
+            fprintf(stderr, "backmux: %s: too much text for one request (limit about %u KiB); split it across several sends\n",
                     t->label, HOLD_CONSOLE_MAX_REQUEST / 2 / 1024);
             return 1;
         }
-        fprintf(stderr, "callbox: cannot reach %s's console: %s\n", t->label, strerror(errno));
+        fprintf(stderr, "backmux: cannot reach %s's console: %s\n", t->label, strerror(errno));
         return 3;
     }
     return 0;
@@ -140,7 +140,7 @@ static int reply_error(const struct screen_target *t, const unsigned char *reply
     const char *msg = (const char *)reply;
     if (!strcmp(msg, "error busy\n")) msg = "busy: too many clients at once; try again\n";
     else if (!strncmp(msg, "error ", 6)) msg += 6;
-    fprintf(stderr, "callbox: %s: %.*s\n", t->label, (int)strcspn(msg, "\n"), msg);
+    fprintf(stderr, "backmux: %s: %.*s\n", t->label, (int)strcspn(msg, "\n"), msg);
     return 1;
 }
 
@@ -201,7 +201,7 @@ static int load_snapshot(const struct screen_target *t, struct hold_snapshot *sn
             int rc = 0;
             if (len >= 3 && !memcmp(reply, "ok\n", 3)) {
                 if (hold_snapshot_parse(reply + 3, len - 3, snap) != 0) {
-                    fprintf(stderr, "callbox: %s: malformed screen snapshot\n", t->label);
+                    fprintf(stderr, "backmux: %s: malformed screen snapshot\n", t->label);
                     rc = 3;
                 }
             } else {
@@ -214,38 +214,38 @@ static int load_snapshot(const struct screen_target *t, struct hold_snapshot *sn
          * and runs on. Either way its last screen is saved. Anything else is
          * a console we cannot reach: say so, then show what was saved. */
         if (err != ENOENT)
-            fprintf(stderr, "callbox: cannot reach %s's console (%s); showing its last saved screen\n", t->label,
+            fprintf(stderr, "backmux: cannot reach %s's console (%s); showing its last saved screen\n", t->label,
                     strerror(err));
         else {
             enum run_state st = current_state(t);
             if (st == STATE_RUNNING)
-                fprintf(stderr, "callbox: note: %s closed its terminal; this is its last screen (the program is still running)\n",
+                fprintf(stderr, "backmux: note: %s closed its terminal; this is its last screen (the program is still running)\n",
                         t->label);
             else if (st == STATE_UNKNOWN)
-                fprintf(stderr, "callbox: cannot reach %s's console; its process state is unknown; showing its last saved screen\n",
+                fprintf(stderr, "backmux: cannot reach %s's console; its process state is unknown; showing its last saved screen\n",
                         t->label);
         }
     }
     if (last_alt) {
         if (read_saved_frame(t, ".altscreen", snap) == 0) return 0;
-        fprintf(stderr, "callbox: %s left no full-screen (alternate) frame\n", t->label);
+        fprintf(stderr, "backmux: %s left no full-screen (alternate) frame\n", t->label);
         return 5;
     }
     if (read_saved_screen(t, snap) == 0) {
         struct hold_snapshot alt;
         if (read_saved_frame(t, ".altscreen", &alt) == 0) {
             hold_snapshot_free(&alt);
-            fprintf(stderr, "callbox: note: %s's last full-screen frame is shown by callbox peek %s --last-alt\n",
+            fprintf(stderr, "backmux: note: %s's last full-screen frame is shown by backmux peek %s --last-alt\n",
                     t->label, t->label);
         }
         return 0;
     }
     enum run_state st = current_state(t);
     if (!state_ended(st))
-        fprintf(stderr, "callbox: %s's console is not answering and left no saved screen - see 'callbox logs %s'\n", t->label,
+        fprintf(stderr, "backmux: %s's console is not answering and left no saved screen - see 'backmux logs %s'\n", t->label,
                 t->label);
     else
-        fprintf(stderr, "callbox: %s has ended and left no saved screen - see 'callbox logs %s'\n", t->label, t->label);
+        fprintf(stderr, "backmux: %s has ended and left no saved screen - see 'backmux logs %s'\n", t->label, t->label);
     return st == STATE_UNKNOWN ? 3 : 5;
 }
 
@@ -266,7 +266,7 @@ static long parse_duration_ms(const char *s) {
 
 static int need_value(int i, int argc, const char *flag) {
     if (i + 1 >= argc) {
-        fprintf(stderr, "callbox: error: %s needs a value\n", flag);
+        fprintf(stderr, "backmux: error: %s needs a value\n", flag);
         return -1;
     }
     return 0;
@@ -387,7 +387,7 @@ static void write_peek_json(const struct screen_target *t, const struct hold_sna
 }
 
 static const char peek_usage[] =
-    "usage: callbox peek <target> [--json] [--ruler] [--last-alt]\n"
+    "usage: backmux peek <target> [--json] [--ruler] [--last-alt]\n"
     "                 [--image FILE [--no-ruler] [--cursor-ring] [--scale N]\n"
     "                               [--no-footer] [--no-mouse-marker] [--text]]\n";
 
@@ -417,13 +417,13 @@ static int peek_action_impl(const struct hold_invocation *inv,
             if (need_value(i, argc, a) != 0) return 1;
             ro.scale = atoi(argv[++i]);
             if (ro.scale < 1 || ro.scale > 4) {
-                fprintf(stderr, "callbox: error: --scale must be 1-4\n");
+                fprintf(stderr, "backmux: error: --scale must be 1-4\n");
                 return 1;
             }
         } else if (!strcmp(a, "-h") || !strcmp(a, "--help")) {
             return HOLD_RC_SHOW_HELP;
         } else if (a[0] == '-' && a[1]) {
-            fprintf(stderr, "callbox: error: unknown flag '%s'\n%s", a, peek_usage);
+            fprintf(stderr, "backmux: error: unknown flag '%s'\n%s", a, peek_usage);
             return 1;
         } else if (!token) token = a;
         else {
@@ -447,7 +447,7 @@ static int peek_action_impl(const struct hold_invocation *inv,
     if (image) {
         FILE *f = !strcmp(image, "-") ? stdout : fopen(image, "wb");
         if (!f || hold_snapshot_write_png(&snap, &ro, f) != 0 || (f != stdout && fclose(f) != 0)) {
-            fprintf(stderr, "callbox: failed to write image %s: %s\n", image, strerror(errno));
+            fprintf(stderr, "backmux: failed to write image %s: %s\n", image, strerror(errno));
             rc = 3;
         }
     }
@@ -509,7 +509,7 @@ static char *slurp_stdin(size_t *n) {
 
 static int add_key(struct reqbuf *b, struct hold_screen *probe, const char *name) {
     if (hold_screen_send_key(probe, name) != 0) {
-        fprintf(stderr, "callbox: error: unknown key '%s' (try Enter, Tab, Escape, Up, F5, C-c, M-x)\n", name);
+        fprintf(stderr, "backmux: error: unknown key '%s' (try Enter, Tab, Escape, Up, F5, C-c, M-x)\n", name);
         return -1;
     }
     hold_screen_discard_output(probe);
@@ -517,7 +517,7 @@ static int add_key(struct reqbuf *b, struct hold_screen *probe, const char *name
 }
 
 static const char send_usage[] =
-    "usage: callbox send <target> [TEXT]... [--text TEXT] [-k KEY]...\n"
+    "usage: backmux send <target> [TEXT]... [--text TEXT] [-k KEY]...\n"
     "                 [--keys \"K1 K2\"] [--enter] [--paste TEXT|-] [--stdin] [--seq]\n"
     "                 [--mouse ACTION,COL,ROW[,BUTTON]] [--wait MS [--timeout MS]]\n";
 
@@ -595,7 +595,7 @@ static int send_action_impl(const struct hold_invocation *inv,
             int col = -1, row = -1, button = 1;
             int got = sscanf(argv[++i], "%31[^,],%d,%d,%d", action, &col, &row, &button);
             if (got < 3 || col < 0 || row < 0) {
-                fprintf(stderr, "callbox: error: --mouse wants ACTION,COL,ROW[,BUTTON] (e.g. click,10,4)\n");
+                fprintf(stderr, "backmux: error: --mouse wants ACTION,COL,ROW[,BUTTON] (e.g. click,10,4)\n");
                 goto out;
             }
             char line[96];
@@ -606,7 +606,7 @@ static int send_action_impl(const struct hold_invocation *inv,
             if (need_value(i, argc, a) != 0) goto out;
             long v = parse_duration_ms(argv[++i]);
             if (v < 0) {
-                fprintf(stderr, "callbox: error: bad duration '%s'\n", argv[i]);
+                fprintf(stderr, "backmux: error: bad duration '%s'\n", argv[i]);
                 goto out;
             }
             if (a[2] == 'w') wait_ms = v;
@@ -617,7 +617,7 @@ static int send_action_impl(const struct hold_invocation *inv,
             rc = HOLD_RC_SHOW_HELP;
             goto out;
         } else {
-            fprintf(stderr, "callbox: error: unknown flag '%s' (send text starting with - via --text)\n%s", a, send_usage);
+            fprintf(stderr, "backmux: error: unknown flag '%s' (send text starting with - via --text)\n%s", a, send_usage);
             goto out;
         }
     }
@@ -631,7 +631,7 @@ static int send_action_impl(const struct hold_invocation *inv,
     if (!t.r.has_console) {
         rc = no_screen(&t);
     } else if (state_ended(t.st)) {
-        fprintf(stderr, "callbox: %s has ended - see 'callbox peek %s'\n", t.label, t.label);
+        fprintf(stderr, "backmux: %s has ended - see 'backmux peek %s'\n", t.label, t.label);
         rc = WAIT_EXIT_ENDED;
     } else {
         unsigned char *reply = NULL;
@@ -644,9 +644,9 @@ static int send_action_impl(const struct hold_invocation *inv,
             unsigned long long sv = seq ? strtoull(seq + 4, NULL, 10) : 0;
             bool mouse_off = mouse_op && strstr((char *)reply, "mouse=off");
             if (mouse_off)
-                fprintf(stderr, "callbox: %s has mouse reporting off; the mouse event was not delivered\n", t.label);
+                fprintf(stderr, "backmux: %s has mouse reporting off; the mouse event was not delivered\n", t.label);
             if (mouse_op && strstr((char *)reply, "mouse=clamped"))
-                fprintf(stderr, "callbox: note: %s uses the legacy mouse encoding, which cannot reach past column/row 222; "
+                fprintf(stderr, "backmux: note: %s uses the legacy mouse encoding, which cannot reach past column/row 222; "
                                 "the event landed at the edge\n", t.label);
             if (print_seq) printf("%llu\n", sv);
             if (wait_ms >= 0) {
@@ -656,11 +656,11 @@ static int send_action_impl(const struct hold_invocation *inv,
                 if (rc == WAIT_CONSOLE_CLOSED) {
                     enum run_state st = current_state(&t);
                     if (st == STATE_UNKNOWN) {
-                        fprintf(stderr, "callbox: input sent; cannot reach %s's console now; its process state is unknown\n",
+                        fprintf(stderr, "backmux: input sent; cannot reach %s's console now; its process state is unknown\n",
                                 t.label);
                         rc = 3;
                     } else {
-                        fprintf(stderr, "callbox: input sent; %s then %s\n", t.label,
+                        fprintf(stderr, "backmux: input sent; %s then %s\n", t.label,
                                 st == STATE_RUNNING ? "closed its terminal" : "ended");
                         rc = WAIT_EXIT_ENDED;
                     }
@@ -694,7 +694,7 @@ static int run_wait(const struct screen_target *t, const char *args, bool print_
          * connection instead (EPIPE or ECONNRESET; the FIFO transport is
          * slow enough to show it after a send --wait ended the program). */
         if (errno == ENOENT || errno == EPIPE || errno == ECONNRESET) return WAIT_CONSOLE_CLOSED;
-        fprintf(stderr, "callbox: cannot reach %s's console: %s\n", t->label, strerror(errno));
+        fprintf(stderr, "backmux: cannot reach %s's console: %s\n", t->label, strerror(errno));
         return 3;
     }
     int rc = 0;
@@ -715,17 +715,17 @@ static int run_wait(const struct screen_target *t, const char *args, bool print_
     } else if (!strncmp(r, "timeout", 7)) {
         const char *to = after_send ? strstr(args, "timeout=") : NULL;
         if (to)
-            fprintf(stderr, "callbox: input sent; %s did not go quiet within %ld ms\n", t->label, atol(to + 8));
+            fprintf(stderr, "backmux: input sent; %s did not go quiet within %ld ms\n", t->label, atol(to + 8));
         else if (after_send)
-            fprintf(stderr, "callbox: input sent; %s did not go quiet before the timeout\n", t->label);
+            fprintf(stderr, "backmux: input sent; %s did not go quiet before the timeout\n", t->label);
         else
-            fprintf(stderr, "callbox: %s: wait timed out\n", t->label);
+            fprintf(stderr, "backmux: %s: wait timed out\n", t->label);
         rc = WAIT_EXIT_TIMEOUT;
     } else if (!strncmp(r, "ended", 5)) {
         if (after_send)
-            fprintf(stderr, "callbox: input sent; %s then ended (exit code %d) before going quiet\n", t->label, code);
+            fprintf(stderr, "backmux: input sent; %s then ended (exit code %d) before going quiet\n", t->label, code);
         else
-            fprintf(stderr, "callbox: %s ended (exit code %d) before the wait condition held\n", t->label, code);
+            fprintf(stderr, "backmux: %s ended (exit code %d) before the wait condition held\n", t->label, code);
         rc = WAIT_EXIT_ENDED;
     } else {
         rc = reply_error(t, reply);
@@ -749,7 +749,7 @@ static int wait_record_exit(const struct screen_target *t, long timeout_ms) {
                 printf("%d\n", code);
                 return 0;
             }
-            fprintf(stderr, "callbox: %s was removed while waiting\n", t->label);
+            fprintf(stderr, "backmux: %s was removed while waiting\n", t->label);
             return 5;
         }
         char boot[128];
@@ -764,7 +764,7 @@ static int wait_record_exit(const struct screen_target *t, long timeout_ms) {
         }
         /* A plain -d call leaves nothing behind to record its exit code. */
         if (st == STATE_EXITED && !records) {
-            fprintf(stderr, "callbox: %s has ended; a plain -d call records no exit code (launch it with -dw to "
+            fprintf(stderr, "backmux: %s has ended; a plain -d call records no exit code (launch it with -dw to "
                             "record one)\n", t->label);
             printf("-1\n");
             return 0;
@@ -777,7 +777,7 @@ static int wait_record_exit(const struct screen_target *t, long timeout_ms) {
             if (unstamped_since.tv_sec == 0) unstamped_since = now;
             long gone_ms = (now.tv_sec - unstamped_since.tv_sec) * 1000 + (now.tv_nsec - unstamped_since.tv_nsec) / 1000000;
             if (gone_ms >= 2000) {
-                fprintf(stderr, "callbox: %s's exit was never recorded, and no supervisor answers for it (it most "
+                fprintf(stderr, "backmux: %s's exit was never recorded, and no supervisor answers for it (it most "
                                 "likely ended along with the shell that started it)\n", t->label);
                 printf("-1\n");
                 return 0;
@@ -789,7 +789,7 @@ static int wait_record_exit(const struct screen_target *t, long timeout_ms) {
         clock_gettime(CLOCK_MONOTONIC, &now);
         long elapsed = (now.tv_sec - start.tv_sec) * 1000 + (now.tv_nsec - start.tv_nsec) / 1000000;
         if (timeout_ms > 0 && elapsed >= timeout_ms) {
-            fprintf(stderr, "callbox: %s: wait timed out\n", t->label);
+            fprintf(stderr, "backmux: %s: wait timed out\n", t->label);
             return WAIT_EXIT_TIMEOUT;
         }
         struct timespec sl = {.tv_sec = 0, .tv_nsec = 100 * 1000000L};
@@ -823,7 +823,7 @@ static bool saved_screen_matches(const struct screen_target *t, const char *matc
 }
 
 static const char wait_usage[] =
-    "usage: callbox wait <target> [--idle [MS]] [--match TEXT | --regex RE]\n"
+    "usage: backmux wait <target> [--idle [MS]] [--match TEXT | --regex RE]\n"
     "                 [--since SEQ] [--exit] [--timeout MS]\n";
 
 static int wait_action_impl(const struct hold_invocation *inv,
@@ -846,7 +846,7 @@ static int wait_action_impl(const struct hold_invocation *inv,
             if (need_value(i, argc, a) != 0) return 1;
             long v = parse_duration_ms(argv[++i]);
             if (v < 0) {
-                fprintf(stderr, "callbox: error: bad duration '%s'\n", argv[i]);
+                fprintf(stderr, "backmux: error: bad duration '%s'\n", argv[i]);
                 return 1;
             }
             if (a[2] == 'i') idle = v;
@@ -859,7 +859,7 @@ static int wait_action_impl(const struct hold_invocation *inv,
             if (need_value(i, argc, a) != 0) return 1;
             since = argv[++i];
             if (strspn(since, "0123456789") != strlen(since) || !*since) {
-                fprintf(stderr, "callbox: error: --since wants the number callbox send --seq printed\n");
+                fprintf(stderr, "backmux: error: --since wants the number backmux send --seq printed\n");
                 return 1;
             }
         } else if (!strcmp(a, "--exit")) {
@@ -867,7 +867,7 @@ static int wait_action_impl(const struct hold_invocation *inv,
         } else if (!strcmp(a, "-h") || !strcmp(a, "--help")) {
             return HOLD_RC_SHOW_HELP;
         } else if (a[0] == '-' && a[1]) {
-            fprintf(stderr, "callbox: error: unknown flag '%s'\n%s", a, wait_usage);
+            fprintf(stderr, "backmux: error: unknown flag '%s'\n%s", a, wait_usage);
             return 1;
         } else if (!token) token = a;
         else {
@@ -914,7 +914,7 @@ static int wait_action_impl(const struct hold_invocation *inv,
     if (state_ended(t.st)) {
         /* Ended: a match may still hold on the final frame. */
         rc = match && saved_screen_matches(&t, match, regex) ? 0 : WAIT_EXIT_ENDED;
-        if (rc != 0) fprintf(stderr, "callbox: %s has already ended\n", t.label);
+        if (rc != 0) fprintf(stderr, "backmux: %s has already ended\n", t.label);
         close_screen_target(&t);
         return rc;
     }
@@ -944,13 +944,13 @@ static int wait_action_impl(const struct hold_invocation *inv,
         } else {
             enum run_state st = current_state(&t);
             if (st == STATE_RUNNING)
-                fprintf(stderr, "callbox: %s closed its terminal before the condition held (the program is still running)\n",
+                fprintf(stderr, "backmux: %s closed its terminal before the condition held (the program is still running)\n",
                         t.label);
             else if (st == STATE_UNKNOWN)
-                fprintf(stderr, "callbox: cannot reach %s's console before the condition held; its process state is unknown\n",
+                fprintf(stderr, "backmux: cannot reach %s's console before the condition held; its process state is unknown\n",
                         t.label);
             else
-                fprintf(stderr, "callbox: %s ended before the condition held\n", t.label);
+                fprintf(stderr, "backmux: %s ended before the condition held\n", t.label);
             rc = st == STATE_UNKNOWN ? 3 : WAIT_EXIT_ENDED;
         }
     } else if (!screen_cond && rc == 3) {
@@ -965,7 +965,7 @@ static int wait_action_impl(const struct hold_invocation *inv,
 
 /* ---- resize --------------------------------------------------------------- */
 
-static const char resize_usage[] = "usage: callbox resize <target> <cols> <rows>   (or <cols>x<rows>)\n";
+static const char resize_usage[] = "usage: backmux resize <target> <cols> <rows>   (or <cols>x<rows>)\n";
 
 int hold_cmd_resize_action(const struct hold_invocation *inv,
                            const struct hold_store *user_store,
@@ -984,7 +984,7 @@ int hold_cmd_resize_action(const struct hold_invocation *inv,
     int used = hold_parse_term_size(argv[1], argc == 3 ? argv[2] : NULL, &cols, &rows, why, sizeof(why));
     if (used != argc - 1) {
         if (used > 0) fputs(resize_usage, stderr);
-        else fprintf(stderr, "callbox: error: %s\n", why);
+        else fprintf(stderr, "backmux: error: %s\n", why);
         return 1;
     }
     struct screen_target t;
@@ -993,7 +993,7 @@ int hold_cmd_resize_action(const struct hold_invocation *inv,
     if (!t.r.has_console) {
         rc = no_screen(&t);
     } else if (state_ended(t.st)) {
-        fprintf(stderr, "callbox: %s has ended\n", t.label);
+        fprintf(stderr, "backmux: %s has ended\n", t.label);
         rc = WAIT_EXIT_ENDED;
     } else {
         char req[64];
@@ -1011,13 +1011,13 @@ int hold_cmd_resize_action(const struct hold_invocation *inv,
 /* ---- msg ------------------------------------------------------------------ */
 
 static const char msg_usage[] =
-    "usage: callbox msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]\n"
+    "usage: backmux msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]\n"
     "                   [--wait-reply [--timeout MS]]\n"
-    "       callbox msg [<target>] --received [ID]\n";
+    "       backmux msg [<target>] --received [ID]\n";
 
 /* Agent-to-agent messaging: the text is typed into the target's prompt at
  * once, behind a "[msg from <sender>; reply: ...]" header. The sender is this
- * process's own call ($CALLBOX_ID), named by the receiving broker as its
+ * process's own call ($BACKMUX_ID), named by the receiving broker as its
  * record names it now. */
 static bool is_msg_id(const char *s) {
     if (strlen(s) != 6) return false;
@@ -1026,15 +1026,15 @@ static bool is_msg_id(const char *s) {
     return true;
 }
 
-/* callbox msg [TARGET] --received [ID]: a call's message history (by default
+/* backmux msg [TARGET] --received [ID]: a call's message history (by default
  * the call we run in), from its <id>.msgs log: one line per message, or with
  * ID that message's sender and full text. */
 static int msg_received(const struct hold_invocation *inv, const struct hold_store *user_store,
                         const struct hold_store *system_store, const char *token, const char *want) {
-    if (!token || !*token) token = getenv("CALLBOX_ID");
+    if (!token || !*token) token = getenv("BACKMUX_ID");
     if (!token || !*token) {
-        fprintf(stderr, "callbox: msg --received reads a call's messages: run it inside a callbox call, or name one "
-                        "(callbox msg CALL --received)\n");
+        fprintf(stderr, "backmux: msg --received reads a call's messages: run it inside a backmux call, or name one "
+                        "(backmux msg CALL --received)\n");
         return 1;
     }
     struct screen_target t;
@@ -1053,7 +1053,7 @@ static int msg_received(const struct hold_invocation *inv, const struct hold_sto
             errno = saved;
         }
         if (!mf && errno != ENOENT) {
-            fprintf(stderr, "callbox: %s: cannot read its message log %s: %s\n", t.label, path, strerror(errno));
+            fprintf(stderr, "backmux: %s: cannot read its message log %s: %s\n", t.label, path, strerror(errno));
             close_screen_target(&t);
             return 1;
         }
@@ -1066,7 +1066,7 @@ static int msg_received(const struct hold_invocation *inv, const struct hold_sto
         if (got > 0 && line[got - 1] == '\n') line[got - 1] = '\0';
         char id[8], from[ALIAS_MAX_LEN + ID_STR_LEN + 1];
         long long when;
-        int from_call, off = 0; /* (an older callbox's verified flag: read, not shown) */
+        int from_call, off = 0; /* (an older backmux's verified flag: read, not shown) */
         if (sscanf(line, "%7s %lld %d %128s %n", id, &when, &from_call, from, &off) == 4 && off > 0 &&
             (!want || !strcmp(id, want))) {
             /* the text, hex-decoded in place */
@@ -1097,12 +1097,12 @@ static int msg_received(const struct hold_invocation *inv, const struct hold_sto
     }
     free(line);
     if (mf && ferror(mf)) {
-        fprintf(stderr, "callbox: %s: error reading its message log %s\n", t.label, path);
+        fprintf(stderr, "backmux: %s: error reading its message log %s\n", t.label, path);
         rc = 1;
     }
     if (mf) fclose(mf);
     if (want && !found) {
-        fprintf(stderr, "callbox: %s: no message %s in its message history\n", t.label, want);
+        fprintf(stderr, "backmux: %s: no message %s in its message history\n", t.label, want);
         rc = 1;
     }
     close_screen_target(&t);
@@ -1137,7 +1137,7 @@ static int msg_action_impl(const struct hold_invocation *inv,
         } else if (!strcmp(a, "--timeout")) {
             const char *v = i + 1 < argc ? argv[++i] : NULL;
             if (hold_parse_inbox_timeout_ms(v, &reply_timeout_ms) != 0) {
-                fprintf(stderr, "callbox: error: --timeout takes milliseconds (0..%ld; 0 = never)\n%s",
+                fprintf(stderr, "backmux: error: --timeout takes milliseconds (0..%ld; 0 = never)\n%s",
                         LONG_MAX, msg_usage);
                 goto out;
             }
@@ -1147,7 +1147,7 @@ static int msg_action_impl(const struct hold_invocation *inv,
             rc = HOLD_RC_SHOW_HELP;
             goto out;
         } else {
-            fprintf(stderr, "callbox: error: unknown flag '%s'\n%s", a, msg_usage);
+            fprintf(stderr, "backmux: error: unknown flag '%s'\n%s", a, msg_usage);
             goto out;
         }
     }
@@ -1175,27 +1175,27 @@ static int msg_action_impl(const struct hold_invocation *inv,
     /* A sender outside any call answers to a name of its own, and replies to
      * it wait in an inbox (runtime/inbox.c): the receiver sees an ordinary
      * header either way. */
-    const char *self_id = getenv("CALLBOX_ID"), *self_name = getenv("CALLBOX_NAME");
+    const char *self_id = getenv("BACKMUX_ID"), *self_name = getenv("BACKMUX_NAME");
     bool outside = !(self_id && *self_id) && !(self_name && *self_name);
     char opname[ALIAS_MAX_LEN + 1] = "";
     bool made = false;
     if (outside && hold_operator_name(user_store, true, opname, sizeof(opname), &made) != 0) opname[0] = '\0';
     if (wait_reply && !outside) {
-        fprintf(stderr, "callbox: --wait-reply is for a sender outside callbox.\n"
+        fprintf(stderr, "backmux: --wait-reply is for a sender outside backmux.\n"
                         "Inside a call, replies arrive as program input or chat.\n");
         rc = HOLD_EXIT_USAGE;
         goto out;
     }
     if (wait_reply && !opname[0]) {
-        fprintf(stderr, "callbox: cannot make an inbox for the reply: %s\n", strerror(errno));
+        fprintf(stderr, "backmux: cannot make an inbox for the reply: %s\n", strerror(errno));
         goto out;
     }
     off_t reply_from = opname[0] ? hold_inbox_size(user_store, opname) : 0;
     if (hold_valid_alias(token) && hold_inbox_live(user_store, token)) {
         /* To an operator: no broker, straight into its inbox. */
-        const char *from = self_name && *self_name ? self_name : opname[0] ? opname : "outside callbox";
+        const char *from = self_name && *self_name ? self_name : opname[0] ? opname : "outside backmux";
         if (hold_inbox_deliver(user_store, token, from, text.p, text.len) != 0) {
-            fprintf(stderr, "callbox: cannot deliver to %s's inbox: %s\n", token, strerror(errno));
+            fprintf(stderr, "backmux: cannot deliver to %s's inbox: %s\n", token, strerror(errno));
             goto out;
         }
         rc = 0;
@@ -1209,7 +1209,7 @@ static int msg_action_impl(const struct hold_invocation *inv,
     if (!t.r.has_console) {
         rc = no_screen(&t);
     } else if (state_ended(t.st)) {
-        fprintf(stderr, "callbox: %s has ended\n", t.label);
+        fprintf(stderr, "backmux: %s has ended\n", t.label);
         rc = WAIT_EXIT_ENDED;
     } else {
         struct reqbuf req = {0};
@@ -1218,8 +1218,8 @@ static int msg_action_impl(const struct hold_invocation *inv,
         int bad = rb_str(&req, num);
         /* The exact id names one call; the receiver shows its name. An
          * operator sends its inbox name, marked op=1. */
-        const char *from = getenv("CALLBOX_ID");
-        if (!from || !*from) from = getenv("CALLBOX_NAME");
+        const char *from = getenv("BACKMUX_ID");
+        if (!from || !*from) from = getenv("BACKMUX_NAME");
         if (from && *from) bad |= rb_str(&req, " from=") | rb_hex(&req, from, strlen(from));
         else if (opname[0]) bad |= rb_str(&req, " op=1 from=") | rb_hex(&req, opname, strlen(opname));
         bad |= rb_str(&req, "\n") | rb_hex(&req, text.p, text.len);

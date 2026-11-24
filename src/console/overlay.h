@@ -2,10 +2,10 @@
 #ifndef HOLD_CONSOLE_OVERLAY_H
 #define HOLD_CONSOLE_OVERLAY_H
 
-/* A callbox shell's display, private to the console layer.
+/* A backmux shell's display, private to the console layer.
  *
  * The broker keeps the one authoritative screen of the shell (the screen
- * layer, fed by the PTY). For a callbox shell, whoever attaches is not sent the
+ * layer, fed by the PTY). For a backmux shell, whoever attaches is not sent the
  * PTY's raw bytes: each frame is composed from that screen as the base layer
  * with the chat window drawn over it as a second pass, and only the
  * difference from what the terminal already shows is written (compose.c).
@@ -13,9 +13,9 @@
  * terminal are chat.c. Nothing drawn here ever reaches the screen, the log,
  * or the program. */
 
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/screen.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/screen.h"
 
 /* ---- compose.c: frames ---------------------------------------------------- */
 
@@ -78,7 +78,7 @@ struct chat_host {
      * lead key, then the detach key or the chat key (0 = the defaults). */
     unsigned char lead, detach_key, key;
     /* Any program in user mode, not a shell: the hints name the program
-     * ("callbox", "typing in the program") instead of the shell. */
+     * ("backmux", "typing in the program") instead of the shell. */
     bool program;
 };
 
@@ -97,7 +97,7 @@ void chat_input(struct chat *c, const unsigned char *buf, size_t n, int64_t now)
 /* Did that input ask to detach (the lead key, then the detach key)? Reported
  * once: the broker lets go of the attach client, or of one nested in it. */
 bool chat_take_detach(struct chat *c);
-/* A message callbox msg delivered to this call: from the call sender_id
+/* A message backmux msg delivered to this call: from the call sender_id
  * (label its name now), or, with sender_id NULL, from outside any call. */
 void chat_inbound(struct chat *c, const char *sender_id, const char *label, bool operator, const char *text, size_t len);
 /* Timers (a lone Esc, the corner hint, a send in flight) and the descriptors

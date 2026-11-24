@@ -1,13 +1,13 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/runtime.h"
-#include "callbox/runtime_internal.h"
-#include "callbox/core.h"
-#include "callbox/platform.h"
-#include "callbox/store.h"
-#include "callbox/console.h"
-#include "callbox/access.h"
-#include "callbox/observe.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/runtime.h"
+#include "backmux/runtime_internal.h"
+#include "backmux/core.h"
+#include "backmux/platform.h"
+#include "backmux/store.h"
+#include "backmux/console.h"
+#include "backmux/access.h"
+#include "backmux/observe.h"
 
 /* ---- the row model ----------------------------------------------------- */
 
@@ -99,7 +99,7 @@ static void format_status(enum run_state st, const struct hold_run_record *r, ch
         else snprintf(out, n, "Exited (?) %s ago", human);
         break;
     case STATE_FAILED: snprintf(out, n, "Failed %s ago", human); break;
-    /* Stale is Callbox-specific: the boot id no longer matches, so the call
+    /* Stale is Backmux-specific: the boot id no longer matches, so the call
      * cannot be running. Report the age without a false exit story. */
     case STATE_STALE: snprintf(out, n, "Stale %s", human); break;
     default: snprintf(out, n, "Unknown"); break;
@@ -145,7 +145,7 @@ static int collect_private_cb(const char *id, const char *path, struct hold_run_
     (void)path;
     struct private_walk *w = vctx;
     if (!r) {
-        fprintf(stderr, "callbox: warning: skipping corrupt record %s.json\n", id);
+        fprintf(stderr, "backmux: warning: skipping corrupt record %s.json\n", id);
         return 0;
     }
     if (w->name_filter && (!r->has_name || strcmp(r->name, w->name_filter) != 0)) return 0;
@@ -410,7 +410,7 @@ static int print_collected_table(struct list_rows *rows, bool with_user) {
 
 /* ---- list / ps --------------------------------------------------------- */
 
-/* list is Callbox's scoped ledger. The requested scope resolves against
+/* list is Backmux's scoped ledger. The requested scope resolves against
  * privilege: a normal user's default is their own store, root's the global
  * one. SYSTEM shows the global store (real for root, redacted for a normal
  * user); USER shows personal calls only, even under sudo; BOTH (-a) unions
@@ -468,7 +468,7 @@ static void unlink_call_artifacts(const struct hold_store *store, const struct h
     char log_path[HOLD_PATH_MAX], sock_path[HOLD_PATH_MAX];
     if (hold_checked_snprintf(log_path, sizeof(log_path), "%s/%s.log", store->log_dir, r->id) == 0) {
         if (r->has_log && strcmp(r->log_path, log_path) != 0)
-            fprintf(stderr, "callbox: warning: record %s names a log outside the store; left untouched: %s\n", r->id, r->log_path);
+            fprintf(stderr, "backmux: warning: record %s names a log outside the store; left untouched: %s\n", r->id, r->log_path);
         unlink(log_path);
     }
     char screen_path[HOLD_PATH_MAX];
@@ -480,7 +480,7 @@ static void unlink_call_artifacts(const struct hold_store *store, const struct h
         unlink(screen_path);
     if (hold_format_console_sock_path(store, r->id, sock_path, sizeof(sock_path)) == 0) {
         if (r->has_console && strcmp(r->console_sock, sock_path) != 0)
-            fprintf(stderr, "callbox: warning: record %s names a console socket outside the store; left untouched: %s\n", r->id, r->console_sock);
+            fprintf(stderr, "backmux: warning: record %s names a console socket outside the store; left untouched: %s\n", r->id, r->console_sock);
         unlink(sock_path);
         hold_remove_fifo_exchanges(sock_path); /* a FIFO console's half-made channels */
     }
@@ -572,19 +572,19 @@ int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const 
     uint64_t here = hold_current_pid_ns();
     if (st == STATE_UNKNOWN && !allow_unknown && r.pid_ns != 0 && here != 0 && r.pid_ns != here) {
         fprintf(stderr,
-                "callbox: error: call %s was started in another PID namespace and this shell cannot tell whether it "
+                "backmux: error: call %s was started in another PID namespace and this shell cannot tell whether it "
                 "ended (no exit was recorded, and no supervisor answers); purge it from the shell that started it, "
                 "or remove it anyway with --force\n", id);
         hold_free_run_record(&r);
         return 2;
     }
     if (st == STATE_UNKNOWN && !allow_unknown) {
-        fprintf(stderr, "callbox: error: call %s is %s and cannot be purged\n", id, hold_state_str(st));
+        fprintf(stderr, "backmux: error: call %s is %s and cannot be purged\n", id, hold_state_str(st));
         hold_free_run_record(&r);
         return 2;
     }
     if (st != STATE_EXITED && st != STATE_FAILED && st != STATE_UNKNOWN && !(allow_stale && st == STATE_STALE)) {
-        fprintf(stderr, "callbox: error: call %s is %s and cannot be purged\n", id, hold_state_str(st));
+        fprintf(stderr, "backmux: error: call %s is %s and cannot be purged\n", id, hold_state_str(st));
         hold_free_run_record(&r);
         return 2;
     }
@@ -602,7 +602,7 @@ int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const 
     }
     if (running_now || hold_existing_run_claimed(store, id)) {
         hold_store_unlock(lock_fd);
-        fprintf(stderr, "callbox: error: call %s is being redialed and cannot be purged\n", id);
+        fprintf(stderr, "backmux: error: call %s is being redialed and cannot be purged\n", id);
         hold_free_run_record(&r);
         return 2;
     }
@@ -695,7 +695,7 @@ static int prune_record_cb(const char *id, const char *path, struct hold_run_rec
         /* Under the store lock, as a targeted purge: a racing exit stamp
          * must not recreate the record after this unlink. */
         int lock_fd = hold_store_lock(w->store->record_dir);
-        /* A `callbox save` since the look above keeps it. */
+        /* A `backmux save` since the look above keeps it. */
         struct hold_run_record cur;
         char cur_path[HOLD_PATH_MAX];
         if (hold_load_record_by_id(w->store->record_dir, r->id, &cur, cur_path, sizeof(cur_path)) == 0) {
@@ -789,10 +789,10 @@ int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_s
             format_kept_note(&stats, kept, sizeof(kept));
             const char *hint = stats.kept_stale > 0 ? " (purge -a sweeps stale)" : "";
             if (stats.removed > 0)
-                hold_sig_note(inv, "callbox: purged %d past call%s%s%s\n",
+                hold_sig_note(inv, "backmux: purged %d past call%s%s%s\n",
                               stats.removed, stats.removed == 1 ? "" : "s", kept, hint);
             else
-                hold_sig_note(inv, "callbox: nothing to purge%s%s\n", kept, hint);
+                hold_sig_note(inv, "backmux: nothing to purge%s%s\n", kept, hint);
         }
         return rc;
     }
@@ -829,8 +829,8 @@ int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_s
             hold_run_id_display(r.id, display_id);
             if (r.saved) {
                 fprintf(stderr,
-                        "callbox: '%s' is saved \xe2\x80\x94 purging a saved call requires --force\n"
-                        "  callbox purge %s --force\n",
+                        "backmux: '%s' is saved \xe2\x80\x94 purging a saved call requires --force\n"
+                        "  backmux purge %s --force\n",
                         r.has_name ? r.name : display_id, target_token);
                 hold_free_run_record(&r);
                 free(targets);
@@ -871,12 +871,12 @@ int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_s
             const char *atom = NULL;
             enum id_token_scope token_scope = hold_parse_id_token(target_token, &atom);
             if (token_scope != ID_TOKEN_INVALID && atom && hold_valid_alias(atom) && !hold_valid_id_prefix(atom))
-                hold_sig_note(inv, "callbox: purged %d past call%s for '%s'\n",
+                hold_sig_note(inv, "backmux: purged %d past call%s for '%s'\n",
                               removed_count, removed_count == 1 ? "" : "s", atom);
             else
-                hold_sig_note(inv, "callbox: purged %d past call%s\n", removed_count, removed_count == 1 ? "" : "s");
+                hold_sig_note(inv, "backmux: purged %d past call%s\n", removed_count, removed_count == 1 ? "" : "s");
         } else {
-            hold_sig_note(inv, "callbox: nothing to purge\n");
+            hold_sig_note(inv, "backmux: nothing to purge\n");
         }
     }
     free(targets);

@@ -1,8 +1,8 @@
-callbox help features - a closer look at Callbox
+backmux help features - a closer look at Backmux
 
 RUN PROGRAMS WITHOUT A CENTRAL DAEMON
-  Callbox records each call on disk. A plain -d launch leaves the program
-  and its log with no Callbox helper. Terminals, input pipes, exit tracking,
+  Backmux records each call on disk. A plain -d launch leaves the program
+  and its log with no Backmux helper. Terminals, input pipes, exit tracking,
   and restart policies keep a broker, waiter, or supervisor as needed.
   Linux releases include static binaries; macOS builds use system libraries.
 
@@ -22,7 +22,7 @@ SEND INPUT AND CHECK THE RESULT
 
 WORK TOGETHER ON ONE SCREEN
   A person can stay attached while an agent uses peek, send, and resize.
-  Bare launches on a real terminal and callbox shell add a chat window;
+  Bare launches on a real terminal and backmux shell add a chat window;
   the underlying app, its log, and peek snapshots do not include that window.
   -it and -dt agents receive messages as typed input. Outside harnesses
   receive replies in an inbox and can follow them with monitor.
@@ -47,4 +47,4 @@ USE RESTRICTED AND SHARED ENVIRONMENTS
   calls expose a redacted public listing; their records and logs stay private.
   See help system for store selection and sudo behavior.
 
-Start with callbox help for task guides; use help all for the full reference.
+Start with backmux help for task guides; use help all for the full reference.

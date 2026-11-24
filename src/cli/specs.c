@@ -5,13 +5,13 @@
  * Commands with value options parse their own arguments. Help prose lives
  * in src/cli/help; this table selects each command's page and assembles the
  * complete reference so aliases and less-common commands stay discoverable. */
-#include "callbox/config.h"
+#include "backmux/config.h"
 #include <stddef.h>
-#include "callbox/types.h"
-#include "callbox/cli.h"
-#include "callbox/runtime.h"
-#include "callbox/core.h"
-#include "callbox/help_text.h"
+#include "backmux/types.h"
+#include "backmux/cli.h"
+#include "backmux/runtime.h"
+#include "backmux/core.h"
+#include "backmux/help_text.h"
 
 /* Per-command flag mask: which owned flags a verb consumes. */
 enum {
@@ -36,67 +36,67 @@ struct hold_cli_command_spec {
     const char *usage;      /* for errors; a command's help page is commands/<canon>.txt */
 };
 
-static const char usage_end[] = "usage: callbox end [--print] <target>...";
-static const char usage_attach[] = "usage: callbox attach <target> [--detach-keys KEYS]";
+static const char usage_end[] = "usage: backmux end [--print] <target>...";
+static const char usage_attach[] = "usage: backmux attach <target> [--detach-keys KEYS]";
 
 #define SPEC_PURGE_FLAGS (SPEC_ALL | SPEC_SCOPE | SPEC_FORCE | SPEC_STRICT)
 
 static const struct hold_cli_command_spec command_specs[] = {
     {"list", NULL, 0, 1, SPEC_ALL | SPEC_LIVE | SPEC_SCOPE | SPEC_STRICT,
-     "usage: callbox list [-a|--all] [-s|--system] [-u|--user] [-l|--live] [name]"},
+     "usage: backmux list [-a|--all] [-s|--system] [-u|--user] [-l|--live] [name]"},
     {"ps", NULL, 0, 1, SPEC_ALL | SPEC_STRICT | SPEC_PS_DOCKER,
-     "usage: callbox ps [-a|--all] [name]"},
+     "usage: backmux ps [-a|--all] [name]"},
     {"end", NULL, 1, -1, SPEC_PRINT | SPEC_STRICT, usage_end},
     {"stop", "end", 1, -1, SPEC_PRINT | SPEC_STRICT,
-     "usage: callbox stop [--print] <target>..."},
+     "usage: backmux stop [--print] <target>..."},
     {"kill", NULL, 1, -1, SPEC_PRINT | SPEC_STRICT,
-     "usage: callbox kill [--print] <target>..."},
-    {"tail", NULL, 1, 1, SPEC_STRICT, "usage: callbox tail <target>"},
+     "usage: backmux kill [--print] <target>..."},
+    {"tail", NULL, 1, 1, SPEC_STRICT, "usage: backmux tail <target>"},
     {"logs", NULL, 1, -1, SPEC_OWN_HELP,
-     "usage: callbox logs <target> [--follow|-f] [--tail|-n N]"},
-    {"inspect", NULL, 1, 1, SPEC_STRICT, "usage: callbox inspect <target>"},
-    {"ports", NULL, 1, 1, SPEC_STRICT, "usage: callbox ports <target>"},
-    {"stats", NULL, 1, 1, SPEC_NOSTREAM | SPEC_STRICT, "usage: callbox stats <target> [--no-stream]"},
+     "usage: backmux logs <target> [--follow|-f] [--tail|-n N]"},
+    {"inspect", NULL, 1, 1, SPEC_STRICT, "usage: backmux inspect <target>"},
+    {"ports", NULL, 1, 1, SPEC_STRICT, "usage: backmux ports <target>"},
+    {"stats", NULL, 1, 1, SPEC_NOSTREAM | SPEC_STRICT, "usage: backmux stats <target> [--no-stream]"},
     {"peek", NULL, 1, -1, SPEC_OWN_HELP,
-     "usage: callbox peek <target> [--json] [--ruler] [--last-alt]\n"
+     "usage: backmux peek <target> [--json] [--ruler] [--last-alt]\n"
      "                 [--image FILE [--no-ruler] [--cursor-ring] [--scale N]\n"
      "                               [--no-footer] [--no-mouse-marker] [--text]]"},
     {"send", NULL, 1, -1, SPEC_OWN_HELP,
-     "usage: callbox send <target> [TEXT]... [--text TEXT] [-k KEY]...\n"
+     "usage: backmux send <target> [TEXT]... [--text TEXT] [-k KEY]...\n"
      "                 [--keys \"K1 K2\"] [--enter] [--paste TEXT|-] [--stdin] [--seq]\n"
      "                 [--mouse ACTION,COL,ROW[,BUTTON]] [--wait MS [--timeout MS]]"},
     {"wait", NULL, 1, -1, SPEC_OWN_HELP,
-     "usage: callbox wait <target> [--idle [MS]] [--match TEXT | --regex RE]\n"
+     "usage: backmux wait <target> [--idle [MS]] [--match TEXT | --regex RE]\n"
      "                 [--since SEQ] [--exit] [--timeout MS]"},
     {"msg", NULL, 1, -1, SPEC_OWN_HELP,
-     "usage: callbox msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]\n"
+     "usage: backmux msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]\n"
      "                   [--wait-reply [--timeout MS]]\n"
-     "       callbox msg [<target>] --received [ID]"},
-    {"inbox", NULL, 0, -1, SPEC_OWN_HELP, "usage: callbox inbox [<name>] [--wait | --monitor] [--timeout <ms>]"},
-    {"monitor", NULL, 0, -1, SPEC_OWN_HELP, "usage: callbox monitor [NAME] [--timeout MS]"},
-    {"resize", NULL, 1, 3, SPEC_OWN_HELP, "usage: callbox resize <target> <cols> <rows>   (or <cols>x<rows>)"},
+     "       backmux msg [<target>] --received [ID]"},
+    {"inbox", NULL, 0, -1, SPEC_OWN_HELP, "usage: backmux inbox [<name>] [--wait | --monitor] [--timeout <ms>]"},
+    {"monitor", NULL, 0, -1, SPEC_OWN_HELP, "usage: backmux monitor [NAME] [--timeout MS]"},
+    {"resize", NULL, 1, 3, SPEC_OWN_HELP, "usage: backmux resize <target> <cols> <rows>   (or <cols>x<rows>)"},
     {"config", NULL, 0, 4, SPEC_OWN_HELP,
-     "usage: callbox config get <setting>\n"
-     "       callbox config set <setting> <value>\n"
-     "       callbox config unset <setting>\n"
+     "usage: backmux config get <setting>\n"
+     "       backmux config set <setting> <value>\n"
+     "       backmux config unset <setting>\n"
      "settings: detach-size COLS ROWS"},
     /* shell is a launch, parsed in cli/main.c; this row is its help. */
     {"shell", NULL, 0, -1, 0,
-     "usage: callbox shell [--name NAME] [--size COLS ROWS] [--chat-key KEY]\n"
+     "usage: backmux shell [--name NAME] [--size COLS ROWS] [--chat-key KEY]\n"
      "                  [-e KEY=VALUE]... [--rm] [shell [args...]]"},
     {"attach", NULL, 1, 1, SPEC_STRICT | SPEC_KEYS, usage_attach},
-    {"console", "attach", 1, 1, SPEC_STRICT | SPEC_KEYS, "usage: callbox console <target> [--detach-keys KEYS]"},
+    {"console", "attach", 1, 1, SPEC_STRICT | SPEC_KEYS, "usage: backmux console <target> [--detach-keys KEYS]"},
     {"purge", NULL, 0, 1, SPEC_PURGE_FLAGS,
-     "usage: callbox purge [<target>] [-a|--all] [--force]"},
+     "usage: backmux purge [<target>] [-a|--all] [--force]"},
     {"prune", "purge", 0, 1, SPEC_PURGE_FLAGS,
-     "usage: callbox purge [<target>] [-a|--all] [--force]"},
+     "usage: backmux purge [<target>] [-a|--all] [--force]"},
     {"rm", "purge", 0, 1, SPEC_PURGE_FLAGS,
-     "usage: callbox purge [<target>] [--force]"},
+     "usage: backmux purge [<target>] [--force]"},
     {"drop", "purge", 0, 1, SPEC_PURGE_FLAGS,
-     "usage: callbox purge [<target>] [-a|--all] [--force]"},
-    {"save", NULL, 1, 1, SPEC_STRICT, "usage: callbox save <target>"},
-    {"rename", NULL, 2, 2, SPEC_STRICT, "usage: callbox rename <target> <name>"},
-    {"help", NULL, 0, 1, 0, "usage: callbox help [topic]"},
+     "usage: backmux purge [<target>] [-a|--all] [--force]"},
+    {"save", NULL, 1, 1, SPEC_STRICT, "usage: backmux save <target>"},
+    {"rename", NULL, 2, 2, SPEC_STRICT, "usage: backmux rename <target> <name>"},
+    {"help", NULL, 0, 1, 0, "usage: backmux help [topic]"},
 };
 
 static const struct hold_cli_command_spec *find_public_command_spec(const char *s) {
@@ -185,7 +185,7 @@ int hold_cli_collect_owned_args(const char *command, int argc, char **argv,
                 continue;
             }
             if ((allowed & SPEC_STRICT) && arg[0] == '-') {
-                fprintf(stderr, "callbox: error: unknown flag '%s'\n", arg);
+                fprintf(stderr, "backmux: error: unknown flag '%s'\n", arg);
                 if (spec) {
                     fprintf(stderr, "%s\n", spec->usage);
                 }
@@ -258,7 +258,7 @@ int hold_show_help(const char *topic) {
     if (spec && hold_checked_snprintf(name, sizeof(name), "commands/%s", spec->canon ? spec->canon : spec->name) == 0 &&
         hold_help_print(name) == 0)
         return 0;
-    fprintf(stderr, "callbox: unknown help topic '%s' (callbox help lists the commands)\n", topic);
+    fprintf(stderr, "backmux: unknown help topic '%s' (backmux help lists the commands)\n", topic);
     return HOLD_EXIT_USAGE;
 }
 

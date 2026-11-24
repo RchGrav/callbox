@@ -8,15 +8,15 @@ fi
 
 target="$1"
 version="$2"
-binary_path="${3:-callbox}"
+binary_path="${3:-backmux}"
 output_dir="${4:-dist}"
 stage_dir="${output_dir}/package-${target}"
-archive_name="callbox-${version}-${target}.tar.gz"
+archive_name="backmux-${version}-${target}.tar.gz"
 
 rm -rf "${stage_dir}"
 mkdir -p "${stage_dir}" "${output_dir}"
-cp "${binary_path}" "${stage_dir}/callbox"
-chmod +x "${stage_dir}/callbox"
+cp "${binary_path}" "${stage_dir}/backmux"
+chmod +x "${stage_dir}/backmux"
 
 shopt -s nullglob
 for file in LICENSE* README*; do

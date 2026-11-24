@@ -2,9 +2,9 @@
 
 [Docs index](index.md) | [Previous: Launcher](launcher.md) | [Next: Identity](identity.md) | Related: [Console](console.md), [Screen](screen.md)
 
-The store holds what later commands need: call records, logs, saved screens, message logs, console endpoints, and the public discovery entries for root-managed calls. `callbox logs <call>` and `callbox end <call>` work after the original shell is gone because this state is on disk.
+The store holds what later commands need: call records, logs, saved screens, message logs, console endpoints, and the public discovery entries for root-managed calls. `backmux logs <call>` and `backmux end <call>` work after the original shell is gone because this state is on disk.
 
-Callbox has no daemon. Every command reads its intent from these files, then checks the live process table separately ([Identity](identity.md)).
+Backmux has no daemon. Every command reads its intent from these files, then checks the live process table separately ([Identity](identity.md)).
 
 ## Which store
 
@@ -20,7 +20,7 @@ One exception: when a root or sudo start names a program, or an existing path ar
 The user store is one flat directory:
 
 ```text
-~/.local/state/callbox/          0700
+~/.local/state/backmux/          0700
   <id>.json                      the record (0600)
   <id>.log                       the output (0600)
   <id>.screen, <id>.altscreen    a TTY call's last screens
@@ -36,7 +36,7 @@ The user store is one flat directory:
 The system store is split by kind:
 
 ```text
-/var/lib/callbox (Linux), /var/db/callbox (macOS)   0755 root
+/var/lib/backmux (Linux), /var/db/backmux (macOS)   0755 root
   runs/      0700 root   <id>.json (0600), .<id>.reserve, .<id>.exit.tmp
   logs/      0700 root   <id>.log, <id>.screen, <id>.altscreen, <id>.msgs (0600)
   console/   0700 root   <id>.sock
@@ -49,9 +49,9 @@ A build can set `HOLD_SYSTEM_STATE_DIR` at compile time. Test builds also read `
 
 ## Settings
 
-A person's saved defaults are not call state, so they live outside the store, in `~/.config/callbox/config` (0600). The file is plain text, one `name value` line per setting. `callbox config set` / `unset` rewrite it through a temp file and a rename, so a reader never sees half a file. Lines callbox does not know, such as comments or a newer version's settings, are kept as they are. A symlinked `~/.config`, `callbox` directory, or file is followed, because dotfile managers make all three.
+A person's saved defaults are not call state, so they live outside the store, in `~/.config/backmux/config` (0600). The file is plain text, one `name value` line per setting. `backmux config set` / `unset` rewrite it through a temp file and a rename, so a reader never sees half a file. Lines backmux does not know, such as comments or a newer version's settings, are kept as they are. A symlinked `~/.config`, `backmux` directory, or file is followed, because dotfile managers make all three.
 
-Under `sudo`, a launch reads the invoking user's file, and `callbox config set` / `unset` are refused: settings are changed as the person they belong to, never by root writing into their home. One setting exists: `detach-size COLS ROWS`, the size a detached TTY call starts at when no `--size` is given.
+Under `sudo`, a launch reads the invoking user's file, and `backmux config set` / `unset` are refused: settings are changed as the person they belong to, never by root writing into their home. One setting exists: `detach-size COLS ROWS`, the size a detached TTY call starts at when no `--size` is given.
 
 ## Call IDs
 
@@ -160,7 +160,7 @@ A plain `-d` call's public entry keeps `state_hint: running` after it ends, beca
 
 ## Purge
 
-`callbox purge` (aliases `rm`, `prune`, `drop`) is the removal verb.
+`backmux purge` (aliases `rm`, `prune`, `drop`) is the removal verb.
 
 A targeted purge (`hold_prune_one_run_ex`) works by state:
 
@@ -179,11 +179,11 @@ The no-target sweep (`cmd_prune_store_all`):
 - removes logs, screens, message logs, console endpoints, and public entries whose record is gone, unless a reservation under 600 seconds old shows a launch in progress
 - removes dot-`.tmp` files older than 60 seconds; the age gate protects a writer that is still running
 
-Purge deletes only paths it derives from the store layout and the call ID, never a path read from a record. Each removal holds the store lock, so a racing exit stamp cannot recreate the record. When an `--rm` call is purged after its exit was recorded, purge writes the `.<id>.exit.tmp` note (exit code and name) that `callbox wait` reads.
+Purge deletes only paths it derives from the store layout and the call ID, never a path read from a record. Each removal holds the store lock, so a racing exit stamp cannot recreate the record. When an `--rm` call is purged after its exit was recorded, purge writes the `.<id>.exit.tmp` note (exit code and name) that `backmux wait` reads.
 
 ## Implementation map
 
-`struct hold_store`, `struct hold_run_record`, `struct hold_public_index` (include/callbox/types.h); `hold_init_user_store_from_home`, `hold_ensure_user_store_for_current_user`, `hold_ensure_invoking_user_store`, `hold_init_system_store`, `hold_ensure_system_store` (src/store/layout.c); `hold_reserve_run_id`, `hold_mark_run_finished` (src/store/lifecycle.c); `hold_record_fields`, `hold_write_record_atomic` (src/store/record.c); `hold_load_record` (src/store/record_read.c); `hold_write_public_index_atomic`, `hold_load_public_index` (src/store/public_index.c); `hold_atomic_write_json`, `hold_store_lock` (src/store/atomic.c); `hold_resolve_record_id` (src/store/resolve.c); `hold_prune_one_run_ex`, `cmd_prune_store_all` (src/runtime/list.c).
+`struct hold_store`, `struct hold_run_record`, `struct hold_public_index` (include/backmux/types.h); `hold_init_user_store_from_home`, `hold_ensure_user_store_for_current_user`, `hold_ensure_invoking_user_store`, `hold_init_system_store`, `hold_ensure_system_store` (src/store/layout.c); `hold_reserve_run_id`, `hold_mark_run_finished` (src/store/lifecycle.c); `hold_record_fields`, `hold_write_record_atomic` (src/store/record.c); `hold_load_record` (src/store/record_read.c); `hold_write_public_index_atomic`, `hold_load_public_index` (src/store/public_index.c); `hold_atomic_write_json`, `hold_store_lock` (src/store/atomic.c); `hold_resolve_record_id` (src/store/resolve.c); `hold_prune_one_run_ex`, `cmd_prune_store_all` (src/runtime/list.c).
 
 ## Continue
 

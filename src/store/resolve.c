@@ -1,7 +1,7 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/store.h"
-#include "callbox/core.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/store.h"
+#include "backmux/core.h"
 
 /* THE resolver: the store's one id/prefix resolution, exported so no layer
  * grows its own directory scan again. Exact id wins if its file exists;

@@ -1,27 +1,27 @@
-# callbox shell: a person's shell, with chat
+# backmux shell: a person's shell, with chat
 
 [Docs index](index.md) | [Repository README](../README.md) | Related: [Console](console.md), [Screens](screen.md)
 
-`callbox shell` opens your shell on a PTY with a floating chat window for
-talking to the agents you run under callbox. It is user mode for a shell:
-`callbox <cmd>` (or `callbox -it <cmd>`) does the same for any program, and
+`backmux shell` opens your shell on a PTY with a floating chat window for
+talking to the agents you run under backmux. It is user mode for a shell:
+`backmux <cmd>` (or `backmux -it <cmd>`) does the same for any program, and
 redial brings that program back - a shell's redial can only bring back the
 shell, not what you ran in it. The shell
-is an ordinary call: it has a name, a log, and a screen that `callbox peek`
+is an ordinary call: it has a name, a log, and a screen that `backmux peek`
 reads. What differs is how its display is produced, and where a message for
 it goes. Both are fixed by the launch command — the record carries
 `"mode": {"chat": true}` — never guessed from the program's name:
 
-| Launched with | A message (`callbox msg`) for it | Its attach client is sent |
+| Launched with | A message (`backmux msg`) for it | Its attach client is sent |
 | --- | --- | --- |
-| `callbox -dt` or `-it` (any program, shells included) | is typed into the program's prompt at once | the PTY's raw bytes |
-| `callbox shell`, and `callbox <cmd>` (no switches) at a terminal (user mode) | goes to the chat inbox; nothing is ever typed | composed frames |
+| `backmux -dt` or `-it` (any program, shells included) | is typed into the program's prompt at once | the PTY's raw bytes |
+| `backmux shell`, and `backmux <cmd>` (no switches) at a terminal (user mode) | goes to the chat inbox; nothing is ever typed | composed frames |
 
 ```sh
-callbox shell                       # $SHELL, else your login shell, else /bin/sh
-callbox shell zsh -l                # callbox's options end at the shell's name
-callbox shell --name work zsh -l    # ...so --name is callbox's, -l is zsh's
-callbox -dt --name helper -- claude # an agent, placed the ordinary way
+backmux shell                       # $SHELL, else your login shell, else /bin/sh
+backmux shell zsh -l                # backmux's options end at the shell's name
+backmux shell --name work zsh -l    # ...so --name is backmux's, -l is zsh's
+backmux -dt --name helper -- claude # an agent, placed the ordinary way
 ```
 
 A shell is something you sit at: `-d`, `-w`, `--tail`, and `--restart` are
@@ -30,9 +30,9 @@ refused, and so is starting one without a terminal on stdin and stdout.
 `--chat-key` apply. A shell's `--detach-keys` must be exactly two keys (the
 lead key, then the detach key), because its broker reads them itself;
 `--chat-key` is pressed after the lead key, so it cannot be either of them.
-`Ctrl-P Ctrl-Q` detaches; `callbox attach <name>` picks the
+`Ctrl-P Ctrl-Q` detaches; `backmux attach <name>` picks the
 shell back up with the chat window, its conversations, and an unsent draft
-as they were; `callbox <name>` redials an ended shell as a shell.
+as they were; `backmux <name>` redials an ended shell as a shell.
 
 ## One screen, two layers
 
@@ -41,7 +41,7 @@ There is one terminal emulator: the broker's headless screen (see
 anyone is attached and whatever covers it.
 
 For an ordinary call the attach client is handed those bytes too, and the
-person's own terminal interprets them. For a callbox shell it is not. Each
+person's own terminal interprets them. For a backmux shell it is not. Each
 frame the broker (`src/console/compose.c`):
 
 1. takes a snapshot of the shell's screen — the **base layer**, clipped or
@@ -60,7 +60,7 @@ synchronized update where the terminal supports it, and a newly attached or
 resized terminal is cleared and repainted whole.
 
 The window exists only in those frames. It is never fed to the screen, so
-`callbox peek`, `callbox wait --match`, the saved final screen, and the log never
+`backmux peek`, `backmux wait --match`, the saved final screen, and the log never
 contain it, and nothing of it reaches the shell's input.
 
 What the person's terminal is told besides cells, so that it behaves as it
@@ -88,9 +88,9 @@ always answered by the headless screen: the person's terminal never sees
 them.
 
 Lost in translation, as in any terminal multiplexer: the terminal's own
-scrollback (the display is the alternate screen, as with `callbox -it`), and
+scrollback (the display is the alternate screen, as with `backmux -it`), and
 extensions the headless terminal does not model (inline images, hyperlinks,
-the kitty keyboard protocol). `callbox logs` has everything the shell printed.
+the kitty keyboard protocol). `backmux logs` has everything the shell printed.
 
 ## Size
 
@@ -105,7 +105,7 @@ Opening, closing, moving, or resizing the chat window touches none of that:
 it is geometry in the compositor, in terminal cells, and the PTY's size and
 the program are left alone.
 
-`callbox resize <shell> C R` (an agent's resize) changes the PTY only; the
+`backmux resize <shell> C R` (an agent's resize) changes the PTY only; the
 display shows the screen clipped or padded until the window is next resized.
 
 ## Keyboard and mouse
@@ -114,7 +114,7 @@ Everything the attached terminal sends passes through one router
 (`chat_input` in `src/console/chat.c`).
 
 - **The lead key** (`Ctrl-P`, the first of the detach keys) is the only key
-  callbox takes, and it only waits: the next key says what it meant, with no
+  backmux takes, and it only waits: the next key says what it meant, with no
   time limit (not everyone types fast, and Docker's lead key is untimed
   too; `Ctrl-P Ctrl-P` is the quick way to send one through), and the corner (or the window, when it is up) shows what it
   offers meanwhile. `Ctrl-Q` detaches. `Ctrl-T` (`--chat-key ctrl-g` picks
@@ -160,7 +160,7 @@ it.
 
 ## Messages
 
-Chat uses `callbox msg`'s transport; there is no second one.
+Chat uses `backmux msg`'s transport; there is no second one.
 
 **Out.** `Enter` sends the draft to the selected call as a `msg` request
 whose sender is the shell's own call id. The request returns once the
@@ -172,21 +172,21 @@ display, so the window never freezes. The helper names the shell's call as
 the sender, so the agent sees an ordinary header —
 
 ```text
-[msg from work; reply: callbox msg work "..."] can you look at the build?
+[msg from work; reply: backmux msg work "..."] can you look at the build?
 ```
 
-— and answers with an ordinary `callbox msg work "..."`. It needs to know
+— and answers with an ordinary `backmux msg work "..."`. It needs to know
 nothing about the chat window. A send is shown as `sending...` until the
 receiver confirms it, then `delivered`. If the call is gone or not running,
 its console cannot be reached or does not answer within 90 s, it refuses the
 message (rate limit, too large), or too many sends are in flight, the
 message is marked `NOT DELIVERED` with the reason, and never shown as
 delivered. A conversation with a sender outside any call (an operator,
-under the name callbox gave it) is replied to by writing into its inbox, so
+under the name backmux gave it) is replied to by writing into its inbox, so
 it is marked delivered at once.
 
 **In.** A message for the shell is recorded like any other (so
-`callbox msg --received` works inside the shell) and filed in the chat inbox
+`backmux msg --received` works inside the shell) and filed in the chat inbox
 under the call that sent it:
 
 - from a call: that call's conversation, keyed by its id, so it follows a
@@ -201,19 +201,19 @@ badge (`chat: 2 new from helper`): the window does not open and the shell
 is not interrupted. Hiding the window clears nothing and ends nothing.
 
 **Include screen** (`Ctrl-S`, or click `[ ] screen`) appends the shell's
-clean screen — the rows `callbox peek` prints, so never the chat window — to
+clean screen — the rows `backmux peek` prints, so never the chat window — to
 the next message only; it switches itself off after one send.
 
 Sending a message grants nothing. The agent is not given control of the
 shell, the shell's input is never written by a message, and whatever could
-already reach the shell (its owner's `callbox send`, for one) is unchanged.
+already reach the shell (its owner's `backmux send`, for one) is unchanged.
 
 Conversations live in the broker and last as long as the shell does; they
 are not written to disk. At most 24 conversations of 300 messages each are
 kept. Within a conversation the oldest message gives way. A new
 conversation replaces the one left alone longest, never the one on show
 or one with a send in flight; if every one is on show or sending, the
-incoming message is not shown (`callbox msg --received` still has it).
+incoming message is not shown (`backmux msg --received` still has it).
 
 ## Layers
 

@@ -24,9 +24,9 @@ run_native_smoke() {
   tmp=$(mktemp -d)
   home="$tmp/home"
   mkdir -p "$home"
-  env HOME="$home" ./callbox help >/dev/null
+  env HOME="$home" ./backmux help >/dev/null
 
-  out=$(env HOME="$home" ./callbox -d --name mac-smoke -- /bin/sh -c 'echo mac-smoke-line; sleep 2' 2>&1) || {
+  out=$(env HOME="$home" ./backmux -d --name mac-smoke -- /bin/sh -c 'echo mac-smoke-line; sleep 2' 2>&1) || {
     printf '%s\n' "$out" >&2
     fail "macOS smoke launch failed"
   }
@@ -34,32 +34,32 @@ run_native_smoke() {
   [ -n "$id" ] || { printf '%s\n' "$out" >&2; fail "macOS smoke did not print the 64-hex call id"; }
 
   sleep 0.2
-  env HOME="$home" ./callbox logs -p "$id" >"$tmp/logs.out"
+  env HOME="$home" ./backmux logs -p "$id" >"$tmp/logs.out"
   grep -Fq 'mac-smoke-line' "$tmp/logs.out" || {
     cat "$tmp/logs.out" >&2
     fail "macOS smoke logs did not capture stdout"
   }
-  env HOME="$home" ./callbox inspect "$id" >"$tmp/inspect.json"
+  env HOME="$home" ./backmux inspect "$id" >"$tmp/inspect.json"
   grep -Fq '"name": "mac-smoke"' "$tmp/inspect.json" || {
     cat "$tmp/inspect.json" >&2
     fail "macOS smoke inspect did not preserve the call name"
   }
-  env HOME="$home" ./callbox list -a >"$tmp/list.out"
+  env HOME="$home" ./backmux list -a >"$tmp/list.out"
   grep -Eq '^CALL ID[[:space:]]+USER[[:space:]]+COMMAND[[:space:]]+CREATED[[:space:]]+STATUS[[:space:]]+PORTS[[:space:]]+NAMES' "$tmp/list.out" || {
     cat "$tmp/list.out" >&2
     fail "macOS smoke call table header is wrong"
   }
 
-  env HOME="$home" ./callbox save mac-smoke 2>/dev/null
-  if env HOME="$home" ./callbox purge mac-smoke >/dev/null 2>"$tmp/refusal.err"; then
+  env HOME="$home" ./backmux save mac-smoke 2>/dev/null
+  if env HOME="$home" ./backmux purge mac-smoke >/dev/null 2>"$tmp/refusal.err"; then
     fail "purge of a saved call unexpectedly succeeded"
   fi
   grep -Fq 'is saved' "$tmp/refusal.err" || {
     cat "$tmp/refusal.err" >&2
     fail "saved-call purge refusal message missing"
   }
-  env HOME="$home" ./callbox end mac-smoke >/dev/null 2>&1 || true
-  env HOME="$home" ./callbox purge mac-smoke --force >/dev/null 2>&1 ||
+  env HOME="$home" ./backmux end mac-smoke >/dev/null 2>&1 || true
+  env HOME="$home" ./backmux purge mac-smoke --force >/dev/null 2>&1 ||
     fail "purge --force of the saved call failed"
   rm -rf "$tmp"
 }
@@ -71,7 +71,7 @@ run_screen_smoke() {
   tmp=$(mktemp -d)
   home="$tmp/home"
   mkdir -p "$home"
-  h() { env HOME="$home" ./callbox "$@"; }
+  h() { env HOME="$home" ./backmux "$@"; }
   h -dt --name scr -- /bin/sh -c 'stty -echo; echo ready; read -r l; echo "got:$l"; exit 3' >/dev/null ||
     fail "screen smoke: -dt launch failed"
   h wait scr --match ready --timeout 10000 || fail "screen smoke: wait --match ready failed"
@@ -104,17 +104,17 @@ make_args=(
 make clean
 make "${make_args[@]}"
 
-file_out=$(file ./callbox)
+file_out=$(file ./backmux)
 printf '%s\n' "$file_out"
-printf '%s\n' "$file_out" | grep -Fq 'Mach-O' || fail "callbox is not a Mach-O binary"
+printf '%s\n' "$file_out" | grep -Fq 'Mach-O' || fail "backmux is not a Mach-O binary"
 case "$actual_arch" in
   arm64) printf '%s\n' "$file_out" | grep -Fq 'arm64' || fail "arm64 runner did not build arm64 binary" ;;
   x86_64) printf '%s\n' "$file_out" | grep -Fq 'x86_64' || fail "x86_64 runner did not build x86_64 binary" ;;
   *) fail "unsupported macOS runner arch: $actual_arch" ;;
 esac
 
-./callbox help system | grep -Fq 'macOS: /var/db/callbox' || fail "macOS system store help is missing"
-./callbox --version | grep -Eq "^(v?${version}|${version}-|dev|[0-9a-f]{7,40}).*$" || fail "unexpected version output"
+./backmux help system | grep -Fq 'macOS: /var/db/backmux' || fail "macOS system store help is missing"
+./backmux --version | grep -Eq "^(v?${version}|${version}-|dev|[0-9a-f]{7,40}).*$" || fail "unexpected version output"
 run_native_smoke
 run_screen_smoke
 
@@ -126,27 +126,27 @@ tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
 default_out="$tmpdir/install-default.out"
-capture "$default_out" env CALLBOX_VERSION="$version" CALLBOX_INSTALL_DRY_RUN=1 sh install.sh
+capture "$default_out" env BACKMUX_VERSION="$version" BACKMUX_INSTALL_DRY_RUN=1 sh install.sh
 case "$actual_arch" in
-  arm64) grep -Fq "artifact: callbox-${version}-macos-arm64.tar.gz" "$default_out" || fail "default installer did not select arm64 macOS artifact" ;;
-  x86_64) grep -Fq "artifact: callbox-${version}-macos-x86_64.tar.gz" "$default_out" || fail "default installer did not select x86_64 macOS artifact" ;;
+  arm64) grep -Fq "artifact: backmux-${version}-macos-arm64.tar.gz" "$default_out" || fail "default installer did not select arm64 macOS artifact" ;;
+  x86_64) grep -Fq "artifact: backmux-${version}-macos-x86_64.tar.gz" "$default_out" || fail "default installer did not select x86_64 macOS artifact" ;;
 esac
 
 system_out="$tmpdir/install-system.out"
-capture "$system_out" env CALLBOX_VERSION="$version" CALLBOX_INSTALL_DRY_RUN=1 sh install.sh --system
+capture "$system_out" env BACKMUX_VERSION="$version" BACKMUX_INSTALL_DRY_RUN=1 sh install.sh --system
 grep -Fq 'mode:     system' "$system_out" || fail "system dry-run did not select system mode"
-grep -Fq 'install:  /usr/local/bin/callbox' "$system_out" || fail "system dry-run did not target /usr/local/bin"
+grep -Fq 'install:  /usr/local/bin/backmux' "$system_out" || fail "system dry-run did not target /usr/local/bin"
 
 arm_out="$tmpdir/install-arm64.out"
-capture "$arm_out" env CALLBOX_VERSION="$version" CALLBOX_INSTALL_DRY_RUN=1 CALLBOX_INSTALL_TEST_OS=Darwin CALLBOX_INSTALL_TEST_ARCH=arm64 sh install.sh
-grep -Fq "artifact: callbox-${version}-macos-arm64.tar.gz" "$arm_out" || fail "arm64 installer simulation selected wrong artifact"
+capture "$arm_out" env BACKMUX_VERSION="$version" BACKMUX_INSTALL_DRY_RUN=1 BACKMUX_INSTALL_TEST_OS=Darwin BACKMUX_INSTALL_TEST_ARCH=arm64 sh install.sh
+grep -Fq "artifact: backmux-${version}-macos-arm64.tar.gz" "$arm_out" || fail "arm64 installer simulation selected wrong artifact"
 
 x64_out="$tmpdir/install-x86_64.out"
-capture "$x64_out" env CALLBOX_VERSION="$version" CALLBOX_INSTALL_DRY_RUN=1 CALLBOX_INSTALL_TEST_OS=Darwin CALLBOX_INSTALL_TEST_ARCH=x86_64 sh install.sh
-grep -Fq "artifact: callbox-${version}-macos-x86_64.tar.gz" "$x64_out" || fail "x86_64 installer simulation selected wrong artifact"
+capture "$x64_out" env BACKMUX_VERSION="$version" BACKMUX_INSTALL_DRY_RUN=1 BACKMUX_INSTALL_TEST_OS=Darwin BACKMUX_INSTALL_TEST_ARCH=x86_64 sh install.sh
+grep -Fq "artifact: backmux-${version}-macos-x86_64.tar.gz" "$x64_out" || fail "x86_64 installer simulation selected wrong artifact"
 
 bad_out="$tmpdir/install-bad-arch.out"
-if env CALLBOX_VERSION="$version" CALLBOX_INSTALL_DRY_RUN=1 CALLBOX_INSTALL_TEST_OS=Darwin CALLBOX_INSTALL_TEST_ARCH=armv7l sh install.sh >"$bad_out" 2>&1; then
+if env BACKMUX_VERSION="$version" BACKMUX_INSTALL_DRY_RUN=1 BACKMUX_INSTALL_TEST_OS=Darwin BACKMUX_INSTALL_TEST_ARCH=armv7l sh install.sh >"$bad_out" 2>&1; then
   fail "unsupported macOS arch dry-run unexpectedly succeeded"
 fi
 grep -Fq 'unsupported macOS architecture' "$bad_out" || fail "unsupported macOS arch error was unclear"

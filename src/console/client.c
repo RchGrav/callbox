@@ -1,8 +1,8 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/console.h"
-#include "callbox/core.h"
-#include "callbox/term.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/console.h"
+#include "backmux/core.h"
+#include "backmux/term.h"
 
 /* THE client loop: every way a person watches or is on a call - attached to
  * its console, or following its log - runs here, so the keys mean the same

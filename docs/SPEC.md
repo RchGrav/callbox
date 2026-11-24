@@ -1,8 +1,8 @@
-# Callbox — implementation invariants
+# Backmux — implementation invariants
 
-[Docs index](index.md) | [Identity and surface contract](callbox-identity.md) | [Docker familiarity contract](docker-familiarity-contract.md)
+[Docs index](index.md) | [Identity and surface contract](backmux-identity.md) | [Docker familiarity contract](docker-familiarity-contract.md)
 
-The command surface is specified by [callbox-identity.md](callbox-identity.md)
+The command surface is specified by [backmux-identity.md](backmux-identity.md)
 and the borrowed Docker behaviors by
 [docker-familiarity-contract.md](docker-familiarity-contract.md). Mechanism references:
 [launcher](launcher.md), [store](store.md), [identity](identity.md),
@@ -14,8 +14,8 @@ every one of those relies on.
 Two stores, one shape:
 
 ```text
-user-local:    ~/.local/state/callbox          (0700, owned by the user)
-root-managed:  /var/lib/callbox  (Linux)       /var/db/callbox  (macOS)
+user-local:    ~/.local/state/backmux          (0700, owned by the user)
+root-managed:  /var/lib/backmux  (Linux)       /var/db/backmux  (macOS)
 ```
 
 The user-local store is 0700 because it holds command lines, environment,
@@ -30,7 +30,7 @@ User-local layout, directly under the base:
   last full-screen frame (`<64hex>.altscreen`), both HSNAP1 (see
   [screen.md](screen.md)), and its delivered-message log (`<64hex>.msgs`);
 - transient dot-files: `.<id>.reserve` while a call is being created, and
-  `.<id>.exit.tmp` for a minute after an `--rm` call ends, so `callbox wait`
+  `.<id>.exit.tmp` for a minute after an `--rm` call ends, so `backmux wait`
   can still report its exit code;
 - console endpoints under `console/` (0700): `<id>.sock`, a 0600 Unix
   socket, or a 0600 FIFO where the environment denies Unix sockets.
@@ -50,8 +50,8 @@ A global call's public entry carries only what every user may see: `id`,
 last observed them; never outbound connections, so a call's peers cannot
 leak). The invoking user, argv, and environment are never written;
 user-facing views render the user and command as `hidden`. An entry whose
-private record is gone is an orphan; `sudo callbox purge --system` (or
-`callbox purge -s`) sweeps it, so no view can bring the call back.
+private record is gone is an orphan; `sudo backmux purge --system` (or
+`backmux purge -s`) sweeps it, so no view can bring the call back.
 
 ## Records
 
@@ -61,7 +61,7 @@ parity lives at the CLI surface (flags and tables), not in storage.
 
 The record is the recipe. Redial reuses the call's id, name, and log (new
 output appends), and replays its argv, environment, session mode (`mode{}`:
-`interactive`, `tty`, `detach`, `wait`, `chat`; `chat` marks a `callbox
+`interactive`, `tty`, `detach`, `wait`, `chat`; `chat` marks a `backmux
 shell`), the `--size` it was placed with (`size_cols`, `size_rows`), and
 `--restart` / `--restart-delay`. Mode flags given on the redial override the
 recipe. A running call is not redialed: naming it gets you back to it
@@ -69,11 +69,11 @@ recipe. A running call is not redialed: naming it gets you back to it
 exit 0), because there is nothing to start. A target that matches more than
 one call is listed, exit 6, never guessed; the start of a name is a target
 when exactly one call fits, and a top-level word that is no verb, call, or
-program may be the start of one verb or name (see `callbox help targets`).
+program may be the start of one verb or name (see `backmux help targets`).
 
-A `callbox shell`'s record carries `lead_key`, `detach_key`, and `chat_key`
+A `backmux shell`'s record carries `lead_key`, `detach_key`, and `chat_key`
 (control bytes), which its broker reads itself. When `mode.chat` and these
-keys are present, `callbox attach` passes every key through instead of
+keys are present, `backmux attach` passes every key through instead of
 reading the detach keys. A TTY call's record also names its console broker
 (`broker_pid`). `saved: true` protects it from sweeps.
 
@@ -90,8 +90,8 @@ Raw captured bytes, appended as they arrive: stdout and stderr of a plain
 call (one append-mode file both go to, so they interleave in arrival order),
 or the PTY stream of a TTY call. A plain call's program writes its log
 directly, with no copying process in between; a TTY call's broker writes
-it. One plain file, no index; anything can read it without Callbox's help.
-`callbox logs` prints it whole, from the newest N lines (`-n`), or followed
+it. One plain file, no index; anything can read it without Backmux's help.
+`backmux logs` prints it whole, from the newest N lines (`-n`), or followed
 to the call's end (`-f`).
 
 ## Safety invariants
@@ -110,15 +110,15 @@ to the call's end (`-f`).
   exit. A plain `-d` or `-dw` call there has no broker to ask and is refused
   (exit 3). An unreachable broker is reported as an error, not a stopped call.
 - `end` sends TERM, waits 5 seconds, revalidates, then sends KILL.
-- Records are trusted only after validation. `callbox list` reports a
+- Records are trusted only after validation. `backmux list` reports a
   corrupt record; a purge sweep deletes it. It is never obeyed.
 - Purge removes only store-resident artifacts derived from the call id;
   paths stored in records are never followed for deletion, so a tampered
   record cannot aim purge at a file outside the store.
 - stdout carries machine data; human notes go to stderr; `--quiet`
   silences them.
-- Callbox never elevates on a user's behalf, with one deliberate exception:
-  a no-target `callbox purge --system` run by a normal user re-executes
+- Backmux never elevates on a user's behalf, with one deliberate exception:
+  a no-target `backmux purge --system` run by a normal user re-executes
   itself through `sudo` (which does the prompting) at a single commented
   dispatch site. A targeted purge of a global call is never re-executed: a
   normal user is told it needs root.

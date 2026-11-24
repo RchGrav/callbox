@@ -1,8 +1,8 @@
-usage: callbox wait <target> [--idle [MS]] [--match TEXT | --regex RE]
+usage: backmux wait <target> [--idle [MS]] [--match TEXT | --regex RE]
                  [--since SEQ] [--exit] [--timeout MS]
 
 Wait for screen content, quiet output, or process exit. After input, the
-screen may still be drawing; callbox send --wait MS sends and waits in one
+screen may still be drawing; backmux send --wait MS sends and waits in one
 step. For messages in an outside inbox, use inbox --wait or monitor.
 
   --idle [MS]      the program has drawn something and the screen then stays
@@ -29,8 +29,8 @@ A text match can also succeed on an ended call's saved final screen.
 
 To wait for a redraw after input:
 
-  seq=$(callbox send app -k Down --seq)
-  callbox wait app --since "$seq" --idle 300
+  seq=$(backmux send app -k Down --seq)
+  backmux wait app --since "$seq" --idle 300
 
 On an --rm call, wait returns once the call is removed, so its name is free;
 for a minute after that, wait still reports how it exited.
@@ -39,5 +39,5 @@ Exit status: 0 the condition held, 7 timed out, 8 the call ended first.
 A successful exit wait returns 0 even if the program failed; its printed
 exit code is separate. To pass a job's result to CI, capture and use it:
 
-  code=$(callbox wait job)
+  code=$(backmux wait job)
   exit "$code"

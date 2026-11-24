@@ -2,13 +2,13 @@
 #ifndef HOLD_OBSERVE_H
 #define HOLD_OBSERVE_H
 
-#include "callbox/config.h"
-#include "callbox/types.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
 
 /* Live observation of a call's process group, orchestrated over platform's
  * /proc-shaped primitives (never signals or ptrace); a no-op that reports
  * "nothing observed" on platforms without /proc. This is the one
- * implementation behind the PORTS column, `callbox ports`, and `callbox stats`. */
+ * implementation behind the PORTS column, `backmux ports`, and `backmux stats`. */
 
 /* A growable list of formatted listening endpoints, e.g. "127.0.0.1:8080/tcp". */
 struct hold_port_list {

@@ -2,8 +2,8 @@
 #ifndef HOLD_PLATFORM_H
 #define HOLD_PLATFORM_H
 
-#include "callbox/config.h"
-#include "callbox/types.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
 
 /* The ONLY home for OS-specific knowledge about processes, boot identity,
  * paths, and accounts. Everything /proc-shaped lives behind this API; no

@@ -1,7 +1,7 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/store.h"
-#include "callbox/core.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/store.h"
+#include "backmux/core.h"
 #include "store_internal.h"
 
 /* The store's only commit tail: unique temp in the SAME dir -> emit ->
@@ -46,7 +46,7 @@ int hold_atomic_write_json(const char *dir, const char *final_name, mode_t mode,
     int dfd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (dfd >= 0) {
         if (fsync(dfd) != 0)
-            fprintf(stderr, "callbox: warning: failed to fsync storage dir: %s\n", strerror(errno));
+            fprintf(stderr, "backmux: warning: failed to fsync storage dir: %s\n", strerror(errno));
         close(dfd);
     }
     rc = 0;

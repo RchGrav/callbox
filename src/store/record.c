@@ -1,9 +1,9 @@
 #include <stddef.h>
 
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/store.h"
-#include "callbox/core.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/store.h"
+#include "backmux/core.h"
 #include "store_internal.h"
 
 /* The record schema, as one field table. The private writer walks it below,
@@ -20,7 +20,7 @@
     { key, RF_STR, flags, sizeof(((struct hold_run_record *)0)->memb), offsetof(struct hold_run_record, memb), offsetof(struct hold_run_record, has) }
 
 const struct hold_record_field hold_record_fields[] = {
-    F("saved", RF_BOOL, 0, saved),               /* callbox save/rename: protected from sweeps */
+    F("saved", RF_BOOL, 0, saved),               /* backmux save/rename: protected from sweeps */
     F("auto_remove", RF_BOOL, 0, auto_remove),    /* --rm; absent = false */
     F("pid_ns", RF_U64, 0, pid_ns),               /* launching PID namespace; absent = 0 = unknown */
     F("liveness_lock", RF_BOOL, 0, liveness_lock), /* lifetime lock on the log; absent = false */
@@ -28,8 +28,8 @@ const struct hold_record_field hold_record_fields[] = {
     FH("broker_pid", RF_PID, 0, broker_pid, has_broker), /* a TTY call's console broker */
     FH("size_cols", RF_INT, 0, recipe.size_cols, recipe.has_size), /* --size */
     FH("size_rows", RF_INT, 0, recipe.size_rows, recipe.has_size),
-    FH("chat_key", RF_INT, 0, recipe.chat_key, recipe.has_chat_key), /* callbox shell: lead key, then this */
-    FH("lead_key", RF_INT, 0, recipe.lead_key, recipe.has_keys),     /* callbox shell: keys its broker reads */
+    FH("chat_key", RF_INT, 0, recipe.chat_key, recipe.has_chat_key), /* backmux shell: lead key, then this */
+    FH("lead_key", RF_INT, 0, recipe.lead_key, recipe.has_keys),     /* backmux shell: keys its broker reads */
     FH("detach_key", RF_INT, 0, recipe.detach_key, recipe.has_keys),
     F("version", RF_INT, RF_REQ, version),
     S("id", RF_REQ, id),

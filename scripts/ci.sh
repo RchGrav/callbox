@@ -46,7 +46,7 @@ mark_ok "static-build"
 
 step "dynamic, -Werror"
 must make clean
-must make callbox-dynamic CC="$CC_BIN" CFLAGS="$WERROR"
+must make backmux-dynamic CC="$CC_BIN" CFLAGS="$WERROR"
 mark_ok "dynamic-build"
 
 step "regression suite + surface smoke"

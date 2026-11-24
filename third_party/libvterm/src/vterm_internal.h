@@ -50,7 +50,7 @@ struct VTermPen
   unsigned int font:4; /* To store 0-9 */
   unsigned int small:1;
   unsigned int baseline:2;
-  unsigned int dim:1; /* callbox patch: SGR 2 faint */
+  unsigned int dim:1; /* backmux patch: SGR 2 faint */
 };
 
 struct VTermState

@@ -27,7 +27,7 @@ typedef struct
   unsigned int font      : 4; /* 0 to 9 */
   unsigned int small     : 1;
   unsigned int baseline  : 2;
-  unsigned int dim       : 1; /* callbox patch: SGR 2 faint */
+  unsigned int dim       : 1; /* backmux patch: SGR 2 faint */
 
   /* Extra state storage that isn't strictly pen-related */
   unsigned int protected_cell : 1;

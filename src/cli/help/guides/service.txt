@@ -1,4 +1,4 @@
-callbox help service - run background services and CI jobs
+backmux help service - run background services and CI jobs
 
 Use this when a job or service must keep running while a script tests it or
 you do other work. Background calls capture output without a terminal.
@@ -8,10 +8,10 @@ RUN A JOB AND RETURN ITS RESULT
   In a project with a make test target:
 
     set -e
-    callbox -dw --name checks -- make test
-    code=$(callbox wait checks)
-    callbox logs checks -n 100
-    callbox purge checks
+    backmux -dw --name checks -- make test
+    code=$(backmux wait checks)
+    backmux logs checks -n 100
+    backmux purge checks
     exit "$code"
 
   -dw returns immediately and records the eventual exit code. wait prints
@@ -24,13 +24,13 @@ KEEP A SERVICE UP WHILE TESTS RUN
   Run it from the directory you want to serve.
 
     set -e
-    callbox -d --name web -- python3 -u -m http.server 8080
-    trap 'callbox end web; callbox purge web' EXIT
+    backmux -d --name web -- python3 -u -m http.server 8080
+    trap 'backmux end web; backmux purge web' EXIT
     curl --retry 10 --retry-connrefused --retry-delay 1 \
       --fail --silent --show-error http://127.0.0.1:8080/ >/dev/null
-    callbox inspect web
-    ./run-tests.sh || { callbox logs web -n 200; exit 1; }
-    callbox logs web -n 20
+    backmux inspect web
+    ./run-tests.sh || { backmux logs web -n 200; exit 1; }
+    backmux logs web -n 20
 
   The HTTP request checks readiness; a background service has no screen
   for wait --match. inspect shows the recorded state and log path. The trap
@@ -42,25 +42,25 @@ KEEP A SERVICE UP WHILE TESTS RUN
   and ./run-tests.sh with the tests that exercise it.
 
 CHECK A SERVICE WHILE IT RUNS
-    callbox ps
-    callbox logs web -f
+    backmux ps
+    backmux logs web -f
 
   logs -f follows captured output; Ctrl-C stops following. Linux also
-  provides callbox ports web and callbox stats web --no-stream. Reading
+  provides backmux ports web and backmux stats web --no-stream. Reading
   logs and checking process state do not establish application health.
 
 CHOOSE THE MODE YOU NEED
   -d       background program, log only; no screen or input, no exit code
-  -dw      background program with an exit code for callbox wait
+  -dw      background program with an exit code for backmux wait
   -dt      detached terminal; peek, send, and screen waits work
 
   For restart-on-failure behavior, use a non-terminal call:
 
-    callbox -d --restart on-failure --name api -- ./server --port 8080
+    backmux -d --restart on-failure --name api -- ./server --port 8080
 
-  end stops it; callbox api starts the recorded command again. save api
+  end stops it; backmux api starts the recorded command again. save api
   protects its record from ordinary purge. Restart policies do not install
-  a boot service; see callbox help launch for policies and retry timing.
+  a boot service; see backmux help launch for policies and retry timing.
 
-Next: callbox help scripting for exit codes and output conventions.
-Details: callbox help launch, wait, logs, inspect, purge.
+Next: backmux help scripting for exit codes and output conventions.
+Details: backmux help launch, wait, logs, inspect, purge.

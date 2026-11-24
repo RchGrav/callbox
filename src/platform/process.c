@@ -1,7 +1,7 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/platform.h"
-#include "callbox/core.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/platform.h"
+#include "backmux/core.h"
 #include <arpa/inet.h>
 
 #if defined(__APPLE__)
@@ -113,9 +113,9 @@ int hold_proc_fd_target(pid_t pid, int fd, char *out, size_t n) {
     ssize_t got = readlink(path, target, sizeof(target) - 1);
     if (got < 0) return -1;
     target[got] = '\0';
-    /* A held call's captured stdout/stderr point at Callbox's own capture pipe;
+    /* A held call's captured stdout/stderr point at Backmux's own capture pipe;
      * report the plumbing by its role, not its ephemeral inode. */
-    snprintf(out, n, "%s", strncmp(target, "pipe:", 5) == 0 ? "pipe:callbox" : target);
+    snprintf(out, n, "%s", strncmp(target, "pipe:", 5) == 0 ? "pipe:backmux" : target);
     return 0;
 }
 
@@ -410,7 +410,7 @@ bool hold_pid_has_file_open(pid_t pid, uint64_t dev, uint64_t ino) {
 
 uint64_t hold_current_pid_ns(void) {
 #if defined(__linux__)
-    /* A process never changes PID namespace; callbox list asks once per record. */
+    /* A process never changes PID namespace; backmux list asks once per record. */
     static uint64_t cached;
     static bool known;
     if (!known) {

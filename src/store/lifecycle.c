@@ -1,7 +1,7 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/store.h"
-#include "callbox/core.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/store.h"
+#include "backmux/core.h"
 #include "store_internal.h"
 
 /* Record lifecycle: the two-phase creation reserve (hashed run ids),
@@ -44,7 +44,7 @@ static void compute_run_hash(const struct run_hash_material *m, unsigned long co
     unsigned char digest[32];
     char buf[64];
     hold_sha256_init(&ctx);
-    hash_field(&ctx, "version", "callbox-run-v1");
+    hash_field(&ctx, "version", "backmux-run-v1");
     hash_field(&ctx, "exe", m->exe);
     hash_field(&ctx, "cwd", m->cwd && *m->cwd ? m->cwd : "-");
     snprintf(buf, sizeof(buf), "%" PRId64, m->start_unix_ns);

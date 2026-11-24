@@ -1,8 +1,8 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/help_text.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/help_text.h"
 
-/* Looking up and printing the compiled-in help pages (include/callbox/
+/* Looking up and printing the compiled-in help pages (include/backmux/
  * help_text.h). The pages themselves are generated data. */
 
 static const struct hold_help_page *find_page(const char *name) {

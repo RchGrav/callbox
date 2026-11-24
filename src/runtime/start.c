@@ -1,13 +1,13 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/runtime.h"
-#include "callbox/runtime_internal.h"
-#include "callbox/core.h"
-#include "callbox/platform.h"
-#include "callbox/store.h"
-#include "callbox/term.h"
-#include "callbox/console.h"
-#include "callbox/access.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/runtime.h"
+#include "backmux/runtime_internal.h"
+#include "backmux/core.h"
+#include "backmux/platform.h"
+#include "backmux/store.h"
+#include "backmux/term.h"
+#include "backmux/console.h"
+#include "backmux/access.h"
 
 /* runtime/start: launch orchestration — hashed-id reservation (via the store
  * reserve API), name generation, recipe capture, transactional record+index
@@ -76,9 +76,9 @@ static int clear_process_environment(void) {
 #endif
 }
 
-/* The call's own identity, exported to the held program: CALLBOX_ID and
- * CALLBOX_NAME are its address (callbox send/peek/wait accept either), and
- * CALLBOX_PARENT names the call that launched it, when it was launched
+/* The call's own identity, exported to the held program: BACKMUX_ID and
+ * BACKMUX_NAME are its address (backmux send/peek/wait accept either), and
+ * BACKMUX_PARENT names the call that launched it, when it was launched
  * from inside one (an agent starting a worker), so the worker can reply.
  * Captured in the launcher before fork; always overrides inherited values. */
 static struct {
@@ -93,20 +93,20 @@ static void child_identity_prepare(const char *id, const char *name, bool tty) {
     memset(&g_child_identity, 0, sizeof(g_child_identity));
     snprintf(g_child_identity.id, sizeof(g_child_identity.id), "%s", id ? id : "");
     snprintf(g_child_identity.name, sizeof(g_child_identity.name), "%s", name ? name : "");
-    const char *parent = getenv("CALLBOX_NAME");
-    if (!parent || !*parent) parent = getenv("CALLBOX_ID");
+    const char *parent = getenv("BACKMUX_NAME");
+    if (!parent || !*parent) parent = getenv("BACKMUX_ID");
     if (parent && strlen(parent) < sizeof(g_child_identity.parent) && strcmp(parent, g_child_identity.name) != 0)
         snprintf(g_child_identity.parent, sizeof(g_child_identity.parent), "%s", parent);
     g_child_identity.set = g_child_identity.id[0] != '\0';
     g_child_identity.tty = tty;
 }
 
-/* A TTY call runs on Callbox's own xterm-compatible terminal, never on the
+/* A TTY call runs on Backmux's own xterm-compatible terminal, never on the
  * launcher's, so its environment describes that terminal: TERM is
  * xterm-256color (as docker run -t sets TERM for its terminal), and the
  * variables naming the launcher's terminal or multiplexer go. A program that
  * sees TMUX believes it runs inside that tmux and acts on it - hollywood
- * opened its panes in the caller's byobu, leaving callbox's screen blank.
+ * opened its panes in the caller's byobu, leaving backmux's screen blank.
  * Applied before the recipe env, so an explicit -e wins. Plain calls are
  * left alone. */
 static int apply_default_term(void) {
@@ -123,12 +123,12 @@ static int apply_default_term(void) {
 
 static int apply_child_identity(void) {
     if (!g_child_identity.set) return 0;
-    if (setenv("CALLBOX_ID", g_child_identity.id, 1) != 0) return -1;
-    if (g_child_identity.name[0] ? setenv("CALLBOX_NAME", g_child_identity.name, 1) != 0
-                                 : unsetenv("CALLBOX_NAME") != 0)
+    if (setenv("BACKMUX_ID", g_child_identity.id, 1) != 0) return -1;
+    if (g_child_identity.name[0] ? setenv("BACKMUX_NAME", g_child_identity.name, 1) != 0
+                                 : unsetenv("BACKMUX_NAME") != 0)
         return -1;
-    if (g_child_identity.parent[0] ? setenv("CALLBOX_PARENT", g_child_identity.parent, 1) != 0
-                                   : unsetenv("CALLBOX_PARENT") != 0)
+    if (g_child_identity.parent[0] ? setenv("BACKMUX_PARENT", g_child_identity.parent, 1) != 0
+                                   : unsetenv("BACKMUX_PARENT") != 0)
         return -1;
     return 0;
 }
@@ -237,10 +237,10 @@ static void sleep_restart_delay(int seconds) {
  * already read those codes that way; 1 told them nothing. */
 static int cannot_start(const char *name, int err) {
     if (err == ENOENT) {
-        fprintf(stderr, "callbox: cannot start '%s': command not found\n", name);
+        fprintf(stderr, "backmux: cannot start '%s': command not found\n", name);
         return 127;
     }
-    fprintf(stderr, "callbox: cannot start '%s': %s\n", name, strerror(err));
+    fprintf(stderr, "backmux: cannot start '%s': %s\n", name, strerror(err));
     return (err == EACCES || err == ENOEXEC || err == EISDIR || err == EPERM) ? 126 : 1;
 }
 
@@ -302,7 +302,7 @@ static void run_restart_supervisor(const struct hold_store *store,
         pid_t worker = fork();
         if (worker < 0) {
             if (first) child_fail_errno(handshake_fd);
-            fprintf(stderr, "callbox: restart supervisor failed to fork: %s\n", strerror(errno));
+            fprintf(stderr, "backmux: restart supervisor failed to fork: %s\n", strerror(errno));
             mark_finished_with_retry(store, id, 127 << 8, getpid()); /* the record names the supervisor */
             _exit(127);
         }
@@ -312,7 +312,7 @@ static void run_restart_supervisor(const struct hold_store *store,
             signal(SIGHUP, SIG_DFL);
             execv(resolved_exec_path, launch_argv);
             if (first) child_fail_errno(exec_pipe[1]);
-            fprintf(stderr, "callbox: cannot restart '%s': %s\n", resolved_exec_path, strerror(errno));
+            fprintf(stderr, "backmux: cannot restart '%s': %s\n", resolved_exec_path, strerror(errno));
             _exit(127);
         }
         if (first) {
@@ -349,9 +349,9 @@ static void run_restart_supervisor(const struct hold_store *store,
         if (!restart_should_run_again(restart_policy, status, failures)) break;
         /* status is a wait status: say what the program did */
         if (WIFSIGNALED(status))
-            fprintf(stderr, "callbox: restarting %s after signal %d\n", resolved_exec_path, WTERMSIG(status));
+            fprintf(stderr, "backmux: restarting %s after signal %d\n", resolved_exec_path, WTERMSIG(status));
         else
-            fprintf(stderr, "callbox: restarting %s after exit status %d\n", resolved_exec_path,
+            fprintf(stderr, "backmux: restarting %s after exit status %d\n", resolved_exec_path,
                     WIFEXITED(status) ? WEXITSTATUS(status) : status);
         if (restart_delay_seconds != HOLD_RESTART_BACKOFF) {
             sleep_restart_delay(restart_delay_seconds);
@@ -414,7 +414,7 @@ static int foreground_exit_status(const struct hold_store *store, const char *id
             continue;
         }
     }
-    fprintf(stderr, "callbox: exit status unknown for call %.12s\n", id);
+    fprintf(stderr, "backmux: exit status unknown for call %.12s\n", id);
     return 1;
 }
 
@@ -436,7 +436,7 @@ static void spawn_auto_remove_watcher(const struct hold_store *store, const stru
         if (st == STATE_EXITED || st == STATE_FAILED || st == STATE_STALE) {
             /* The process can be gone a moment before its reaper stamps the
              * exit code; settle waits for the stamp so the exit note left
-             * for `callbox wait` carries it. */
+             * for `backmux wait` carries it. */
             hold_auto_remove_settle(&watch_store, watch_record.id, 2000);
             _exit(0);
         }
@@ -457,7 +457,7 @@ bool hold_start_target_is_within_invoking_home(const struct hold_invocation *inv
                                                  const char *command,
                                                  int argc,
                                                  char **argv) {
-    /* Only an explicit start target (bare `callbox <cmd>` or `callbox start <cmd>`)
+    /* Only an explicit start target (bare `backmux <cmd>` or `backmux start <cmd>`)
      * is inspected; other owned verbs never route stores by argv. */
     if (argc <= 0 || !argv || !argv[0] || !*argv[0] ||
         (owned && !(command && strcmp(command, "start") == 0))) {
@@ -593,28 +593,28 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     bool restart_enabled = restart_policy_is_enabled(restart_policy);
     /* -i without -t: the program runs on pipes under a broker that relays its
      * input, so the program never holds the person's terminal, Ctrl-P Ctrl-Q
-     * can detach, and callbox attach can reconnect. (--restart's supervisor
+     * can detach, and backmux attach can reconnect. (--restart's supervisor
      * still hands its workers stdin directly.) */
     bool pipe_mode = interactive_stdin && !console_mode && !restart_enabled;
     bool brokered = console_mode || pipe_mode;
     if (restart_enabled && console_mode) {
-        fprintf(stderr, "callbox: error: --restart with --tty/-t is not supported yet\n");
+        fprintf(stderr, "backmux: error: --restart with --tty/-t is not supported yet\n");
         return HOLD_EXIT_USAGE;
     }
     if (opts->chat && (!console_mode || !tail)) {
-        fprintf(stderr, "callbox: error: a callbox shell runs attached, on its PTY; -d does not apply\n");
+        fprintf(stderr, "backmux: error: a backmux shell runs attached, on its PTY; -d does not apply\n");
         return HOLD_EXIT_USAGE;
     }
     if (opts->chat && !(isatty(STDIN_FILENO) && isatty(STDOUT_FILENO))) {
-        fprintf(stderr, "callbox: error: callbox shell needs a terminal to draw on; run it from an interactive terminal "
-                        "(to drive a program from a script: callbox -dt <cmd>)\n");
+        fprintf(stderr, "backmux: error: backmux shell needs a terminal to draw on; run it from an interactive terminal "
+                        "(to drive a program from a script: backmux -dt <cmd>)\n");
         return HOLD_EXIT_USAGE;
     }
     /* --size is for a PTY call; one is never allocated just because a size
      * was given. */
     if (opts->size_cols && !console_mode) {
-        fprintf(stderr, "callbox: error: --size sets a PTY call's terminal size; add -t "
-                        "(for example: callbox -dt --size 120 40 -- <cmd>)\n");
+        fprintf(stderr, "backmux: error: --size sets a PTY call's terminal size; add -t "
+                        "(for example: backmux -dt --size 120 40 -- <cmd>)\n");
         return HOLD_EXIT_USAGE;
     }
     /* The terminal the program starts on, settled before anything exists (an
@@ -625,11 +625,11 @@ int hold_perform_start_options(const struct hold_invocation *inv,
      * launcher samples it here, while the real one is still on its stdio. */
     struct hold_console_options console_options = {.chat = opts->chat, .pipe = pipe_mode, .program = !opts->shell};
     if (opts->chat) {
-        /* A callbox shell's broker reads the keys itself: the lead key, then the
+        /* A backmux shell's broker reads the keys itself: the lead key, then the
          * detach key or the chat key. */
         unsigned char keys[8];
         if (hold_console_get_detach_keys(keys, sizeof(keys)) != 2) {
-            fprintf(stderr, "callbox: error: a callbox shell's --detach-keys are two keys: the lead key, then the key that "
+            fprintf(stderr, "backmux: error: a backmux shell's --detach-keys are two keys: the lead key, then the key that "
                             "detaches (the default is ctrl-p,ctrl-q)\n");
             return HOLD_EXIT_USAGE;
         }
@@ -637,7 +637,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         console_options.detach_key = keys[1];
         console_options.chat_key = opts->chat_key ? opts->chat_key : HOLD_CHAT_KEY_DEFAULT;
         if (console_options.chat_key == keys[0] || console_options.chat_key == keys[1]) {
-            fprintf(stderr, "callbox: error: --chat-key is pressed after the lead key, so it cannot be the lead key or the "
+            fprintf(stderr, "backmux: error: --chat-key is pressed after the lead key, so it cannot be the lead key or the "
                             "detach key\n");
             return HOLD_EXIT_USAGE;
         }
@@ -645,7 +645,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     if (console_mode) {
         int cols = opts->size_cols, rows = opts->size_rows;
         if (cols && !hold_term_size_valid(cols, rows)) {
-            fprintf(stderr, "callbox: error: --size: invalid size '%d %d': columns and rows are whole numbers from 1 to %d\n",
+            fprintf(stderr, "backmux: error: --size: invalid size '%d %d': columns and rows are whole numbers from 1 to %d\n",
                     cols, rows, HOLD_TERM_MAX_DIM);
             return HOLD_EXIT_USAGE;
         }
@@ -701,20 +701,20 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         observed_cwd[0] = '\0';
     }
     if (hold_copy_argv(&u.observed_argv, argc, argv) != 0) {
-        hold_die_errno("callbox: failed to prepare observed argv");
+        hold_die_errno("backmux: failed to prepare observed argv");
     }
     if (hold_copy_argv(&u.launch_argv, argc, argv) != 0) {
-        launch_die(&u, "callbox: failed to prepare argv");
+        launch_die(&u, "backmux: failed to prepare argv");
     }
     char **observed_argv = u.observed_argv;
     char **launch_argv = u.launch_argv;
     free(launch_argv[0]);
     launch_argv[0] = strdup(resolved_exec_path);
     if (!launch_argv[0]) {
-        launch_die(&u, "callbox: failed to prepare argv");
+        launch_die(&u, "backmux: failed to prepare argv");
     }
     if (hold_normalize_existing_argv_paths_from_cwd(launch_argv, argc, 1, observed_cwd[0] ? observed_cwd : NULL) != 0) {
-        launch_die(&u, "callbox: failed to normalize argv paths");
+        launch_die(&u, "backmux: failed to normalize argv paths");
     }
 
     struct timespec start_ts;
@@ -727,31 +727,31 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     if (restarting_existing) {
         if (!hold_valid_id(existing_id) || !opts->existing_log_path || !*opts->existing_log_path) {
             errno = EINVAL;
-            launch_die(&u, "callbox: invalid restart record");
+            launch_die(&u, "backmux: invalid restart record");
         }
-        copy_field(&u, id, sizeof(id), existing_id, "callbox: restart metadata too long");
-        copy_field(&u, log_path, sizeof(log_path), opts->existing_log_path, "callbox: restart metadata too long");
+        copy_field(&u, id, sizeof(id), existing_id, "backmux: restart metadata too long");
+        copy_field(&u, log_path, sizeof(log_path), opts->existing_log_path, "backmux: restart metadata too long");
         if (opts->existing_run_name && *opts->existing_run_name) {
-            copy_field(&u, run_name, sizeof(run_name), opts->existing_run_name, "callbox: call name too long");
+            copy_field(&u, run_name, sizeof(run_name), opts->existing_run_name, "backmux: call name too long");
         }
         /* One launch per call at a time: claim it, then decide. The caller's
          * "not running" was read before this claim; a redial that launched
          * in between is seen only now (see hold_claim_existing_run). */
         u.claim_fd = hold_claim_existing_run(store, id);
-        if (u.claim_fd < 0) launch_die(&u, "callbox: failed to claim the call for redial");
+        if (u.claim_fd < 0) launch_die(&u, "backmux: failed to claim the call for redial");
         /* sudo-routed user-local redial: the claim is the user's, like the
          * log, so a launcher that died holding it leaves the user a file
          * they can claim again. */
         if (store->kind == STORE_USER_LOCAL && inv && inv->euid_root && inv->have_sudo_user &&
             fchown(u.claim_fd, inv->invoking_uid, inv->invoking_gid) != 0) {
-            launch_die(&u, "callbox: failed to set user-local ownership");
+            launch_die(&u, "backmux: failed to set user-local ownership");
         }
         struct hold_run_record cur;
         char cur_path[HOLD_PATH_MAX];
         if (hold_load_record_by_id(store->record_dir, id, &cur, cur_path, sizeof(cur_path)) != 0) {
             char display[ID_DISPLAY_HEX_LEN + 1];
             hold_run_id_display(id, display);
-            fprintf(stderr, "callbox: error: call %s is gone (purged while redialing)\n", display);
+            fprintf(stderr, "backmux: error: call %s is gone (purged while redialing)\n", display);
             launch_undo(&u);
             return HOLD_EXIT_NO_TARGET;
         }
@@ -761,7 +761,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         if (running) {
             char display[ID_DISPLAY_HEX_LEN + 1];
             hold_run_id_display(id, display);
-            fprintf(stderr, "callbox: error: call %s is already running\n", display);
+            fprintf(stderr, "backmux: error: call %s is already running\n", display);
             launch_undo(&u);
             return 6; /* as the caller's own check: already running */
         }
@@ -769,7 +769,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         if (hold_reserve_run_id(store, resolved_exec_path, argc, launch_argv,
                                 observed_cwd[0] ? observed_cwd : NULL,
                                 start_unix_ns, id) != 0) {
-            launch_die(&u, "callbox: failed to generate id");
+            launch_die(&u, "backmux: failed to generate id");
         }
         u.reserved = true;
         int name_rc = hold_generate_run_name_for_id(store, id, opts->run_name, run_name);
@@ -778,21 +778,21 @@ int hold_perform_start_options(const struct hold_invocation *inv,
             return name_rc;
         }
         if (hold_checked_snprintf(log_path, sizeof(log_path), "%s/%s.log", store->log_dir, id) != 0) {
-            launch_die(&u, "callbox: log path too long");
+            launch_die(&u, "backmux: log path too long");
         }
     }
     if (brokered && hold_format_console_sock_path(store, id, console_sock, sizeof(console_sock)) != 0) {
         console_sock[0] = '\0';
-        launch_die(&u, "callbox: console socket path too long");
+        launch_die(&u, "backmux: console socket path too long");
     }
     int log_preflight_fd = hold_open_append_no_symlink(log_path);
     /* Where this run's output will start: a redial appends to the same log,
-     * and what is shown of a run (when its console was over before callbox
+     * and what is shown of a run (when its console was over before backmux
      * got there) is this run's part, not every earlier run's too. */
     struct stat log_st;
     int64_t run_log_start = (log_preflight_fd >= 0 && fstat(log_preflight_fd, &log_st) == 0) ? (int64_t)log_st.st_size : 0;
     if (log_preflight_fd < 0) {
-        launch_die(&u, "callbox: failed to open log");
+        launch_die(&u, "backmux: failed to open log");
     }
     /* sudo-routed user-local launch: the log is the user's from the start,
      * before the broker exists - it gives what it writes beside the log the
@@ -800,7 +800,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     if (store->kind == STORE_USER_LOCAL && inv && inv->euid_root && inv->have_sudo_user &&
         fchown(log_preflight_fd, inv->invoking_uid, inv->invoking_gid) != 0) {
         close(log_preflight_fd);
-        launch_die(&u, "callbox: failed to set user-local ownership");
+        launch_die(&u, "backmux: failed to set user-local ownership");
     }
     close(log_preflight_fd);
 
@@ -811,7 +811,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     bool clean_child_env = inv && inv->euid_root && store && store->kind == STORE_SYSTEM_MANAGED;
 
     if (hold_cloexec_pipe(io + HS_R) != 0) {
-        launch_die(&u, "callbox: pipe failed");
+        launch_die(&u, "backmux: pipe failed");
     }
     /* A waiter stays behind as the program's parent to record its exit code:
      * foreground (it reports that code), -w, --rm, and --restart (whose
@@ -821,7 +821,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     bool waiter = !brokered && (opts->wait || tail || opts->auto_remove || restart_enabled);
     /* The waiter (or broker) reports the program's pid back over this pipe. */
     if (!restart_enabled && (brokered || waiter) && hold_cloexec_pipe(io + TP_R) != 0) {
-        launch_die(&u, "callbox: pipe failed");
+        launch_die(&u, "backmux: pipe failed");
     }
 
     child_identity_prepare(id, run_name, console_mode);
@@ -833,7 +833,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     g_output_lock = fallback && !waiter;
     pid_t pid = fork();
     if (pid < 0) {
-        launch_die(&u, "callbox: fork failed");
+        launch_die(&u, "backmux: fork failed");
     }
     if (pid == 0) {
         close(io[HS_R]);
@@ -933,7 +933,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     io[HS_R] = -1;
     if (handshake < 0) {
         errno = handshake_errno;
-        launch_die(&u, "callbox: exec handshake failed");
+        launch_die(&u, "backmux: exec handshake failed");
     }
     if (handshake > 0) {
         int st;
@@ -960,7 +960,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         io[TP_R] = -1;
         if (n != (ssize_t)sizeof(target_pid) || target_pid <= 1) {
             errno = EIO;
-            launch_die(&u, "callbox: failed to read target pid");
+            launch_die(&u, "backmux: failed to read target pid");
         }
         pid = target_pid;
         u.reap_pid = pid;
@@ -978,7 +978,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     hold_record_init_running(&r, id, log_path, pid, pid, pid, start_unix_ns,
                              opts->existing_created_unix_ns > 0 ? opts->existing_created_unix_ns : start_unix_ns);
     if (opts->existing_created_at && *opts->existing_created_at) {
-        copy_field(&u, r.created_at, sizeof(r.created_at), opts->existing_created_at, "callbox: created timestamp too long");
+        copy_field(&u, r.created_at, sizeof(r.created_at), opts->existing_created_at, "backmux: created timestamp too long");
     }
     if (store->kind == STORE_SYSTEM_MANAGED) {
         r.has_invocation = true;
@@ -987,11 +987,11 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         r.invoked_by_gid = via_sudo ? inv->invoking_gid : 0;
         r.invoked_via_sudo = via_sudo;
         copy_field(&u, r.invoked_by_user, sizeof(r.invoked_by_user),
-                   via_sudo ? inv->invoking_user : "root", "callbox: invoking user too long");
+                   via_sudo ? inv->invoking_user : "root", "backmux: invoking user too long");
     }
     if (run_name[0]) {
         r.has_name = true;
-        copy_field(&u, r.name, sizeof(r.name), run_name, "callbox: call name too long");
+        copy_field(&u, r.name, sizeof(r.name), run_name, "backmux: call name too long");
     }
     r.auto_remove = opts->auto_remove;
     r.pid_ns = hold_current_pid_ns();
@@ -1004,7 +1004,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
                                    : g_liveness_lock;
     if (console_sock[0]) {
         r.has_console = true;
-        copy_field(&u, r.console_sock, sizeof(r.console_sock), console_sock, "callbox: console socket path too long");
+        copy_field(&u, r.console_sock, sizeof(r.console_sock), console_sock, "backmux: console socket path too long");
     }
     r.recipe.mode_interactive = interactive_stdin;
     r.recipe.mode_tty = console_mode;
@@ -1023,15 +1023,15 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     r.recipe.size_cols = opts->size_cols;
     r.recipe.size_rows = opts->size_rows;
     /* The broker is its own session's leader; a message it sends for the
-     * call (a callbox shell's chat) is verified against this. */
+     * call (a backmux shell's chat) is verified against this. */
     r.has_broker = broker_pid > 1;
     r.broker_pid = broker_pid;
     if (envc > 0 && hold_copy_argv(&r.recipe.env, envc, env) != 0) {
-        launch_die(&u, "callbox: failed to copy env metadata");
+        launch_die(&u, "backmux: failed to copy env metadata");
     }
     r.recipe.envc = envc;
     if (restart_enabled) {
-        copy_field(&u, r.recipe.restart_policy, sizeof(r.recipe.restart_policy), restart_policy, "callbox: restart policy too long");
+        copy_field(&u, r.recipe.restart_policy, sizeof(r.recipe.restart_policy), restart_policy, "backmux: restart policy too long");
         r.recipe.has_restart_policy = true;
     }
     /* Recorded only when given, so a redial replays an explicit delay (0
@@ -1052,8 +1052,8 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     char real_exe[HOLD_PATH_MAX];
     if (hold_resolve_binary_path(resolved_exec_path, real_exe, sizeof(real_exe)) != 0)
         snprintf(real_exe, sizeof(real_exe), "%s", resolved_exec_path);
-    copy_field(&u, r.observed_exe, sizeof(r.observed_exe), real_exe, "callbox: observed executable path too long");
-    copy_field(&u, r.observed_cwd, sizeof(r.observed_cwd), observed_cwd, "callbox: observed cwd too long");
+    copy_field(&u, r.observed_exe, sizeof(r.observed_exe), real_exe, "backmux: observed executable path too long");
+    copy_field(&u, r.observed_cwd, sizeof(r.observed_cwd), observed_cwd, "backmux: observed cwd too long");
     r.observed_argc = argc;
     r.observed_argv = observed_argv;
 
@@ -1061,13 +1061,13 @@ int hold_perform_start_options(const struct hold_invocation *inv,
 #ifdef HOLD_TESTING
     if (getenv("HOLD_TEST_FAIL_RECORD_WRITE")) {
         errno = EIO;
-        launch_die(&u, "callbox: failed to write record");
+        launch_die(&u, "backmux: failed to write record");
     }
 #endif
     int record_lock = -1;
     if (restarting_existing) {
         /* A redial replaces the record, but what the person set on the call
-         * (callbox save, rename) is the call's, not the run's: carried over
+         * (backmux save, rename) is the call's, not the run's: carried over
          * from the record as it is now, under the lock save and rename
          * write under, so one made during this launch is kept too. Why: a
          * redialed call that lost its saved flag was deleted by the next
@@ -1086,7 +1086,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     int write_rc = hold_write_record_atomic(store->record_dir, &r, argc, launch_argv, record_path, sizeof(record_path));
     hold_store_unlock(record_lock);
     if (write_rc != 0) {
-        launch_die(&u, "callbox: failed to write record");
+        launch_die(&u, "backmux: failed to write record");
     }
     if (!restarting_existing) {
         u.record_path = record_path;
@@ -1112,7 +1112,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         }
         if (chown_rc != 0) {
             if (errno == 0) errno = EIO;
-            launch_die(&u, "callbox: failed to set user-local ownership");
+            launch_die(&u, "backmux: failed to set user-local ownership");
         }
     }
     if (store->kind == STORE_SYSTEM_MANAGED) {
@@ -1133,14 +1133,14 @@ int hold_perform_start_options(const struct hold_invocation *inv,
                 unlink(public_path);
             }
             errno = saved;
-            launch_die(&u, "callbox: failed to write public index");
+            launch_die(&u, "backmux: failed to write public index");
         }
     }
 
     char display_id[ID_DISPLAY_HEX_LEN + 1];
     hold_run_id_display(r.id, display_id);
     /* Docker's dialect: detach prints the full ID alone on stdout (scripts
-     * read it: id=$(callbox -dt ...)); foreground prints nothing of its own
+     * read it: id=$(backmux -dt ...)); foreground prints nothing of its own
      * (the call's output is what follows). The name follows on stderr. Why:
      * it is what msg, peek and attach take, and with other calls running,
      * whoever started this one could not tell which name was theirs. */
@@ -1169,12 +1169,12 @@ int hold_perform_start_options(const struct hold_invocation *inv,
             bool on_terminal = console_mode && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
             tail_rc = hold_run_native_console(r.console_sock);
             if (hold_console_reader_gone()) {
-                /* `callbox foo | head`: the reader has what it wanted. foo is
+                /* `backmux foo | head`: the reader has what it wanted. foo is
                  * not ours to end; say where it is, then end as a writer to
                  * a closed pipe does (141). */
                 const char *label = r.has_name ? r.name : display_id;
                 if (hold_call_still_running(store, id))
-                    hold_sig_note(inv, "callbox: %s keeps running; end it with: callbox end %s\n", label, label);
+                    hold_sig_note(inv, "backmux: %s keeps running; end it with: backmux end %s\n", label, label);
                 signal(SIGPIPE, SIG_DFL);
                 raise(SIGPIPE);
             }
@@ -1186,7 +1186,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
             bool unseen = hold_console_was_gone() || (streamed && tail_rc == 0 && !hold_console_heard_output());
             if (unseen) tail_rc = 0;
             /* Detached, or over (an attach that failed has said so itself).
-             * An ended call's exit status is callbox's own, as for a launch
+             * An ended call's exit status is backmux's own, as for a launch
              * without -t. */
             if (tail_rc == 0 && hold_after_attach(inv, store, &r, r.has_name ? r.name : display_id, on_terminal, unseen))
                 tail_rc = foreground_exit_status(store, r.id);

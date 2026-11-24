@@ -1,4 +1,4 @@
-callbox help share - fix a TUI while a person watches and tests
+backmux help share - fix a TUI while a person watches and tests
 
 Use this when you want your coding agent to reproduce and fix an issue
 without losing sight of the app. You stay attached; the agent inspects and
@@ -8,9 +8,9 @@ OPEN YOUR AGENT AND APP
   This example assumes Codex is installed and configured, and ./my-tui is
   your built application. Use your own terminal agent and app as needed.
 
-    callbox -dt --name coder codex
-    callbox peek coder
-    callbox --name app -- ./my-tui
+    backmux -dt --name coder codex
+    backmux peek coder
+    backmux --name app -- ./my-tui
 
   Check that coder is ready for a prompt before starting the app. The bare
   app launch keeps it on your terminal and adds a separate chat window.
@@ -25,21 +25,21 @@ DESCRIBE AND REPRODUCE THE ISSUE
   Ctrl-S adds a snapshot of the app's screen to the message. Enter sends
   it; Esc hides chat. The agent can now use its command tool while you watch:
 
-    callbox peek app --image bug.png --cursor-ring
-    callbox send app -k Down --wait 300
-    callbox peek app --json
-    callbox msg app "I reproduced it; please quit the app for the rebuild."
+    backmux peek app --image bug.png --cursor-ring
+    backmux send app -k Down --wait 300
+    backmux peek app --json
+    backmux msg app "I reproduced it; please quit the app for the rebuild."
 
 REBUILD AND TEST TOGETHER
   Quit the app normally so the agent can rebuild it. The app's chat is
   unavailable while it is stopped; check the agent's own screen instead:
 
-    callbox peek coder
+    backmux peek coder
 
   You can attach to coder to talk directly; Ctrl-P Ctrl-Q detaches again.
   Once its report confirms the new build is ready, run this in your terminal:
 
-    callbox app
+    backmux app
 
   An ended call reuses its recorded command and launch mode, so the rebuilt
   executable opens attached with chat again. Test the reported fix and send
@@ -47,18 +47,18 @@ REBUILD AND TEST TOGETHER
 
   When finished, quit the app and release both names:
 
-    callbox end coder
-    callbox purge app
-    callbox purge coder
+    backmux end coder
+    backmux purge app
+    backmux purge coder
 
 JOIN AN APP YOUR AGENT ALREADY STARTED
   If the agent launched a detached terminal with -dt, use this instead:
 
-    callbox attach app
+    backmux attach app
 
   Ctrl-P Ctrl-Q detaches and leaves it running. A -dt call keeps its
   original message mode, so attaching does not add a chat window. Use your
   existing conversation with the agent. Only one interactive attach is
   allowed at a time; peek, send, and resize still work while you are attached.
 
-Next: callbox help tui. Details: callbox help attach, shell, launch.
+Next: backmux help tui. Details: backmux help attach, shell, launch.

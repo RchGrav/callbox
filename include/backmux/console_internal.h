@@ -5,7 +5,7 @@
 /* Console-private wire constants and the socket seam, shared by the broker
  * (serve side) and attach (client side) translation units. Not part of the
  * public console.h surface. */
-#include "callbox/config.h"
+#include "backmux/config.h"
 
 /* Wire protocol: a client that opens with the magic speaks 3-byte
  * type + be16-length frames; anything else is raw passthrough (decision D-5
@@ -33,11 +33,11 @@
  * nothing there will answer the program's terminal queries (cursor
  * position, device attributes): the broker's screen answers them, as it
  * does with nobody attached. Without it a program that waits for a reply
- * stalls under `callbox <cmd>` from a script. Payload empty. */
+ * stalls under `backmux <cmd>` from a script. Payload empty. */
 #define CONSOLE_FRAME_NO_TERMINAL 'N'
 #define CONSOLE_FRAME_HEADER_LEN 3
 
-/* Control clients (callbox peek/send/wait/resize) open with this magic, then
+/* Control clients (backmux peek/send/wait/resize) open with this magic, then
  * send one be32-length-prefixed text request; the broker answers with one
  * be32-length-prefixed reply ("ok ...\n" | "error ...\n" | "timeout ...\n",
  * optionally followed by a binary body) and closes. Requests:
@@ -55,7 +55,7 @@
  *                                   keys are its detach keys (see attach.c)
  *   msg [from=<hex>] [submit=0]\n<hex text>
  *                                -> "ok delivered verified=0|1 id=<6 hex>\n" once
- *                                   typed in (a callbox shell: once in its chat
+ *                                   typed in (a backmux shell: once in its chat
  *                                   inbox, never typed)
  *   signal sig=N                 -> "ok\n"; N is TERM, KILL, INT or HUP, sent to
  *                                   the program's process group

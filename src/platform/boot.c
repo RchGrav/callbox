@@ -1,7 +1,7 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/platform.h"
-#include "callbox/core.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/platform.h"
+#include "backmux/core.h"
 
 /* Read a boot-id pseudo-file, strip trailing whitespace, demand non-empty. */
 static bool read_id_trim(const char *path, char *buf, size_t n) {

@@ -1,4 +1,4 @@
-callbox help agents - start an agent and give it work
+backmux help agents - start an agent and give it work
 
 Use this to delegate a review, investigation, or test run to another
 terminal-based agent. Each agent gets its own call and screen. Its harness
@@ -7,28 +7,28 @@ must already be installed, configured, and able to work on your project.
 START THE TWO AGENTS
   In your terminal, start the agent you work with:
 
-    callbox -it --name lead claude
+    backmux -it --name lead claude
 
   From lead's command tool, start a reviewer and check its prompt:
 
-    callbox -dt --name reviewer codex
-    callbox wait reviewer --idle 1000
-    callbox peek reviewer
+    backmux -dt --name reviewer codex
+    backmux wait reviewer --idle 1000
+    backmux peek reviewer
 
   -it keeps lead attached; -dt gives reviewer a detached terminal. Both
   accept messages as input. Complete any login or trust prompt before
-  assigning work; callbox attach reviewer lets you operate it yourself.
+  assigning work; backmux attach reviewer lets you operate it yourself.
 
 ASSIGN WORK AND CHECK PROGRESS
   Once reviewer is ready, lead sends a specific task:
 
-    callbox msg reviewer \
-      "Review src/main.c. Reply with findings using callbox msg lead."
-    callbox peek reviewer
+    backmux msg reviewer \
+      "Review src/main.c. Reply with findings using backmux msg lead."
+    backmux peek reviewer
 
   reviewer can answer from its command tool:
 
-    callbox msg lead "Review complete: no issues found in src/main.c."
+    backmux msg lead "Review complete: no issues found in src/main.c."
 
   msg adds a sender name and reply command, then submits the text. Delivery
   means the input reached the call, not that the task finished. Whether a
@@ -37,18 +37,18 @@ ASSIGN WORK AND CHECK PROGRESS
   output. wait with no condition waits for the agent process to exit.
 
 STOP THE REVIEWER WHEN ITS WORK IS FINISHED
-    callbox logs reviewer -n 50
-    callbox end reviewer
-    callbox purge reviewer
+    backmux logs reviewer -n 50
+    backmux end reviewer
+    backmux purge reviewer
 
   end sends TERM, then KILL after five seconds if needed. It retains the
   record and log; purge removes them and frees the name. Keep the call
-  instead if you want to inspect it later or restart it with callbox reviewer.
+  instead if you want to inspect it later or restart it with backmux reviewer.
 
-  Use callbox ps to find running calls. To read delivered messages without
-  disturbing a prompt, use callbox msg lead --received. Agent-specific keys
-  such as Escape can be sent with callbox send; their effect belongs to
+  Use backmux ps to find running calls. To read delivered messages without
+  disturbing a prompt, use backmux msg lead --received. Agent-specific keys
+  such as Escape can be sent with backmux send; their effect belongs to
   that harness.
 
-Next: callbox help messaging for a lead outside Callbox.
-Details: callbox help msg, peek, attach, end.
+Next: backmux help messaging for a lead outside Backmux.
+Details: backmux help msg, peek, attach, end.

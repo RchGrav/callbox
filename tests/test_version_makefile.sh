@@ -127,7 +127,7 @@ binary="$3"
 out="$4"
 mkdir -p "$out"
 printf '%s %s %s\n' "$target" "$version" "$binary" >> "$out/packages.log"
-: > "$out/callbox-$version-$target.tar.gz"
+: > "$out/backmux-$version-$target.tar.gz"
 SHSTUB
 chmod +x "$releasecase/.github/scripts/package_tarball.sh"
 cat >"$releasecase/bin/git" <<'SHSTUB'
@@ -163,20 +163,20 @@ cat >"$releasecase/bin/make" <<'SHSTUB'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$*" in
-  clean) rm -f callbox callbox-dynamic ;;
-  callbox\ STATIC_LDFLAGS=-static|callbox\ STATIC_LDFLAGS='-static')
-    cat > callbox <<'BIN'
+  clean) rm -f backmux backmux-dynamic ;;
+  backmux\ STATIC_LDFLAGS=-static|backmux\ STATIC_LDFLAGS='-static')
+    cat > backmux <<'BIN'
 #!/usr/bin/env bash
 printf '%s\n' v9.8.7
 BIN
-    chmod +x callbox
+    chmod +x backmux
     ;;
-  callbox-dynamic\ STATIC_LDFLAGS=*)
-    cat > callbox-dynamic <<'BIN'
+  backmux-dynamic\ STATIC_LDFLAGS=*)
+    cat > backmux-dynamic <<'BIN'
 #!/usr/bin/env bash
 printf '%s\n' v9.8.7
 BIN
-    chmod +x callbox-dynamic
+    chmod +x backmux-dynamic
     ;;
   *) printf 'unexpected fake make args: %s\n' "$*" >&2; exit 2 ;;
 esac
@@ -199,15 +199,15 @@ chmod +x "$releasecase/bin/file"
 (
   cd "$releasecase"
   env -u GITHUB_SHA -u GITHUB_REF_TYPE -u GITHUB_REF_NAME PATH="$releasecase/bin:/usr/bin:/bin" FAKE_GIT_MODE=tag-clean bash scripts/release_build.sh >tag-clean.out 2>tag-clean.err
-  grep -qx 'linux-amd64-gnu-static 9.8.7 callbox' dist/packages.log
-  grep -qx 'linux-amd64-gnu-dynamic 9.8.7 callbox-dynamic' dist/packages.log
+  grep -qx 'linux-amd64-gnu-static 9.8.7 backmux' dist/packages.log
+  grep -qx 'linux-amd64-gnu-dynamic 9.8.7 backmux-dynamic' dist/packages.log
 )
 (
   cd "$releasecase"
   rm -rf dist
   env -u GITHUB_SHA -u GITHUB_REF_TYPE -u GITHUB_REF_NAME PATH="$releasecase/bin:/usr/bin:/bin" FAKE_GIT_MODE=branch-clean bash scripts/release_build.sh >branch-clean.out 2>branch-clean.err
-  grep -qx 'linux-amd64-gnu-static 9.8.7-abcdef1 callbox' dist/packages.log
-  grep -qx 'linux-amd64-gnu-dynamic 9.8.7-abcdef1 callbox-dynamic' dist/packages.log
+  grep -qx 'linux-amd64-gnu-static 9.8.7-abcdef1 backmux' dist/packages.log
+  grep -qx 'linux-amd64-gnu-dynamic 9.8.7-abcdef1 backmux-dynamic' dist/packages.log
 )
 (
   cd "$releasecase"

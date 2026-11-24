@@ -1,4 +1,4 @@
-# Reproducible Linux build+test environment for callbox, mirroring the GitHub CI
+# Reproducible Linux build+test environment for backmux, mirroring the GitHub CI
 # toolchain (ubuntu-latest). Used by scripts/linux.sh to run scripts/ci.sh, the
 # privilege-delegation lane (scripts/test_root.sh), or the release build matrix
 # (scripts/release_build.sh)

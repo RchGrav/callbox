@@ -1,12 +1,12 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/runtime.h"
-#include "callbox/runtime_internal.h"
-#include "callbox/core.h"
-#include "callbox/platform.h"
-#include "callbox/store.h"
-#include "callbox/console.h"
-#include "callbox/access.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/runtime.h"
+#include "backmux/runtime_internal.h"
+#include "backmux/core.h"
+#include "backmux/platform.h"
+#include "backmux/store.h"
+#include "backmux/console.h"
+#include "backmux/access.h"
 
 static bool target_group_gone(const struct hold_run_record *r);
 
@@ -14,7 +14,7 @@ void hold_report_session_escapees(const struct hold_run_record *r) {
     int escaped = hold_count_session_escapees(r->sid, r->pgid);
     if (escaped > 0) {
         fprintf(stderr,
-                "callbox: warning: %d process(es) escaped process-group %ld but remain in session %ld\n",
+                "backmux: warning: %d process(es) escaped process-group %ld but remain in session %ld\n",
                 escaped, (long)r->pgid, (long)r->sid);
     }
 }

@@ -2,8 +2,8 @@
 #ifndef HOLD_ACCESS_H
 #define HOLD_ACCESS_H
 
-#include "callbox/config.h"
-#include "callbox/types.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
 
 int hold_detect_invocation(struct hold_invocation *inv, bool requested_system);
 int hold_init_invoking_user_store(const struct hold_invocation *inv, struct hold_store *store);

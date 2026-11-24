@@ -1,13 +1,13 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/runtime.h"
-#include "callbox/runtime_internal.h"
-#include "callbox/core.h"
-#include "callbox/store.h"
-#include "callbox/platform.h"
-#include "callbox/observe.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/runtime.h"
+#include "backmux/runtime_internal.h"
+#include "backmux/core.h"
+#include "backmux/store.h"
+#include "backmux/platform.h"
+#include "backmux/observe.h"
 
-/* callbox ports <target>: the listening sockets in use by the call's process
+/* backmux ports <target>: the listening sockets in use by the call's process
  * group, one per line, in the same "127.0.0.1:8080/tcp" form as the PORTS
  * column. Own calls need no root - the match runs against /proc socket inodes.
  * A call the invoking user cannot read (another user's) exits 3 with a note. */
@@ -54,13 +54,13 @@ int hold_cmd_ports_action(const struct hold_invocation *inv,
         hold_port_list_free(&ports);
         hold_free_run_record(&r);
         free(targets);
-        hold_die_errno("callbox: failed to read ports");
+        hold_die_errno("backmux: failed to read ports");
     }
     int result = 0;
     if (denied && ports.count == 0) {
         char display_id[ID_DISPLAY_HEX_LEN + 1];
         hold_run_id_display(r.id, display_id);
-        fprintf(stderr, "callbox: error: cannot read the process table for '%s'\n", display_id);
+        fprintf(stderr, "backmux: error: cannot read the process table for '%s'\n", display_id);
         result = 3;
     } else {
         for (size_t i = 0; i < ports.count; i++) {

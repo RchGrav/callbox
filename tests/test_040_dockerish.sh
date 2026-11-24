@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-HOLD_REAL_BIN="${HOLD_BIN:-./callbox-test}"
+HOLD_REAL_BIN="${HOLD_BIN:-./backmux-test}"
 case "$HOLD_REAL_BIN" in
   /*) ;;
   *) HOLD_REAL_BIN="$PWD/$HOLD_REAL_BIN" ;;
 esac
 
-TEST_ROOT="$(mktemp -d /tmp/callbox-040.XXXXXX)"
+TEST_ROOT="$(mktemp -d /tmp/backmux-040.XXXXXX)"
 cleanup() {
   HOME="$TEST_ROOT/home" HOLD_TEST_SYSTEM_STATE_DIR="$TEST_ROOT/system" "$HOLD_REAL_BIN" end web --all >/dev/null 2>&1 || true
   HOME="$TEST_ROOT/home" HOLD_TEST_SYSTEM_STATE_DIR="$TEST_ROOT/system" "$HOLD_REAL_BIN" end port-smoke >/dev/null 2>&1 || true
@@ -26,8 +26,8 @@ if [ "$(id -u)" -eq 0 ]; then
   REC_DIR="$HOLD_TEST_SYSTEM_STATE_DIR/runs"
   LOG_DIR="$HOLD_TEST_SYSTEM_STATE_DIR/logs"
 else
-  REC_DIR="$HOME/.local/state/callbox"
-  LOG_DIR="$HOME/.local/state/callbox"
+  REC_DIR="$HOME/.local/state/backmux"
+  LOG_DIR="$HOME/.local/state/backmux"
 fi
 
 fail() {
@@ -35,7 +35,7 @@ fail() {
   exit 1
 }
 
-callbox() {
+backmux() {
   "$HOLD_REAL_BIN" "$@"
 }
 
@@ -45,10 +45,10 @@ extract_full64() {
 
 # Bare foreground: stream the process output, print no id and no startup note.
 # (It runs on a PTY - user mode - so lines end in \r\n and stderr is merged.)
-out=$(callbox -- /bin/sh -c 'echo smoke-out; echo smoke-err >&2' 2>&1 | tr -d '\r')
+out=$(backmux -- /bin/sh -c 'echo smoke-out; echo smoke-err >&2' 2>&1 | tr -d '\r')
 printf '%s\n' "$out" | grep -qx 'smoke-out' || fail "foreground stdout missing"
 printf '%s\n' "$out" | grep -qx 'smoke-err' || fail "foreground stderr missing"
-if printf '%s\n' "$out" | grep -q 'callbox  started'; then
+if printf '%s\n' "$out" | grep -q 'backmux  started'; then
   fail "foreground call printed a startup note"
 fi
 if printf '%s\n' "$out" | grep -Eq '^[0-9a-f]{12}$|^[0-9a-f]{64}$'; then
@@ -60,38 +60,38 @@ display=${full:0:12}
 log="$LOG_DIR/$full.log"
 tr -d '\r' <"$log" | grep -qx 'smoke-out' || fail "stdout raw log line missing"
 test ! -e "$log.idx" || fail "a log index sidecar was written"
-callbox logs --plain "$display" | tr -d '\r' | grep -qx 'smoke-out' || fail "logs --plain did not print raw log"
-callbox logs -p "$display" | tr -d '\r' | grep -qx 'smoke-out' || fail "logs -p did not print raw log"
+backmux logs --plain "$display" | tr -d '\r' | grep -qx 'smoke-out' || fail "logs --plain did not print raw log"
+backmux logs -p "$display" | tr -d '\r' | grep -qx 'smoke-out' || fail "logs -p did not print raw log"
 
 # Named detached call, then redial by name reuses the same call id and log.
-named=$(callbox -d --name named-smoke -- /bin/sh -c 'echo named; sleep 0.1' 2>&1 | extract_full64 | cut -c1-12)
+named=$(backmux -d --name named-smoke -- /bin/sh -c 'echo named; sleep 0.1' 2>&1 | extract_full64 | cut -c1-12)
 [ "${#named}" -eq 12 ] || fail "named call id missing"
 sleep 0.3
-redial_id=$(callbox -d named-smoke 2>&1 | extract_full64 | cut -c1-12) || fail "redial by call name failed"
+redial_id=$(backmux -d named-smoke 2>&1 | extract_full64 | cut -c1-12) || fail "redial by call name failed"
 [ "$redial_id" = "$named" ] || fail "redial did not reuse existing call id"
 sleep 0.3
-[ "$(callbox logs --plain named-smoke | grep -c '^named$')" -eq 2 ] ||
+[ "$(backmux logs --plain named-smoke | grep -c '^named$')" -eq 2 ] ||
   fail "redial did not append to existing raw log"
 
 # rename gives a call a meaningful name.
-callbox rename named-smoke renamed-smoke >/dev/null 2>&1 || fail "rename failed"
-callbox ps -a | grep -q 'renamed-smoke' || fail "rename did not update the call name"
+backmux rename named-smoke renamed-smoke >/dev/null 2>&1 || fail "rename failed"
+backmux ps -a | grep -q 'renamed-smoke' || fail "rename did not update the call name"
 
-if callbox -p 8080:80 -- /bin/true >"$TEST_ROOT"/pub.out 2>"$TEST_ROOT"/pub.err; then
+if backmux -p 8080:80 -- /bin/true >"$TEST_ROOT"/pub.out 2>"$TEST_ROOT"/pub.err; then
   fail "publish unexpectedly succeeded"
 fi
 grep -q 'does not publish or forward ports' "$TEST_ROOT"/pub.err ||
   fail "publish rejection message missing"
-if callbox -v "$TEST_ROOT:/work" -- /bin/true >"$TEST_ROOT"/vol.out 2>"$TEST_ROOT"/vol.err; then
+if backmux -v "$TEST_ROOT:/work" -- /bin/true >"$TEST_ROOT"/vol.out 2>"$TEST_ROOT"/vol.err; then
   fail "volume unexpectedly succeeded"
 fi
 grep -q 'does not mount or remap volumes' "$TEST_ROOT"/vol.err ||
   fail "volume rejection message missing"
 
-server=$(callbox -d --name port-smoke -- python3 -c 'import socket,time; s=socket.socket(); s.bind(("127.0.0.1",0)); s.listen(); time.sleep(5)' 2>&1 | extract_full64 | cut -c1-12)
+server=$(backmux -d --name port-smoke -- python3 -c 'import socket,time; s=socket.socket(); s.bind(("127.0.0.1",0)); s.listen(); time.sleep(5)' 2>&1 | extract_full64 | cut -c1-12)
 [ "${#server}" -eq 12 ] || fail "server id missing"
 for _ in $(seq 1 30); do
-  psout=$(callbox ps 2>/dev/null || true)
+  psout=$(backmux ps 2>/dev/null || true)
   if printf '%s\n' "$psout" | grep -Eq '127\.0\.0\.1:[0-9]+/tcp'; then
     break
   fi
@@ -104,11 +104,11 @@ if [ "$(uname -s)" = Linux ]; then
   printf '%s\n' "$psout" | grep -Eq '127\.0\.0\.1:[0-9]+/tcp' ||
     fail "observed listening port missing from ps"
 fi
-callbox end port-smoke >/dev/null 2>&1 || true
+backmux end port-smoke >/dev/null 2>&1 || true
 
-callbox attach -h 2>&1 | grep -q 'usage: callbox attach <target>' || fail "attach help missing"
+backmux attach -h 2>&1 | grep -q 'usage: backmux attach <target>' || fail "attach help missing"
 
-rmout=$(callbox -d --rm -- /bin/sh -c 'echo rm; sleep 0.1' 2>&1)
+rmout=$(backmux -d --rm -- /bin/sh -c 'echo rm; sleep 0.1' 2>&1)
 rmfull=$(printf '%s\n' "$rmout" | extract_full64)
 [ "${#rmfull}" -eq 64 ] || fail "--rm full id missing"
 for _ in $(seq 1 50); do
@@ -118,4 +118,4 @@ done
 [ ! -e "$REC_DIR/$rmfull.json" ] || fail "--rm record remained"
 [ ! -e "$LOG_DIR/$rmfull.log" ] || fail "--rm log remained"
 
-echo "PASS: callbox surface smoke"
+echo "PASS: backmux surface smoke"

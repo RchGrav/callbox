@@ -1,4 +1,4 @@
-usage: callbox peek <target> [--json] [--ruler] [--last-alt]
+usage: backmux peek <target> [--json] [--ruler] [--last-alt]
                  [--image FILE [--no-ruler] [--cursor-ring] [--scale N]
                                [--no-footer] [--no-mouse-marker] [--text]]
 
@@ -22,5 +22,5 @@ calls do not. After a call ends, peek shows its last saved screen.
   --last-alt       the last full-screen (alternate-screen) frame a program such
                    as vim or less showed before it switched back
 
-Run callbox wait first (or callbox send --wait) so you do not read a half-drawn
+Run backmux wait first (or backmux send --wait) so you do not read a half-drawn
 frame.

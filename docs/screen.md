@@ -3,7 +3,7 @@
 [Docs index](index.md) | [Repository README](../README.md) | Related: [Console](console.md), [Implementation invariants](SPEC.md)
 
 A call placed with `-t` runs on a PTY owned by its **console broker**, a
-process born with the call and gone with it (Callbox stays daemonless). The
+process born with the call and gone with it (Backmux stays daemonless). The
 broker writes every output byte to the call's log, and also feeds it to a
 headless terminal — vendored [libvterm](../third_party/libvterm/) 0.3.3 —
 so it always knows the call's screen: every cell's characters, colors and
@@ -16,9 +16,9 @@ attributes, the cursor, and the program's input modes.
 | `src/screen/screen.c` | The terminal wrapper: feed, resize, snapshot, mode-aware key/paste/mouse encoding, the HSNAP1 format, plain text, repaint. Depends on core only. |
 | `src/screen/render.c` | Snapshot to PNG: 8x16 cells (GNU Unifont subset, Noto Emoji subset for wide emoji, procedural box drawing/blocks/Braille), ruler, cursor ring, mouse reticle, footer, and a small fixed-Huffman deflate encoder. |
 | `src/console/broker.c` | Owns the PTY; one attach client plus up to 64 control clients (more are answered `error busy`, which is safe to retry because nothing was done; clients retry with backoff for up to 10 s); waits, queued messages, the final screen. |
-| `src/console/compose.c`, `chat.c` | For `callbox shell` and bare launches on a real terminal: the composited display and chat window ([shell.md](shell.md)). |
+| `src/console/compose.c`, `chat.c` | For `backmux shell` and bare launches on a real terminal: the composited display and chat window ([shell.md](shell.md)). |
 | `src/console/control.c` | The client side of a control request. |
-| `src/runtime/screen_cmds.c` | `callbox peek / send / wait / resize / msg`. |
+| `src/runtime/screen_cmds.c` | `backmux peek / send / wait / resize / msg`. |
 | `src/runtime/inbox.c`, `src/store/inbox.c` | Outside sender identity, inbox history, `inbox --wait`, `monitor`, and reply waits. |
 
 ## The control protocol
@@ -55,8 +55,8 @@ call has ended`, `error rate limit: 20 messages a minute to one call`,
 for the exit (`exit=1`, or no condition at all) replies `ok`; any other
 replies `ended`. A `timeout` of 0 or none means no deadline.
 
-`seq` is the count of output bytes the broker has seen; `callbox send --seq`
-prints it and `callbox wait --since SEQ` requires output beyond it, which
+`seq` is the count of output bytes the broker has seen; `backmux send --seq`
+prints it and `backmux wait --since SEQ` requires output beyond it, which
 closes the send-then-wait race. `--idle` holds once the program has drawn
 something and then stayed quiet for the given time; silence before the first
 output never counts. Without `--since`, silence counts from the later of the
@@ -65,8 +65,8 @@ wait is still awaited.
 
 ## The size a call starts at
 
-Sizes are `COLS ROWS` in character cells everywhere — `--size`, `callbox config
-set detach-size`, `callbox resize` — parsed by one function
+Sizes are `COLS ROWS` in character cells everywhere — `--size`, `backmux config
+set detach-size`, `backmux resize` — parsed by one function
 (`hold_parse_term_size`: two words, or `COLSxROWS`) with one set of bounds
 (1 to 1000 each). Zero, negative, non-numeric, incomplete, and out-of-range
 sizes are refused before anything is started or saved.
@@ -76,7 +76,7 @@ The launcher resolves a TTY call's first size, in this order:
 1. `--size COLS ROWS` (a redial replays the size its recipe was placed with,
    unless the redial gives its own);
 2. for a detached launch (`-dt`, `-dwt`) only, the saved default
-   (`callbox config set detach-size`, kept in `~/.config/callbox/config`);
+   (`backmux config set detach-size`, kept in `~/.config/backmux/config`);
 3. the invoking terminal's size, when stdin or stdout is a terminal that
    reports a usable one;
 4. 80 columns by 24 rows.
@@ -84,9 +84,9 @@ The launcher resolves a TTY call's first size, in this order:
 The broker opens the PTY and creates the headless screen at that size before
 it forks the program, so a TUI that asks for its dimensions the moment it
 starts gets the right answer. `--size` is where the call starts, not a lock:
-`callbox resize`, and an attached terminal's window, change it afterwards.
+`backmux resize`, and an attached terminal's window, change it afterwards.
 `--size` requires a terminal mode: explicit `-t`, a bare launch, or
-`callbox shell`. It does not turn a plain `-d` call into a terminal.
+`backmux shell`. It does not turn a plain `-d` call into a terminal.
 A saved default never touches a call that is already
 running, and a saved value that no longer reads as a size is not guessed at:
 the launch stops and says how to set or clear it.
@@ -99,7 +99,7 @@ wait for replies work under `-dt`. While any attach client is connected, the
 broker drops its own replies so nothing is answered twice; the attached
 terminal answers. A client that is not a terminal (a pipe, `socat`) answers
 nothing, so a program waiting on a query stalls while it is attached. A
-callbox shell is the exception: its headless screen always answers
+backmux shell is the exception: its headless screen always answers
 ([shell.md](shell.md)). A newly attached terminal is repainted from the screen —
 cells, colors, input modes, cursor — rather than replayed from bytes.
 
@@ -119,14 +119,14 @@ palette indexes are not carried.
 
 When no more output can come, the broker writes the final snapshot to
 `<id>.screen` beside `<id>.log`. It rewrites it once the program is reaped,
-so the file records the exit. `callbox peek` reads it for ended calls, and
+so the file records the exit. `backmux peek` reads it for ended calls, and
 purge removes it with `<id>.altscreen` and `<id>.msgs`.
 
 Full-screen programs draw on the alternate screen and switch back when they
 exit, which leaves the normal screen showing none of what they displayed.
 When output contains the switch-back (`CSI ?1049l`, `?1047l`, `?47l`), the
 broker feeds the screen up to it, keeps a snapshot of that last full-screen
-frame, then feeds the rest. `callbox peek --last-alt` asks for it (`peek
+frame, then feeds the rest. `backmux peek --last-alt` asks for it (`peek
 alt=1`); at exit it is saved as `<id>.altscreen`. Only the first
 switch-back in each read of output is seen, and only while the alternate
 screen is active; a sequence split across two reads is missed.
@@ -134,13 +134,13 @@ screen is active; a sequence split across two reads is missed.
 ## Messages between calls
 
 (Calls with chat are the exception to what follows about typing: a bare
-launch on a real terminal or `callbox shell` sends messages to its chat
+launch on a real terminal or `backmux shell` sends messages to its chat
 window instead of typing into the program. See [shell.md](shell.md).)
 
-`callbox msg` hands text to the *receiver's* broker, which types it in at
+`backmux msg` hands text to the *receiver's* broker, which types it in at
 once, without waiting for a quiet screen. The receiving harness decides
 whether input received while busy is queued, handled immediately, or ignored;
-Callbox does not track its tasks. Two things can hold a message
+Backmux does not track its tasks. Two things can hold a message
 back. A sender whose call has no record yet gets up to 2 s, because a call
 that messages the instant it starts can beat its own record, and the
 header's name comes from that record. And
@@ -155,36 +155,36 @@ in as a bracketed paste when the program enabled mode 2004. Otherwise
 newlines and carriage returns become spaces, so it cannot submit early.
 Enter follows, unless `--no-enter` was given (`submit=0`).
 
-The sender names its call by `CALLBOX_ID`, else `CALLBOX_NAME`; only an id
+The sender names its call by `BACKMUX_ID`, else `BACKMUX_NAME`; only an id
 or a call name is taken (anything else could break the header or a `.msgs`
 line). The receiver looks that call up and shows its name as the record has it
 now, so a renamed call is shown, and answered, by its new name. The header,
 on one line before the text:
 
 ```text
-[msg from NAME; reply: callbox msg NAME "..."]
+[msg from NAME; reply: backmux msg NAME "..."]
 ```
 
-A sender outside any call (`CALLBOX_ID` and `CALLBOX_NAME` unset) is given a
+A sender outside any call (`BACKMUX_ID` and `BACKMUX_NAME` unset) is given a
 name of its own, made like a call's from its harness process (the first
-process above callbox that is not a shell or a wrapper), and an inbox under
+process above backmux that is not a shell or a wrapper), and an inbox under
 that name in `<store>/inbox/`. It sends that name with `op=1`; the receiver
-shows it in the same header, and `callbox msg NAME` from anywhere appends to
-the inbox instead of reaching a broker. `callbox inbox` reads retained
+shows it in the same header, and `backmux msg NAME` from anywhere appends to
+the inbox instead of reaching a broker. `backmux inbox` reads retained
 history and marks it read; `inbox --wait` returns one unread message.
-`callbox monitor` follows unread and new messages, flushing each to stdout;
+`backmux monitor` follows unread and new messages, flushing each to stdout;
 `inbox --monitor` remains an equivalent spelling. These readers share an
 unread position, rather than independent subscriptions. Use an explicit
 inbox name when reading from a different harness or terminal.
 
-`callbox msg ... --wait-reply` records the inbox end before sending, then
+`backmux msg ... --wait-reply` records the inbox end before sending, then
 waits for the first newer message from any sender. It does not correlate
 messages with requests. The name expires after an hour without use;
 individual messages expire one hour after delivery. Why: an agent that
-runs outside callbox has no
+runs outside backmux has no
 prompt for a reply to be typed into, and the receiver should not need to know
 that; one way of replying works for everyone. Only when no name can be made
-does the header fall back to `[msg from outside callbox]`.
+does the header fall back to `[msg from outside backmux]`.
 
 Inbox identity lookup and creation share the call-name lock, so parallel
 first sends use one inbox and an active inbox name cannot also be allocated
@@ -192,7 +192,7 @@ to a call in the same store. Existing records are not renamed automatically.
 
 The header is addressing, not proof. Only the console's own user can reach
 it (the socket checks the peer's uid; FIFOs are the user's), and anything
-running as that user could type the same text with `callbox send`. Why there
+running as that user could type the same text with `backmux send`. Why there
 is no check beyond that: an earlier version verified the sender's session and
 process ancestry, which guarded only against the user's own processes, put a
 verify step and a longer header in front of every agent, and read as "safe"
@@ -201,7 +201,7 @@ when it meant only "from".
 Each delivered message is appended to `<id>.msgs` as `ID UNIXTIME FROMCALL
 SENDER HEXTEXT` (FROMCALL is 1 when the sender is a call; it is where that
 earlier version wrote its verified flag, so older logs read the same).
-`callbox msg --received` reads it: the call's message history. Delivery is
+`backmux msg --received` reads it: the call's message history. Delivery is
 capped at 20 messages a minute per receiver, counted when a request is
 accepted. This slows message loops; it does not establish task completion
 or guarantee a conversation will end. Outside inbox delivery has no such

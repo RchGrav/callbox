@@ -15,8 +15,8 @@ The help now makes their boundaries explicit. The three reproduced inbox
 bugs found during this review are fixed and have regression coverage.
 
 The implementation at `efc0388` passed the full upstream
-[CI workflow](https://github.com/RchGrav/callbox/actions/runs/45257369999)
-and [multi-platform workflow](https://github.com/RchGrav/callbox/actions/runs/45257369892),
+[CI workflow](https://github.com/RchGrav/backmux/actions/runs/45257369999)
+and [multi-platform workflow](https://github.com/RchGrav/backmux/actions/runs/45257369892),
 including privilege tests and all 13 platform builds. The maintainer has
 chosen to release 1.0.0 and test it through the published installer.
 Release preparation changes only the changelog and release documentation;
@@ -37,8 +37,8 @@ are harness-dependent behaviors, not guarantees added by this release.
 | Agent messaging | Local test processes exercised inside/outside delivery, a stable process-derived inbox identity, unread messages, history, continuous monitoring, and reply waits. Real agent harnesses were not launched. |
 | CI jobs and services | Executed the job flow with success and failure: printed child codes 0 and 2 propagated to the script. A Python HTTP server passed readiness/content checks; success and failing-test paths both logged output, stopped the service, and purged its record. |
 | Presentation | A runnable `sh`/`tr` quickstart, explicit launch modes, and direct links to the same guides replace competing command summaries. Four existing PNGs were reviewed and retained unchanged; Vim is the README hero. No new artwork or screenshots were introduced. |
-| Packaging baseline | [v0.9.12](https://github.com/RchGrav/callbox/releases/tag/v0.9.12) publishes 13 platform archives, an installer, and checksums. Its [CI](https://github.com/RchGrav/callbox/actions/runs/45244602235), [multi-platform build](https://github.com/RchGrav/callbox/actions/runs/45244602182), and [release](https://github.com/RchGrav/callbox/actions/runs/45244604485) completed successfully. Those runs establish the baseline, not validation of this change. |
-| Updated implementation | The [CI](https://github.com/RchGrav/callbox/actions/runs/45257369999) and [multi-platform build](https://github.com/RchGrav/callbox/actions/runs/45257369892) for `efc0388` both completed successfully. They exercise the updated implementation across the existing platform, privilege, analysis, and sanitizer lanes. The versioned release workflow separately downloads and smoke-tests the published installer. |
+| Packaging baseline | [v0.9.12](https://github.com/RchGrav/backmux/releases/tag/v0.9.12) publishes 13 platform archives, an installer, and checksums. Its [CI](https://github.com/RchGrav/backmux/actions/runs/45244602235), [multi-platform build](https://github.com/RchGrav/backmux/actions/runs/45244602182), and [release](https://github.com/RchGrav/backmux/actions/runs/45244604485) completed successfully. Those runs establish the baseline, not validation of this change. |
+| Updated implementation | The [CI](https://github.com/RchGrav/backmux/actions/runs/45257369999) and [multi-platform build](https://github.com/RchGrav/backmux/actions/runs/45257369892) for `efc0388` both completed successfully. They exercise the updated implementation across the existing platform, privilege, analysis, and sanitizer lanes. The versioned release workflow separately downloads and smoke-tests the published installer. |
 
 The images were already in the repository in commits `35267e0` and
 `1e6e4c4`; repository and vendored font licensing were reviewed. The README
@@ -53,7 +53,7 @@ example. See [LICENSE](../LICENSE) and [third_party](../third_party/).
 | A call could take an active inbox name; `msg NAME` then went to the inbox instead of the call. | Check live inbox names during launch and rename in the same store. `test_operator_inbox_names_do_not_shadow_calls` covers refusal with status 11 and reuse after expiry. |
 | An unrepresentable timeout was accepted as `LONG_MAX`, then overflowed into an immediate timeout. | Share checked parsing between inbox and reply waits; compare elapsed time instead of adding a deadline. `test_operator_inbox_timeout_bounds` covers invalid values, zero, and a delayed reply with `LONG_MAX`. |
 | A monitor that had printed messages still reported “no reply” at its deadline. | Describe the end of the monitoring window; preserve timeout status 7. |
-| A no-helper test mistook the sandbox parent's command-line text for a Callbox process. | Check its executable name, including Linux's 15-byte `comm` limit. Verified with an actual binary named `callbox-under-test`; the privileged companion uses the same helper. |
+| A no-helper test mistook the sandbox parent's command-line text for a Backmux process. | Check its executable name, including Linux's 15-byte `comm` limit. Verified with an actual binary named `backmux-under-test`; the privileged companion uses the same helper. |
 
 No existing duplicate identities or conflicting records are automatically
 renamed or deleted. Allocation uses the project's existing advisory lock;
@@ -67,17 +67,17 @@ installer tests, and the Docker-shaped smoke test also passed.
 
 ```sh
 make -j4 CFLAGS='-std=c11 -Wall -Wextra -Wpedantic -Werror -O2' \
-  callbox callbox-dynamic callbox-test
+  backmux backmux-dynamic backmux-test
 
 env PATH="/tmp/readiness-tools:$PATH" HOLD_TEST_SOCKETS_DENIED=1 \
   make test CFLAGS='-std=c11 -Wall -Wextra -Wpedantic -Werror -O2'
 
-HOLD_TEST_ONLY=help_pages_fit_and_say_it HOLD_BIN=./callbox-test \
-  HOLD_TEST_SOCKETS_DENIED=1 bash tests/test_callbox.sh
+HOLD_TEST_ONLY=help_pages_fit_and_say_it HOLD_BIN=./backmux-test \
+  HOLD_TEST_SOCKETS_DENIED=1 bash tests/test_backmux.sh
 
 bash scripts/lint_layers.sh
 bash scripts/check_version_sync.sh
-bash -n tests/test_callbox.sh
+bash -n tests/test_backmux.sh
 git diff --check
 ```
 
@@ -109,16 +109,16 @@ Markdown files resolved, and 16 executable shell example blocks passed
   and help-topic aliases remain available. The old abbreviation `m` is now
   ambiguous with `msg`; use `msg` or `monitor` explicitly.
 - `monitor` is a reserved verb/name. An external program named `monitor`
-  can still be launched with `callbox -- monitor`. An existing call with
+  can still be launched with `backmux -- monitor`. An existing call with
   that name can be managed normally, redialed by ID, or renamed.
 - An outside inbox starts with the first `msg`, not with `monitor`.
   Its default identity depends on process ancestry; explicit inbox names
   work when crossing harnesses or terminals. Reading history, waiting, and
   monitoring share unread progress; they are not independent subscriptions.
 - `--wait-reply` takes the first new inbox message from any sender. It
-  provides no request correlation. Callbox does not determine whether a
+  provides no request correlation. Backmux does not determine whether a
   harness queued a message, finished a task, or woke an agent on output.
-- Callbox cannot adopt a program started outside it. Mouse input requires
+- Backmux cannot adopt a program started outside it. Mouse input requires
   the application to enable reporting. Only one interactive client can
   attach to a call, while independent control commands remain available.
 - Plain `-d` and `-dw` calls have logs but no screen or input console.

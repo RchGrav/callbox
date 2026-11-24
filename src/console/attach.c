@@ -1,9 +1,9 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/console.h"
-#include "callbox/core.h"
-#include "callbox/term.h"
-#include "callbox/console_internal.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/console.h"
+#include "backmux/core.h"
+#include "backmux/term.h"
+#include "backmux/console_internal.h"
 
 #define CONSOLE_ATTACH_CTRL_P 0x10
 #define CONSOLE_ATTACH_CTRL_Q 0x11
@@ -61,10 +61,10 @@ void hold_console_set_forward_term(bool on) {
     g_forward_term = on;
 }
 
-/* The broker's words to a client it turns away: "callbox: console already
+/* The broker's words to a client it turns away: "backmux: console already
  * attached (by pid N)". Returns whether text is that refusal; *by the pid. */
 static bool parse_refusal(const char *text, size_t n, pid_t *by) {
-    static const char lead[] = "callbox: console already attached";
+    static const char lead[] = "backmux: console already attached";
     *by = 0;
     if (n < sizeof(lead) - 1 || memcmp(text, lead, sizeof(lead) - 1) != 0) return false;
     const char *p = memchr(text, '(', n);
@@ -241,7 +241,7 @@ static int attach_on_detach(void *ctx) {
 static int attach_on_input_end(void *ctx) {
     struct attach_state *a = ctx;
     if (!g_stream) {
-        /* callbox attach whose input ran out: it leaves (closing our side is
+        /* backmux attach whose input ran out: it leaves (closing our side is
          * how the broker learns), as it always has - the program's input
          * stays open for the next attach, and a piped attach returns. */
         if (a->writer == a->sock) {
@@ -258,11 +258,11 @@ static int attach_on_input_end(void *ctx) {
         return sent_or_over(write_frame(a->writer, CONSOLE_FRAME_EOF, NULL, 0));
     }
     /* On a PTY, closing our side would read to the broker as leaving: stay,
-     * and show the output until the program ends - `callbox make test
+     * and show the output until the program ends - `backmux make test
      * </dev/null` from a script must not detach at once. A launch from a
      * script passes its input's end on (the broker types the terminal's
      * end-of-input key, Ctrl-D, without echoing it), so a program reading
-     * stdin finishes, as it would have on /dev/null. callbox attach does
+     * stdin finishes, as it would have on /dev/null. backmux attach does
      * not: that would end an attached shell. */
     if (g_stream && a->writer >= 0) return sent_or_over(write_frame(a->writer, CONSOLE_FRAME_EOF, NULL, 0));
     return 0;
@@ -275,7 +275,7 @@ static int attach_on_resize(void *ctx, const struct winsize *ws) {
     return -1;
 }
 
-/* Our reader went away (`callbox foo | head`): stop showing output. The
+/* Our reader went away (`backmux foo | head`): stop showing output. The
  * call itself is not ours to end - it keeps running - and the caller says
  * so, then ends as a writer to a closed pipe does. */
 static int stdout_failed(void) {
@@ -294,7 +294,7 @@ static int attach_on_output(void *ctx, const char *buf, size_t n) {
     const char *out = buf;
     size_t out_len = n;
     if (a->holding) {
-        static const char lead[] = "callbox: ";
+        static const char lead[] = "backmux: ";
         size_t room = sizeof(a->held) - a->held_len, take = out_len < room ? out_len : room;
         memcpy(a->held + a->held_len, out, take);
         a->held_len += take;
@@ -348,7 +348,7 @@ int hold_run_native_console(const char *sock_path) {
             g_gone = true;
             return 3;
         }
-        fprintf(stderr, "callbox: cannot attach: %s\n", strerror(e));
+        fprintf(stderr, "backmux: cannot attach: %s\n", strerror(e));
         return e == ENOTSOCK || e == ENAMETOOLONG ? 5 : 3;
     }
 
@@ -415,10 +415,10 @@ int hold_run_native_console(const char *sock_path) {
         end = hold_client_run(&c);
         if (hold_term_stop_signal()) end = HOLD_CLIENT_SIGNALED; /* even if it broke a blocked write */
         if (end == HOLD_CLIENT_SIGNALED && g_forward_term && hold_term_stop_signal() == SIGTERM && a.writer >= 0) {
-            /* A launch told to stop (`timeout 8 callbox foo`) passes SIGTERM on
+            /* A launch told to stop (`timeout 8 backmux foo`) passes SIGTERM on
              * to its program, as docker run's sig-proxy does: the program was
              * run here, and must not be left behind unseen. (SIGHUP - the
-             * terminal went away - detaches: callbox keeps programs running.) */
+             * terminal went away - detaches: backmux keeps programs running.) */
             unsigned char sig = SIGTERM;
             (void)write_frame(a.writer, CONSOLE_FRAME_INTERRUPT, &sig, 1);
         }
@@ -455,7 +455,7 @@ int hold_run_native_console(const char *sock_path) {
     if (saved.saved && !g_line_mode) {
         /* A program run inside the console may have left terminal-global modes
          * enabled — mouse reporting, bracketed paste, focus reports, application
-         * keypad/cursor keys, a cursor style, a hidden cursor — and a callbox
+         * keypad/cursor keys, a cursor style, a hidden cursor — and a backmux
          * shell's display sets them on its behalf (and may be cut off inside a
          * synchronized update). These survive the PTY teardown and would leak
          * back to the user's shell, so reset them before handing the terminal

@@ -1,8 +1,8 @@
-#include "callbox/config.h"
-#include "callbox/core.h"
-#include "callbox/term.h"
+#include "backmux/config.h"
+#include "backmux/core.h"
+#include "backmux/term.h"
 
-/* THE spawn engine. Every callbox process that starts a program under a
+/* THE spawn engine. Every backmux process that starts a program under a
  * console broker - on a PTY, or on pipes - goes through term_spawn; there is
  * no second copy of the fork/setsid/dup2/exec ladder or of the errno
  * handshake anywhere else. */
@@ -59,7 +59,7 @@ int hold_cloexec_pipe(int fds[2]) {
 #endif
     /* Non-Linux builds set FD_CLOEXEC after pipe(); unlike pipe2(O_CLOEXEC),
      * that is not atomic with respect to concurrent fork/exec in a
-     * multi-threaded process. callbox is single-threaded at every spawn site, so
+     * multi-threaded process. backmux is single-threaded at every spawn site, so
      * the fallback is acceptable. */
     if (pipe(fds) != 0) {
         return -1;
@@ -117,7 +117,7 @@ static int term_child_stdio(const struct term_stdio *io) {
         if (dup2(fds[target], target) < 0) return -1;
     for (int target = 0; target < 3; target++) {
         /* dup2 onto itself keeps O_CLOEXEC: clear it, or exec closes this
-         * stdio fd (when callbox was started with one closed). */
+         * stdio fd (when backmux was started with one closed). */
         int fl = fcntl(target, F_GETFD);
         if (fl >= 0) (void)fcntl(target, F_SETFD, fl & ~FD_CLOEXEC);
     }

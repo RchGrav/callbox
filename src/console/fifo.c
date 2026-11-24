@@ -1,8 +1,8 @@
-#include "callbox/config.h"
-#include "callbox/core.h"
-#include "callbox/console.h"
-#include "callbox/platform.h"
-#include "callbox/console_internal.h"
+#include "backmux/config.h"
+#include "backmux/core.h"
+#include "backmux/console.h"
+#include "backmux/platform.h"
+#include "backmux/console_internal.h"
 
 /* The console over FIFOs, for environments that deny Unix-domain sockets
  * (some sandboxes refuse socket(AF_UNIX) with EPERM). The broker's endpoint
@@ -17,7 +17,7 @@
  * "out": 'R' ready, 'B' busy (try again), 'D' denied. From then on the pair is
  * the connection: the same framed protocol as the socket, minus the control
  * magic (the kind already said it). The claimed pid is believed only if that
- * process holds the "in" FIFO open — the peer identity callbox msg verifies. */
+ * process holds the "in" FIFO open — the peer identity backmux msg verifies. */
 
 #define FIFO_INTRO_LEN 17
 

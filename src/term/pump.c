@@ -1,8 +1,8 @@
-#include "callbox/config.h"
-#include "callbox/core.h"
-#include "callbox/term.h"
+#include "backmux/config.h"
+#include "backmux/core.h"
+#include "backmux/term.h"
 
-/* THE PTY-master pump. Every reader of a callbox-owned PTY master drains it
+/* THE PTY-master pump. Every reader of a backmux-owned PTY master drains it
  * through this one step so the capture path (log first, then caller
  * fan-out) and the end-of-target semantics live in exactly one place.
  *

@@ -2,8 +2,8 @@
 #ifndef HOLD_CLI_H
 #define HOLD_CLI_H
 
-#include "callbox/config.h"
-#include "callbox/types.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
 
 /* Flags the owned-command sweep can set — one bool per spec-gated flag. The
  * pre-scan seeds requested_system/quiet; the sweep may add to them. */

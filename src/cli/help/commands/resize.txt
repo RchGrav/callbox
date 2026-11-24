@@ -1,9 +1,9 @@
-usage: callbox resize <target> <cols> <rows>   (or <cols>x<rows>)
+usage: backmux resize <target> <cols> <rows>   (or <cols>x<rows>)
 
 Resize a running TTY call's terminal to <cols> <rows> (or <cols>x<rows>), each
-1-1000. The program receives SIGWINCH, and the screen callbox peek shows reflows
+1-1000. The program receives SIGWINCH, and the screen backmux peek shows reflows
 with it. To start a call at a size, place it with --size <cols> <rows>;
-callbox config set detach-size saves a default for detached TTY calls.
+backmux config set detach-size saves a default for detached TTY calls.
 
 For a -i pipe-input call, only the screen model changes: the program has no
 terminal to resize or SIGWINCH to receive.

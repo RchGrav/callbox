@@ -1,4 +1,4 @@
-usage: callbox ps [-a|--all] [name]
+usage: backmux ps [-a|--all] [name]
 
 List running calls across your personal and root-managed stores.
 -a, --all includes ended calls. A name filters the listing.

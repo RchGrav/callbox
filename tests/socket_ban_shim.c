@@ -2,7 +2,7 @@
  * sandboxes do (ChatGPT's code environment refuses socket(AF_UNIX)), so the
  * FIFO console's automatic fallback runs for real. Linux, dynamic builds:
  *   cc -shared -fPIC -o socket-ban.so tests/socket_ban_shim.c -ldl
- *   LD_PRELOAD=$PWD/socket-ban.so HOLD_TEST_SOCKETS_DENIED=1 bash tests/test_callbox.sh */
+ *   LD_PRELOAD=$PWD/socket-ban.so HOLD_TEST_SOCKETS_DENIED=1 bash tests/test_backmux.sh */
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <errno.h>

@@ -2,8 +2,8 @@
 #ifndef HOLD_CORE_H
 #define HOLD_CORE_H
 
-#include "callbox/config.h"
-#include "callbox/types.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
 
 struct sha256_ctx {
     uint32_t h[8];
@@ -26,8 +26,8 @@ void hold_format_duration_human(int64_t seconds, char *out, size_t n);
 bool hold_parse_rfc3339_utc_to_ns(const char *s, int64_t *out_ns);
 const char *hold_run_id_display(const char *id, char out[ID_DISPLAY_HEX_LEN + 1]);
 int hold_copy_argv(char ***out, int argc, char **argv);
-/* THE terminal-size grammar, shared by --size, callbox config set detach-size
- * and callbox resize: two words "COLS ROWS", or one word "COLSxROWS". second
+/* THE terminal-size grammar, shared by --size, backmux config set detach-size
+ * and backmux resize: two words "COLS ROWS", or one word "COLSxROWS". second
  * may be NULL. Returns how many words the size took (1 or 2), or -1 with a
  * one-line reason in why: missing or non-numeric words, zero, negative, and
  * anything beyond HOLD_TERM_MAX_DIM are all refused. */

@@ -1,7 +1,7 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/core.h"
-#include "callbox/store.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/core.h"
+#include "backmux/store.h"
 
 /* Operator inboxes: where replies go for an agent that runs outside any call
  * (a Claude Code session in a plain terminal, a script). Such a sender has no
@@ -15,7 +15,7 @@
  *                 "the next message" means the next unread one
  *
  * Why files and no daemon: the sender may not be running when a reply comes,
- * and callbox keeps no process for it. A name and its messages expire after
+ * and backmux keeps no process for it. A name and its messages expire after
  * HOLD_INBOX_TTL_S unused; nothing is rewritten in place (messages are only
  * appended, and expired ones are skipped on read and removed with their name),
  * so a reader's offset into .msgs stays valid while it waits. */

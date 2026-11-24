@@ -29,7 +29,7 @@ SRCS := $(wildcard src/*.c) \
         $(wildcard src/cli/*.c)
 
 # Vendored libvterm (third_party/libvterm, MIT): built with its own flags so the
-# project's warning set (and CI's -Werror) applies to Callbox's code only, while
+# project's warning set (and CI's -Werror) applies to Backmux's code only, while
 # optimization and sanitizer flags still carry over.
 VTERM_SRCS := $(wildcard third_party/libvterm/src/*.c)
 VTERM_CFLAGS := $(filter-out -Werror -Wall -Wextra -Wpedantic -std=%,$(CFLAGS)) -std=c99 -w
@@ -39,7 +39,7 @@ VTERM_CFLAGS := $(filter-out -Werror -Wall -Wextra -Wpedantic -std=%,$(CFLAGS)) 
 # into a release binary, and vice versa.
 VTERM_OBJS := $(patsubst third_party/libvterm/src/%.c,obj/vterm/%.o,$(VTERM_SRCS))
 # The help pages are plain text in src/cli/help (readable on GitHub); a
-# generated C file compiles them in, so callbox reads no files to print help.
+# generated C file compiles them in, so backmux reads no files to print help.
 HELP_TXT := $(sort $(wildcard src/cli/help/*.txt src/cli/help/*/*.txt))
 HELP_GEN := gen/help_text.c
 
@@ -55,7 +55,7 @@ TEST_CPPFLAGS := -DHOLD_TESTING -DHOLD_BOOT_ID_PATH='"/tmp/hold_test_boot_id"'
 # rebuild once.
 DEPFLAGS := -MMD -MP
 
-all: callbox
+all: backmux
 
 obj/vterm/%.o: third_party/libvterm/src/%.c Makefile
 	@mkdir -p $(dir $@)
@@ -85,41 +85,41 @@ obj/platform/paths-static.o: src/platform/paths.c Makefile
 	@mkdir -p $(dir $@)
 	$(CC) $(ALL_CPPFLAGS) -DHOLD_STATIC_LINK $(DEPFLAGS) $(CFLAGS) -c -o $@ $<
 
-callbox: $(STATIC_OBJS)
+backmux: $(STATIC_OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(STATIC_LDFLAGS) -o $@ $(STATIC_OBJS)
 
-callbox-dynamic: $(OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o callbox-dynamic $(OBJS)
+backmux-dynamic: $(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o backmux-dynamic $(OBJS)
 
 obj-test/%.o: src/%.c Makefile
 	@mkdir -p $(dir $@)
 	$(CC) $(ALL_CPPFLAGS) $(TEST_CPPFLAGS) $(DEPFLAGS) $(CFLAGS) -c -o $@ $<
 
-# The suite's binary is callbox-test, never ./callbox: a -DHOLD_TESTING build
+# The suite's binary is backmux-test, never ./backmux: a -DHOLD_TESTING build
 # honors test-only environment (HOLD_TEST_SYSTEM_STATE_DIR, failure
 # injection) and is linked dynamically, so it must not be left where the
 # release binary goes - nor be taken for it by a later `make`, which would
 # call the test build up to date.
-callbox-test: $(TEST_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(TEST_LDFLAGS) -o callbox-test $(TEST_OBJS)
+backmux-test: $(TEST_OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(TEST_LDFLAGS) -o backmux-test $(TEST_OBJS)
 
-test: callbox-test
-	@HOLD_BIN=./callbox-test bash tests/test_callbox.sh
+test: backmux-test
+	@HOLD_BIN=./backmux-test bash tests/test_backmux.sh
 	@$(MAKE) screen-test
 	@bash tests/test_version_makefile.sh
 	@bash tests/test_release_installer.sh
 	@$(MAKE) test-040
 
-screen-test: tests/screen_test.c src/screen/screen.c src/console/compose.c src/console/overlay.h src/term/line.c $(wildcard include/callbox/*.h) $(VTERM_OBJS)
+screen-test: tests/screen_test.c src/screen/screen.c src/console/compose.c src/console/overlay.h src/term/line.c $(wildcard include/backmux/*.h) $(VTERM_OBJS)
 	$(CC) $(ALL_CPPFLAGS) $(TEST_CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o screen-test tests/screen_test.c src/screen/screen.c src/console/compose.c src/term/line.c $(VTERM_OBJS)
 	@./screen-test
 
 # The test build: only it honors HOLD_TEST_SYSTEM_STATE_DIR, so run as root
 # (the root CI lane) a release build wrote into the machine's real system
-# store. It used to pass by reusing a test-flag callbox-dynamic the suite's
+# store. It used to pass by reusing a test-flag backmux-dynamic the suite's
 # build test left in the tree; that test now builds in a copy.
-test-040: callbox-test
-	@HOLD_BIN=./callbox-test bash tests/test_040_dockerish.sh
+test-040: backmux-test
+	@HOLD_BIN=./backmux-test bash tests/test_040_dockerish.sh
 
 print-version:
 	@printf '%s\n' '$(VERSION)'
@@ -139,7 +139,7 @@ lint:
 -include $(wildcard obj/*.d obj/*/*.d obj-test/*.d obj-test/*/*.d)
 
 clean:
-	rm -f callbox callbox-dynamic callbox-test screen-test
+	rm -f backmux backmux-dynamic backmux-test screen-test
 	rm -rf obj obj-test gen
 
 .PHONY: all clean test test-040 check ci lint screen-test print-version

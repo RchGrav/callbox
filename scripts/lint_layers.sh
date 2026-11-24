@@ -7,19 +7,19 @@ cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
 fail=0
 viol() {
-  if grep -rlE "#include \"callbox/($2)\\.h\"" $1 2>/dev/null; then
+  if grep -rlE "#include \"backmux/($2)\\.h\"" $1 2>/dev/null; then
     echo "DAG violation in: $1 (forbidden include of: $2)"
     fail=1
   fi
 }
-viol "src/core include/callbox/core.h"                                          'platform|store|term|console|access|runtime|cli'
-viol "src/screen include/callbox/screen.h"                                      'platform|store|term|console|access|runtime|cli'
-viol "src/platform include/callbox/platform.h"                                  'store|term|console|access|runtime|cli'
-viol "src/store include/callbox/store.h"                                        'term|console|access|runtime|cli'
-viol "src/term include/callbox/term.h"                                          'console|access|runtime|cli'
-viol "src/console include/callbox/console.h include/callbox/console_internal.h" 'access|runtime|cli'
-viol "src/access include/callbox/access.h"                                      'runtime|cli'
-viol "src/runtime include/callbox/runtime.h include/callbox/runtime_internal.h" 'cli'
+viol "src/core include/backmux/core.h"                                          'platform|store|term|console|access|runtime|cli'
+viol "src/screen include/backmux/screen.h"                                      'platform|store|term|console|access|runtime|cli'
+viol "src/platform include/backmux/platform.h"                                  'store|term|console|access|runtime|cli'
+viol "src/store include/backmux/store.h"                                        'term|console|access|runtime|cli'
+viol "src/term include/backmux/term.h"                                          'console|access|runtime|cli'
+viol "src/console include/backmux/console.h include/backmux/console_internal.h" 'access|runtime|cli'
+viol "src/access include/backmux/access.h"                                      'runtime|cli'
+viol "src/runtime include/backmux/runtime.h include/backmux/runtime_internal.h" 'cli'
 
 if [ "$fail" -ne 0 ]; then
   echo "layer dependency direction: VIOLATIONS found" >&2

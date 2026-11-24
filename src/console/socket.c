@@ -1,8 +1,8 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/console.h"
-#include "callbox/core.h"
-#include "callbox/console_internal.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/console.h"
+#include "backmux/core.h"
+#include "backmux/console_internal.h"
 
 #include <stddef.h> /* offsetof: musl does not pull it in indirectly */
 
@@ -117,7 +117,7 @@ static bool sockets_denied(int err) {
 }
 
 bool hold_console_fallback_selected(void) {
-    const char *want = getenv("CALLBOX_CONSOLE_TRANSPORT");
+    const char *want = getenv("BACKMUX_CONSOLE_TRANSPORT");
     if (want && !strcmp(want, "fifo")) return true;
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return sockets_denied(errno);
@@ -128,7 +128,7 @@ bool hold_console_fallback_selected(void) {
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    int len = snprintf(addr.sun_path + 1, sizeof(addr.sun_path) - 1, "callbox-probe-%ld", (long)getpid());
+    int len = snprintf(addr.sun_path + 1, sizeof(addr.sun_path) - 1, "backmux-probe-%ld", (long)getpid());
     socklen_t alen = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + 1 + (size_t)len);
     if (bind(fd, (struct sockaddr *)&addr, alen) != 0 || listen(fd, 1) != 0) denied = sockets_denied(errno);
 #endif
@@ -137,12 +137,12 @@ bool hold_console_fallback_selected(void) {
 }
 
 /* The broker's endpoint: a Unix socket, or — where sockets are denied, or
- * CALLBOX_CONSOLE_TRANSPORT=fifo asks for it — a FIFO at the same path (see
+ * BACKMUX_CONSOLE_TRANSPORT=fifo asks for it — a FIFO at the same path (see
  * fifo.c). *fifo_writer is -1 for a socket, else the broker's own writer
  * that keeps the FIFO open. Clients pick the transport by the file type. */
 int hold_make_console_listener(const char *sock_path, int *fifo_writer) {
     *fifo_writer = -1;
-    const char *want = getenv("CALLBOX_CONSOLE_TRANSPORT");
+    const char *want = getenv("BACKMUX_CONSOLE_TRANSPORT");
     if (!(want && !strcmp(want, "fifo"))) {
         int fd = console_socket_in_dir(sock_path, true);
         if (fd >= 0 || !sockets_denied(errno)) return fd;
@@ -160,7 +160,7 @@ int hold_connect_console_socket(const char *sock_path) {
     int fd = console_socket_in_dir(sock_path, false);
     if (fd < 0) {
         if (errno == ENAMETOOLONG) {
-            fprintf(stderr, "callbox: console socket path is too long\n");
+            fprintf(stderr, "backmux: console socket path is too long\n");
         }
         return -1;
     }
@@ -220,7 +220,7 @@ int hold_console_peer_uid(int fd, uid_t *uid_out) {
 }
 
 /* The connecting process's pid (Linux SO_PEERCRED, macOS LOCAL_PEERPID);
- * used to verify a callbox msg sender's claimed call. ENOTSUP elsewhere. */
+ * used to verify a backmux msg sender's claimed call. ENOTSUP elsewhere. */
 int hold_console_peer_pid(int fd, pid_t *pid_out) {
 #if defined(__linux__)
     struct ucred cred;

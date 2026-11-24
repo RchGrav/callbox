@@ -2,7 +2,7 @@
 #ifndef HOLD_SCREEN_H
 #define HOLD_SCREEN_H
 
-#include "callbox/config.h"
+#include "backmux/config.h"
 
 /* The screen layer: a headless terminal (vendored libvterm) that a PTY call's
  * broker feeds every output byte into, plus the snapshot format every viewer
@@ -64,7 +64,7 @@ struct hold_screen_meta {
     int32_t exit_code;
     bool has_mouse;       /* the last injected mouse event, for the reticle */
     uint16_t mouse_row, mouse_col;
-    bool size_by_agent;   /* the current size was set by callbox resize */
+    bool size_by_agent;   /* the current size was set by backmux resize */
 };
 
 struct hold_snapshot {

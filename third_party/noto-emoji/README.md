@@ -10,7 +10,7 @@ Copyright 2013 Google LLC; used under the SIL Open Font License 1.1 (see
 `scripts/gen_font.py --emoji NotoEmoji[wght].ttf ...` rasterizes, from the
 font's TrueType outlines and with no font tooling, every emoji the terminal
 grid makes double-width (libvterm's `fullwidth.inc`) to a 32x32 anti-aliased
-coverage mask (4 bits per pixel) in `src/screen/font_data.h`. `callbox peek
+coverage mask (4 bits per pixel) in `src/screen/font_data.h`. `backmux peek
 --image` draws it in the cell's foreground color, resampled to the cell size;
 single-width (text-style) symbols keep their Unifont glyph. Noto's monochrome
 design marks colored circles and squares with hatching patterns.

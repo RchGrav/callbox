@@ -1,4 +1,4 @@
-usage: callbox send <target> [TEXT]... [--text TEXT] [-k KEY]...
+usage: backmux send <target> [TEXT]... [--text TEXT] [-k KEY]...
                  [--keys "K1 K2"] [--enter] [--paste TEXT|-] [--stdin] [--seq]
                  [--mouse ACTION,COL,ROW[,BUTTON]] [--wait MS [--timeout MS]]
 
@@ -23,7 +23,7 @@ input; plain -d and -dw calls do not. Arguments are applied in order.
                    or 3 right. Drag with press, then drag, then release.
   --wait MS        then wait until the program has answered and gone quiet for
                    MS (--timeout MS bounds the wait; 10s if left out)
-  --seq            print the output counter, for callbox wait --since
+  --seq            print the output counter, for backmux wait --since
 
 Keys are encoded for the program's current modes. A curses program can read
 Escape and the key after it as one Alt key (ESCDELAY): send -k Escape in a

@@ -2,9 +2,9 @@
 #ifndef HOLD_RUNTIME_INTERNAL_H
 #define HOLD_RUNTIME_INTERNAL_H
 
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/runtime.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/runtime.h"
 
 void hold_report_session_escapees(const struct hold_run_record *r);
 /* Choose a name shared by calls and operator inboxes, honoring records,
@@ -15,7 +15,7 @@ int hold_pick_run_name_locked(const struct hold_store *store, const char *id, co
 /* Parse a nonnegative, representable millisecond count: 0 succeeds, -1 is
  * invalid. Shared by inbox/monitor and msg --wait-reply. */
 int hold_parse_inbox_timeout_ms(const char *text, long *value);
-/* Before attaching: if this process runs inside a call (CALLBOX_ID) that
+/* Before attaching: if this process runs inside a call (BACKMUX_ID) that
  * has a console in one of these stores, the attach is nested in that call's
  * terminal; the console layer is told where that call's broker listens. */
 void hold_note_enclosing_call(const struct hold_store *a, const struct hold_store *b);
@@ -48,7 +48,7 @@ enum run_state hold_eval_state(const struct hold_run_record *r, const char *curr
 /* Running, but its pid is not visible from here (another PID namespace): act
  * through its supervisor - the broker, or a -d call's reaper. */
 bool hold_call_elsewhere(const struct hold_run_record *r, const char *current_boot);
-/* Does a callbox process record this call's exit code? Its broker (TTY) or a
+/* Does a backmux process record this call's exit code? Its broker (TTY) or a
  * waiter (-w, foreground, --rm, --restart) does; a plain -d call has none. */
 bool hold_call_records_exit(const struct hold_run_record *r);
 int hold_tail_log_until_exit(const struct hold_run_record *r, bool from_end, bool follow_until_exit);
@@ -70,7 +70,7 @@ int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const 
  * name free. No-op for calls without --rm or already gone. */
 void hold_auto_remove_settle(const struct hold_store *store, const char *id, int timeout_ms);
 /* The exit code of an --rm call removed in the last minute, by id prefix or
- * name: removal leaves it behind so `callbox wait` can still report it. */
+ * name: removal leaves it behind so `backmux wait` can still report it. */
 bool hold_auto_removed_exit(const struct hold_store *store, const char *token, int *code);
 bool hold_record_matches_alias_intent(const char *command, const struct hold_run_record *r, enum run_state st);
 int hold_report_not_found(const char *token);

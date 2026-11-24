@@ -1,7 +1,7 @@
-#include "callbox/config.h"
-#include "callbox/console.h"
-#include "callbox/core.h"
-#include "callbox/console_internal.h"
+#include "backmux/config.h"
+#include "backmux/console.h"
+#include "backmux/core.h"
+#include "backmux/console_internal.h"
 
 /* Client side of the broker's control protocol (see console_internal.h):
  * magic, one be32-length request, one be32-length reply. Blocking; the

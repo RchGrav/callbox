@@ -2,8 +2,8 @@
 #ifndef HOLD_RUNTIME_H
 #define HOLD_RUNTIME_H
 
-#include "callbox/config.h"
-#include "callbox/types.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
 
 bool hold_start_target_is_within_invoking_home(const struct hold_invocation *inv,
                                                  bool owned,
@@ -25,10 +25,10 @@ struct hold_start_options {
     const char *restart_policy;
     int restart_delay_seconds; /* HOLD_RESTART_BACKOFF: none given, back off */
     int size_cols, size_rows; /* --size, or a redialed recipe's: 0 = resolve (see start.c) */
-    bool chat;                /* callbox shell: composited display, messages to the chat inbox */
+    bool chat;                /* backmux shell: composited display, messages to the chat inbox */
     bool user_mode;           /* placed in user mode: recorded, so redial at a terminal gets chat
                                  even when this launch (from a script) could not draw it */
-    bool shell;               /* placed with callbox shell */
+    bool shell;               /* placed with backmux shell */
     unsigned char chat_key;   /* the key that opens chat; 0 = the default */
     const char *existing_id;
     const char *existing_log_path;
@@ -39,7 +39,7 @@ struct hold_start_options {
 int hold_perform_start_options(const struct hold_invocation *inv,
                                  const struct hold_store *store,
                                  const struct hold_start_options *opts);
-/* list is Callbox's scoped ledger: which stores it draws from depends on the
+/* list is Backmux's scoped ledger: which stores it draws from depends on the
  * requested scope, resolved against the caller's privilege. */
 enum hold_list_scope {
     HOLD_LIST_SCOPE_DEFAULT, /* non-root: the user's own store; root: the global store */
@@ -116,7 +116,7 @@ int hold_cmd_resize_action(const struct hold_invocation *inv, const struct hold_
  * when it has none and create is false), the note printed with its first
  * message, waiting on an inbox (forever_each: print every message until
  * stopped; else return after one; exit 0, 7 timed out, 8 the inbox expired),
- * and callbox inbox. */
+ * and backmux inbox. */
 int hold_operator_name(const struct hold_store *store, bool create, char *name, size_t n, bool *made);
 void hold_operator_first_note(const char *name);
 int hold_inbox_wait(const struct hold_store *store, const char *name, off_t from_off, bool forever_each, long timeout_ms);
@@ -124,7 +124,7 @@ int hold_cmd_inbox_action(const struct hold_invocation *inv, const struct hold_s
 int hold_cmd_monitor_action(const struct hold_invocation *inv, const struct hold_store *user_store, int argc, char **argv);
 int hold_cmd_msg_action(const struct hold_invocation *inv, const struct hold_store *user_store,
                         const struct hold_store *system_store, int argc, char **argv);
-/* callbox config get|set|unset <setting> [value] (src/runtime/config_cmd.c). */
+/* backmux config get|set|unset <setting> [value] (src/runtime/config_cmd.c). */
 int hold_cmd_config_action(const struct hold_invocation *inv, int argc, char **argv);
 /* The saved detach-size default: 0 with the size, 1 when unset, -1 (message
  * printed) when what is saved does not read as a size. */

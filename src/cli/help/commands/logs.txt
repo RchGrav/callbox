@@ -1,4 +1,4 @@
-usage: callbox logs <target> [--follow|-f] [--tail|-n N]
+usage: backmux logs <target> [--follow|-f] [--tail|-n N]
 
 Print a call's captured output, byte for byte as the program wrote it: plain
 text for a plain call; for a TTY call, its escape sequences too (colors,
@@ -10,5 +10,5 @@ cursor moves), as a terminal would receive them.
 For compatibility, --plain, --print, and -p are accepted; they do not change
 the output or remove terminal escape sequences. --tail=N also works.
 
-The log is a file: log_path in callbox inspect <target> names it. For the live
-screen of a TTY call, use callbox peek.
+The log is a file: log_path in backmux inspect <target> names it. For the live
+screen of a TTY call, use backmux peek.

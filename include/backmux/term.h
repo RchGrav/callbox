@@ -6,7 +6,7 @@
  * knows PTYs, processes-on-PTYs, and pumps — never records, sockets, or
  * commands (layer DAG: store -> term -> console). */
 
-#include "callbox/config.h"
+#include "backmux/config.h"
 
 struct hold_term_spawn {
     char *const *argv;     /* required: argv[0] non-NULL, NULL-terminated */
@@ -26,13 +26,13 @@ int hold_term_pty_spawn(const struct hold_term_spawn *spec,
 
 /* Spawns argv on pipes instead: its stdin reads from *in_w_out's pipe, its
  * stdout and stderr write to *out_r_out's, in a session of its own. For a
- * program whose input is relayed (callbox -i): the relay can be cut and
+ * program whose input is relayed (backmux -i): the relay can be cut and
  * reconnected, and the program never holds a person's terminal. */
 int hold_term_pipe_spawn(const struct hold_term_spawn *spec,
                          int *in_w_out, int *out_r_out, pid_t *pid_out);
 
 /* THE CLOEXEC pipe: pipe2(O_CLOEXEC) where available, else pipe() + FD_CLOEXEC
- * (acceptable: callbox is single-threaded at every spawn site). Returns 0 with
+ * (acceptable: backmux is single-threaded at every spawn site). Returns 0 with
  * fds[0]=read, fds[1]=write, or -1 with errno set and nothing left open. */
 int hold_cloexec_pipe(int fds[2]);
 

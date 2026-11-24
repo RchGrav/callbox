@@ -1,17 +1,17 @@
 # Docker familiarity contract
 
-[Docs index](index.md) | [Callbox identity](callbox-identity.md)
+[Docs index](index.md) | [Backmux identity](backmux-identity.md)
 
-Status: normative, subordinate to [callbox-identity.md](callbox-identity.md).
-Callbox's verbs are its own. It borrows Docker's **flag behavior** and **table
-appearance**, because that muscle memory is worth keeping. When Callbox's
-behavior disagrees with this document, Callbox is wrong. Tests assert the
+Status: normative, subordinate to [backmux-identity.md](backmux-identity.md).
+Backmux's verbs are its own. It borrows Docker's **flag behavior** and **table
+appearance**, because that muscle memory is worth keeping. When Backmux's
+behavior disagrees with this document, Backmux is wrong. Tests assert the
 shapes written here.
 
 ## Flags
 
-These flags borrow their `docker run` spelling on Callbox's launch form
-(`callbox [flags] <cmd> ...`). The shapes are familiar, not identical: Callbox
+These flags borrow their `docker run` spelling on Backmux's launch form
+(`backmux [flags] <cmd> ...`). The shapes are familiar, not identical: Backmux
 runs host processes, not containers, and has no daemon.
 
 ```text
@@ -33,53 +33,53 @@ Value flags also take `--flag=value`. Flags come before the command; every
 word after the command is the command's own.
 
 The command is resolved against the invoking environment's `PATH`.
-`-e`/`--env-file` set the held process's environment only, never Callbox's
+`-e`/`--env-file` set the held process's environment only, never Backmux's
 own. A root-managed call starts from an empty environment with a fixed
 `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`, then
-applies `-e`/`--env-file`. Every call also gets `CALLBOX_ID`, `CALLBOX_PARENT`
-when placed from inside another call, and `CALLBOX_NAME` when named.
+applies `-e`/`--env-file`. Every call also gets `BACKMUX_ID`, `BACKMUX_PARENT`
+when placed from inside another call, and `BACKMUX_NAME` when named.
 
 A foreground launch prints nothing of its own, only the process output, and
 exits with the held process's exit status, as `docker run` does.
 
-Where callbox differs: with no session flags, a program runs attached on a
-PTY in user mode, with a chat window when there is a terminal (see callbox
+Where backmux differs: with no session flags, a program runs attached on a
+PTY in user mode, with a chat window when there is a terminal (see backmux
 help launch); `-it` is attached on a PTY without the window, so messages
 for the program are typed in. Docker's bare `docker run` attaches without a TTY;
-callbox's bare form is how a person runs a terminal program, and scripts and
+backmux's bare form is how a person runs a terminal program, and scripts and
 agents name what they want (`-d`, `-dt`, `-dw`, `-i`).
 
 The keys are Docker's, in every mode you are on a call: Ctrl-C goes to the
-program (Docker's sig-proxy; without a terminal, a SIGINT sent to callbox is
+program (Docker's sig-proxy; without a terminal, a SIGINT sent to backmux is
 passed on), and `Ctrl-P Ctrl-Q` detaches, leaving it running. Docker's detach
-keys need a TTY; callbox reads keys itself, so they also detach `-i` calls
+keys need a TTY; backmux reads keys itself, so they also detach `-i` calls
 and plain foreground calls (`-w`). Following a log (`logs -f`, `tail`,
 `--tail`) is not being on a call: Ctrl-C stops following, as `docker logs -f`
 does.
 
 `-i` gives the program a pipe its broker holds, never your terminal, as
 Docker's `-i` gives a container a pipe: piped input streams in and ends with
-EOF, Ctrl-D ends typed input, and `callbox attach` reconnects input and
+EOF, Ctrl-D ends typed input, and `backmux attach` reconnects input and
 output (`-di` starts it in the background with its input open).
 
 Flags that need a container are rejected with exit 1 and an explanation, so
 a script never believes they took effect:
 
-- `-p`, `-P`, `--publish`, `--publish-all`: Callbox observes real host ports
-  instead; see `callbox ports` and the PORTS column.
+- `-p`, `-P`, `--publish`, `--publish-all`: Backmux observes real host ports
+  instead; see `backmux ports` and the PORTS column.
 - `-v`, `--volume`: host paths are just paths.
 
 Flags that grant or remove privilege are rejected the same way, never
-remapped: `--privileged`, `--cap-add`, `--cap-drop`. Callbox launches
+remapped: `--privileged`, `--cap-add`, `--cap-drop`. Backmux launches
 ordinary host processes with the invoker's rights. A call goes to the
-root-managed store when callbox runs as root or under sudo. A normal user's
+root-managed store when backmux runs as root or under sudo. A normal user's
 `--system` on a launch is refused with exit 3.
 
-Callbox-native launch flags:
+Backmux-native launch flags:
 
 ```text
 -w, --wait              keep a waiter as the call's parent, recording its exit
-                        code for list and callbox wait (clusters: -dw)
+                        code for list and backmux wait (clusters: -dw)
     --restart-delay N   seconds between restart attempts; requires --restart.
                         Without it: back off 1 s doubling to 30 s, reset
                         after a 10 s run (Docker backs off too), so a
@@ -93,7 +93,7 @@ Callbox-native launch flags:
 
 A plain `-d` call leaves nothing behind: one fork, a new session, output
 straight into its log, exec. Nothing records how it ended, so it lists as
-`Exited 2 minutes ago` and `callbox wait` prints `-1`. `-w` keeps a waiter.
+`Exited 2 minutes ago` and `backmux wait` prints `-1`. `-w` keeps a waiter.
 Foreground launches, `--rm`, and `--restart` always have one. A PTY call
 records its exit through its broker.
 
@@ -104,13 +104,13 @@ records its exit through its broker.
 `ps` is the Docker view. It shows running calls only; `-a` adds ended ones.
 A normal user sees their own calls plus the root-managed calls (redacted).
 Root sees the root-managed calls. It has Docker's columns minus IMAGE,
-because Callbox has no image analogue and does not fake one:
+because Backmux has no image analogue and does not fake one:
 
 ```text
 CALL ID   COMMAND   CREATED   STATUS   PORTS   NAMES
 ```
 
-`list` is Callbox's scoped ledger. It adds a USER column in Docker's IMAGE
+`list` is Backmux's scoped ledger. It adds a USER column in Docker's IMAGE
 slot:
 
 ```text
@@ -123,7 +123,7 @@ CALL ID   USER   COMMAND   CREATED   STATUS   PORTS   NAMES
   `2 days ago`. The table never shows a raw ISO timestamp. It shows `-` when
   the time is unknown.
 - STATUS uses Docker phrasing: `Up 2 minutes`, `Exited (0) 2 days ago`. A
-  death by signal N reads `Exited (128+N)`. Callbox adds:
+  death by signal N reads `Exited (128+N)`. Backmux adds:
   - `Exited 2 days ago` (no code): a plain `-d` call, which records none.
   - `Exited (?) 2 days ago`: a death its waiter did not witness.
   - `Failed 2 days ago`: the launch failed.

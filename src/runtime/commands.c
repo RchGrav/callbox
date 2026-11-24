@@ -1,13 +1,13 @@
-#include "callbox/config.h"
-#include "callbox/types.h"
-#include "callbox/runtime.h"
-#include "callbox/help_text.h"
-#include "callbox/runtime_internal.h"
-#include "callbox/core.h"
-#include "callbox/platform.h"
-#include "callbox/store.h"
-#include "callbox/console.h"
-#include "callbox/access.h"
+#include "backmux/config.h"
+#include "backmux/types.h"
+#include "backmux/runtime.h"
+#include "backmux/help_text.h"
+#include "backmux/runtime_internal.h"
+#include "backmux/core.h"
+#include "backmux/platform.h"
+#include "backmux/store.h"
+#include "backmux/console.h"
+#include "backmux/access.h"
 
 /* How a person refers to a call: its name, else the short id. */
 static void call_label(const struct hold_run_record *r, char *out, size_t n) {
@@ -38,13 +38,13 @@ void hold_note_attached_elsewhere(const char *label, pid_t by, const struct hold
     for (int i = 0; i < 2 && o.sid > 0 && !o.label[0]; i++)
         if (stores[i] && stores[i]->record_dir[0]) (void)hold_for_each_record(stores[i]->record_dir, match_session, &o);
     if (o.label[0])
-        fprintf(stderr, "callbox: %s is already attached, from inside the call %s (pid %ld). Detach it there: Ctrl-P Ctrl-Q.\n",
+        fprintf(stderr, "backmux: %s is already attached, from inside the call %s (pid %ld). Detach it there: Ctrl-P Ctrl-Q.\n",
                 label, o.label, (long)by);
     else if (by > 0)
-        fprintf(stderr, "callbox: %s is already attached in another terminal (pid %ld). Detach it there: Ctrl-P Ctrl-Q.\n",
+        fprintf(stderr, "backmux: %s is already attached in another terminal (pid %ld). Detach it there: Ctrl-P Ctrl-Q.\n",
                 label, (long)by);
     else
-        fprintf(stderr, "callbox: %s is already attached in another terminal. Detach it there: Ctrl-P Ctrl-Q.\n", label);
+        fprintf(stderr, "backmux: %s is already attached in another terminal. Detach it there: Ctrl-P Ctrl-Q.\n", label);
 }
 
 bool hold_call_still_running(const struct hold_store *store, const char *id) {
@@ -118,14 +118,14 @@ static enum run_state after_attach(const struct hold_invocation *inv, const stru
         else if (unseen) (void)hold_print_run_log(r);
     }
     if (state == STATE_RUNNING && closed)
-        hold_sig_note(inv, "callbox: %s has closed its terminal and runs on; there is nothing to attach - see 'callbox logs %s'\n",
+        hold_sig_note(inv, "backmux: %s has closed its terminal and runs on; there is nothing to attach - see 'backmux logs %s'\n",
                       label, label);
     else if (state == STATE_RUNNING) hold_note_detached(inv, label);
     else if (state == STATE_UNKNOWN && closed)
-        hold_sig_note(inv, "callbox: cannot reach %s's console; its process state is unknown - see 'callbox logs %s'\n",
+        hold_sig_note(inv, "backmux: cannot reach %s's console; its process state is unknown - see 'backmux logs %s'\n",
                       label, label);
     else if (state == STATE_UNKNOWN)
-        hold_sig_note(inv, "callbox: detached from %s; its process state is unknown here. Reconnect: callbox attach %s\n",
+        hold_sig_note(inv, "backmux: detached from %s; its process state is unknown here. Reconnect: backmux attach %s\n",
                       label, label);
     if (console_closed) *console_closed = closed;
     return state;
@@ -137,7 +137,7 @@ bool hold_after_attach(const struct hold_invocation *inv, const struct hold_stor
 }
 
 void hold_note_detached(const struct hold_invocation *inv, const char *label) {
-    hold_sig_note(inv, "callbox: detached from %s; it is still running. Pick it back up: callbox attach %s\n", label, label);
+    hold_sig_note(inv, "backmux: detached from %s; it is still running. Pick it back up: backmux attach %s\n", label, label);
 }
 
 static int attach_console_record(const struct hold_invocation *inv,
@@ -154,24 +154,24 @@ static int attach_console_record(const struct hold_invocation *inv,
      * 3 unreachable or refused (attached elsewhere, or this is that call); 10 the call has
      * no console to attach to (the same "wrong kind of call" as peek's). */
     if (program_ended(st)) {
-        hold_sig_note(inv, "callbox: %s has ended - see 'callbox logs %s'\n", label, label);
+        hold_sig_note(inv, "backmux: %s has ended - see 'backmux logs %s'\n", label, label);
         return 8;
     }
     if (!r->has_console) {
-        hold_sig_note(inv, "callbox: %s has no console (start with -it)\n", label);
+        hold_sig_note(inv, "backmux: %s has no console (start with -it)\n", label);
         return HOLD_EXIT_NO_SCREEN;
     }
     /* Attaching to the call this very command runs in would show a screen
      * inside itself. */
-    const char *here = getenv("CALLBOX_ID");
+    const char *here = getenv("BACKMUX_ID");
     if (here && !strcmp(here, r->id)) {
-        fprintf(stderr, "callbox: you are inside %s already\n", label);
+        fprintf(stderr, "backmux: you are inside %s already\n", label);
         return 3;
     }
-    /* A callbox shell's broker reads the lead key itself; any other call's keys
+    /* A backmux shell's broker reads the lead key itself; any other call's keys
      * are read here, by the attach client. */
     hold_console_set_composited(r->recipe.mode_chat && r->recipe.has_keys);
-    /* A call with a console but no PTY runs on pipes (callbox -i): attach in
+    /* A call with a console but no PTY runs on pipes (backmux -i): attach in
      * line mode. */
     hold_console_set_line_mode(!r->recipe.mode_tty);
     /* A call on pipes printed its output into this terminal as it went:
@@ -186,7 +186,7 @@ static int attach_console_record(const struct hold_invocation *inv,
         /* Its console closed between the look at its record and the attach. */
         enum run_state state = after_attach(inv, store, r, label, on_terminal, true, NULL);
         bool ended = program_ended(state);
-        if (ended) hold_sig_note(inv, "callbox: %s has ended - see 'callbox logs %s'\n", label, label);
+        if (ended) hold_sig_note(inv, "backmux: %s has ended - see 'backmux logs %s'\n", label, label);
         rc = ended ? 8 : state == STATE_UNKNOWN ? 3 : 0;
     } else if (rc == 0) {
         bool closed = false;
@@ -197,7 +197,7 @@ static int attach_console_record(const struct hold_invocation *inv,
 }
 
 void hold_note_enclosing_call(const struct hold_store *a, const struct hold_store *b) {
-    const char *id = getenv("CALLBOX_ID");
+    const char *id = getenv("BACKMUX_ID");
     const struct hold_store *stores[2] = {a, b};
     if (!id || !hold_valid_id(id)) return;
     for (int i = 0; i < 2; i++) {
@@ -224,7 +224,7 @@ int hold_cmd_console_action(const struct hold_invocation *inv,
     }
     if (ntargets == 0) {
         free(targets);
-        hold_sig_note(inv, "callbox: nothing to attach\n");
+        hold_sig_note(inv, "backmux: nothing to attach\n");
         return 0;
     }
     struct hold_resolved_target target = targets[0];
@@ -250,6 +250,6 @@ int hold_cmd_console_action(const struct hold_invocation *inv,
 
 void hold_usage(void) {
     /* Keep the introduction in the compiled plain-text overview. */
-    printf("callbox %s\n", HOLD_VERSION);
+    printf("backmux %s\n", HOLD_VERSION);
     (void)hold_help_print("overview");
 }
