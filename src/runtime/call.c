@@ -170,7 +170,19 @@ static int restart_existing_run(const struct hold_invocation *inv,
         rc = 5;
         goto out;
     }
+    /* Same path and args: recall starts in the folder recorded at launch
+     * (backmux set NAME working=DIR changes it; unset, it runs here). */
+    if (old.recipe.has_working && chdir(old.recipe.working) != 0) {
+        fprintf(stderr, "backmux: error: cannot start %s in %s: %s\n"
+                        "  backmux set %s working=DIR picks another folder; backmux unset %s working runs it here\n",
+                old.has_name ? old.name : id, old.recipe.working, strerror(errno),
+                old.has_name ? old.name : id, old.has_name ? old.name : id);
+        rc = 5;
+        goto out;
+    }
     struct hold_start_options opts = {
+        .agent = old.recipe.mode_agent,
+        .no_working = !old.recipe.has_working,
         .tail = tail,
         .console_mode = console_mode,
         .auto_remove = auto_remove,

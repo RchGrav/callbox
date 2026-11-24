@@ -1,12 +1,12 @@
-usage: backmux list [-a|--all] [-s|--system] [-u|--user] [-l|--live] [name]
+usage: backmux list [all] [-s|--system] [-u|--user] [name]
 
-List recorded calls, including ended ones, with their owner, command, age,
-status, ports, and name. By default, list shows your personal calls.
+List running calls with their owner, command, age, status, ports, and name;
+list all adds the stopped ones. By default, list shows your personal calls.
 
+  all              stopped calls too
   -u, --user       your personal calls (the invoking user's, even under sudo)
   -s, --system     root-managed calls
   -a, --all        both scopes
-  -l, --live       show only running calls in the selected scope
 
 A name filters the listing. Root defaults to the root-managed store;
 root's -a also includes every user's store. Private root-managed calls

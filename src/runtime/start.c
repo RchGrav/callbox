@@ -1014,6 +1014,13 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     r.log_start = run_log_start;
     r.recipe.mode_chat = opts->chat || opts->user_mode;
     r.recipe.mode_shell = opts->shell;
+    r.recipe.mode_agent = opts->agent;
+    /* The folder it started in is where recall starts it again ("same path
+     * and args"), unless its working setting was unset - then recall runs
+     * it wherever it is run from, and the record keeps saying so. */
+    if (!opts->no_working && observed_cwd[0] &&
+        hold_checked_snprintf(r.recipe.working, sizeof(r.recipe.working), "%s", observed_cwd) == 0)
+        r.recipe.has_working = true;
     r.recipe.has_chat_key = opts->chat;
     r.recipe.chat_key = console_options.chat_key;
     r.recipe.has_keys = opts->chat;
@@ -1167,6 +1174,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
             /* A program on pipes printed its output into this terminal as it
              * went; there is no screen to print again when it ends. */
             bool on_terminal = console_mode && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
+            hold_prepare_mux(inv, store);
             tail_rc = hold_run_native_console(r.console_sock);
             if (hold_console_reader_gone()) {
                 /* `backmux foo | head`: the reader has what it wanted. foo is

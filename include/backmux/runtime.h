@@ -29,6 +29,9 @@ struct hold_start_options {
     bool user_mode;           /* placed in user mode: recorded, so redial at a terminal gets chat
                                  even when this launch (from a script) could not draw it */
     bool shell;               /* placed with backmux shell */
+    bool agent;               /* backmux agent: messages arrive formatted for an agent */
+    const char *working;      /* recall: the recorded folder to start in; NULL = here */
+    bool no_working;          /* recall of a call whose working was unset: record none */
     unsigned char chat_key;   /* the key that opens chat; 0 = the default */
     const char *existing_id;
     const char *existing_log_path;
@@ -120,6 +123,12 @@ int hold_cmd_resize_action(const struct hold_invocation *inv, const struct hold_
 int hold_operator_name(const struct hold_store *store, bool create, char *name, size_t n, bool *made);
 void hold_operator_first_note(const char *name);
 int hold_inbox_wait(const struct hold_store *store, const char *name, off_t from_off, bool forever_each, long timeout_ms);
+int hold_person_chat_name(const struct hold_store *store, const char *own, char *name, size_t n);
+/* Before an attach at a terminal: what the compositor needs (the store,
+ * the person's chat name). */
+void hold_prepare_mux(const struct hold_invocation *inv, const struct hold_store *store);
+int hold_cmd_swap_action(const struct hold_invocation *inv, const struct hold_store *user_store,
+                         const struct hold_store *system_store, int argc, char **argv);
 int hold_cmd_inbox_action(const struct hold_invocation *inv, const struct hold_store *user_store, int argc, char **argv);
 int hold_cmd_monitor_action(const struct hold_invocation *inv, const struct hold_store *user_store, int argc, char **argv);
 int hold_cmd_msg_action(const struct hold_invocation *inv, const struct hold_store *user_store,
@@ -149,6 +158,17 @@ int hold_cmd_purge_action(const struct hold_invocation *inv,
                             bool all,
                             bool force,
                             bool system_scope);
+/* A call's settings and the verbs around them (src/runtime/settings.c). */
+int hold_cmd_set_action(const struct hold_invocation *inv, const struct hold_store *user_store,
+                        const struct hold_store *system_store, int argc, char **argv, bool unset);
+int hold_cmd_info_action(const struct hold_invocation *inv, const struct hold_store *user_store,
+                         const struct hold_store *system_store, const char *token);
+int hold_cmd_recall_action(const struct hold_invocation *inv, const struct hold_store *user_store,
+                           const struct hold_store *system_store, const char *token);
+int hold_cmd_delete_action(const struct hold_invocation *inv, const struct hold_store *user_store,
+                           const struct hold_store *system_store, const char *token);
+int hold_cmd_purge_all_action(const struct hold_invocation *inv, const struct hold_store *user_store,
+                              const struct hold_store *system_store, bool force, bool system_scope);
 /* Call-record operations (src/runtime/call.c): redial a retained recipe, save or
  * rename a call, and assign a generated adjective_noun name. */
 int hold_cmd_rename_action(const struct hold_invocation *inv,

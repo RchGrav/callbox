@@ -49,11 +49,29 @@ static bool harness_key(char *key, size_t n, char *comm_out, size_t comm_n) {
     return false;
 }
 
+static int operator_name_for(const struct hold_store *store, const char *key, const char *own, bool create,
+                             char *name, size_t n, bool *made);
+
 int hold_operator_name(const struct hold_store *store, bool create, char *name, size_t n, bool *made) {
-    if (made) *made = false;
     char key[128], comm[32] = "";
     if (!harness_key(key, sizeof(key), comm, sizeof(comm)))
         snprintf(key, sizeof(key), "operator uid %ld", (long)getuid());
+    return operator_name_for(store, key, NULL, create, name, n, made);
+}
+
+/* The person's chat name: one per account, the same in every terminal (chat
+ * follows them), their chosen chat-name when that is free, else generated.
+ * It is an operator inbox like any sender's outside a call, so agents reply
+ * to it with backmux msg. */
+int hold_person_chat_name(const struct hold_store *store, const char *own, char *name, size_t n) {
+    char key[64];
+    snprintf(key, sizeof(key), "person uid %ld", (long)getuid());
+    return operator_name_for(store, key, own && *own ? own : NULL, true, name, n, NULL);
+}
+
+static int operator_name_for(const struct hold_store *store, const char *key, const char *own, bool create,
+                             char *name, size_t n, bool *made) {
+    if (made) *made = false;
     /* One namespace with calls: keep lookup and claim together, so parallel
      * first sends share an inbox and a launch cannot take its name. Root's
      * personal store may not exist yet; make it before taking its lock. */
@@ -74,7 +92,7 @@ int hold_operator_name(const struct hold_store *store, bool create, char *name, 
         hold_sha256_final(&h, digest);
         hold_hex_encode(digest, sizeof(digest), hex, sizeof(hex));
         char cand[ALIAS_MAX_LEN + 1];
-        const char *want = salt == 0 && !strncmp(key, "operator uid ", 13) ? "operator" : NULL;
+        const char *want = salt == 0 && own ? own : salt == 0 && !strncmp(key, "operator uid ", 13) ? "operator" : NULL;
         if (hold_pick_run_name_locked(store, hex, want, cand) != 0) continue;
         if (hold_inbox_claim(store, cand, key) == 0) {
             if (made) *made = true;

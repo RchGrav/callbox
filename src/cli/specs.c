@@ -42,8 +42,23 @@ static const char usage_attach[] = "usage: backmux attach <target> [--detach-key
 #define SPEC_PURGE_FLAGS (SPEC_ALL | SPEC_SCOPE | SPEC_FORCE | SPEC_STRICT)
 
 static const struct hold_cli_command_spec command_specs[] = {
+    /* The launch verbs are parsed in cli/main.c (their words after the
+     * program are the program's); these rows are their help and keep their
+     * names from being taken by calls. */
+    {"call", NULL, 1, -1, 0, "usage: backmux call [--name NAME] [options] <program> [<args>...]"},
+    {"agent", NULL, 1, -1, 0, "usage: backmux agent [--name NAME] [options] <program> [<args>...]"},
+    {"server", NULL, 1, -1, 0, "usage: backmux server [--name NAME] [-w] [options] <program> [<args>...]"},
+    {"detach", NULL, 1, -1, 0, "usage: backmux detach [--name NAME] [options] <program> [<args>...]"},
     {"list", NULL, 0, 1, SPEC_ALL | SPEC_LIVE | SPEC_SCOPE | SPEC_STRICT,
-     "usage: backmux list [-a|--all] [-s|--system] [-u|--user] [-l|--live] [name]"},
+     "usage: backmux list [all] [-s|--system] [-u|--user] [name]"},
+    {"info", NULL, 1, 1, SPEC_STRICT, "usage: backmux info <name|id>"},
+    {"recall", NULL, 1, 1, SPEC_STRICT, "usage: backmux recall <name|id>"},
+    {"start", "recall", 1, 1, SPEC_STRICT, "usage: backmux start <name|id>   (Docker's word for recall)"},
+    {"delete", NULL, 1, 1, SPEC_STRICT, "usage: backmux delete <name|id>"},
+    {"set", NULL, 2, -1, SPEC_OWN_HELP, "usage: backmux set <name|id> <setting>[=<value>]"},
+    {"unset", NULL, 2, 2, SPEC_OWN_HELP, "usage: backmux unset <name|id> <setting>"},
+    {"swap", NULL, 1, 2, SPEC_STRICT, "usage: backmux swap <pane>,<pane>   (a name, an id, A-D, or a number)"},
+    {"manual", NULL, 0, 0, SPEC_STRICT, "usage: backmux manual"},
     {"ps", NULL, 0, 1, SPEC_ALL | SPEC_STRICT | SPEC_PS_DOCKER,
      "usage: backmux ps [-a|--all] [name]"},
     {"end", NULL, 1, -1, SPEC_PRINT | SPEC_STRICT, usage_end},
@@ -79,7 +94,7 @@ static const struct hold_cli_command_spec command_specs[] = {
      "usage: backmux config get <setting>\n"
      "       backmux config set <setting> <value>\n"
      "       backmux config unset <setting>\n"
-     "settings: detach-size COLS ROWS"},
+     "settings: detach-size COLS ROWS, chat-name NAME"},
     /* shell is a launch, parsed in cli/main.c; this row is its help. */
     {"shell", NULL, 0, -1, 0,
      "usage: backmux shell [--name NAME] [--size COLS ROWS] [--chat-key KEY]\n"
@@ -260,6 +275,15 @@ int hold_show_help(const char *topic) {
         return 0;
     fprintf(stderr, "backmux: unknown help topic '%s' (backmux help lists the commands)\n", topic);
     return HOLD_EXIT_USAGE;
+}
+
+/* backmux manual: the whole reference, then the worked examples - one
+ * document to read top to bottom, or to pipe into a pager. */
+int hold_show_manual(void) {
+    int rc = show_all_help();
+    if (rc != 0) return rc;
+    putchar('\n');
+    return hold_help_print("extra/examples") == 0 ? 0 : HOLD_EXIT_USAGE;
 }
 
 size_t hold_cli_verb_names(const char **out, size_t max) {

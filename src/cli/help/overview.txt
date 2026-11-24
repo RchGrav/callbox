@@ -1,37 +1,33 @@
 
-Run terminal apps, inspect and control their screens, and connect agents.
-A call gives a program a name and a captured log. It can keep running when
-you detach; use its name to inspect it, reconnect, or stop it.
+ backmux call <program> [<args>...]     attached full screen tui app
+ backmux agent <program> [<args>...]    applies chat formatting to messaging
+ backmux server <program> [<args>...]   detached server console app
+ backmux detach <program> [<args>...]   detached full screen tty app
+ backmux shell                          backmux shell mode in a tty
+ backmux agent --name <name> <program>  override generated name on first run
 
-START A CALL
-  backmux PROGRAM [ARGS...]         attached terminal, with a chat window
-  backmux -it --name NAME PROGRAM   attached agent; messages go to its input
-  backmux -dt --name NAME PROGRAM   detached terminal for peek and send
-  backmux -dw --name NAME PROGRAM   background job; keep its exit code
+ backmux attach <name|id>               attach a running call to your terminal
+ backmux tail <name|id>                 tail a server console app
+ backmux end <name|id>                  end any process gracefully
+ backmux kill <name|id>                 big hammer ends any process forcefully
+ backmux recall <name|id>               recall ended proc w/ same path and args
+ backmux info <name|id>                 details on any process known to backmux
 
-WORK WITH CALLS (backmux COMMAND)
-  ps                               list running calls (list: ended ones too)
-  peek CALL                        read the screen; --image FILE saves a PNG
-  send CALL TEXT --enter            type text and press Enter
-  wait CALL --match TEXT            wait for screen text; no flags: for exit
-  attach CALL                      reconnect; Ctrl-P Ctrl-Q detaches
-  msg NAME TEXT                    send a message with a reply address
-  inbox --wait                     read the next unread inbox message
-  monitor                          follow that inbox until stopped
-  logs CALL [-f]                    read captured output; -f follows it
-  end CALL                         stop a call; purge CALL removes its record
+ backmux list                           list only running processes
+ backmux list all                       list all running and stopped processes
+ backmux purge                          purge stopped processes not saved
+ backmux purge all                      end and purge all processes not saved
 
-  CALL is a name or ID; unique prefixes work.
+ backmux save|delete <name|id>          saves (or deletes) a profile by name
+ backmux set <name|id> <param>=<value>  edit profiles, args, start paths, name
+ backmux unset <name|id> <param>        clear a profile setting, mode, arg, etc
 
-FOLLOW A WORKFLOW
-  backmux help tui                  troubleshoot a terminal app
-  backmux help share                fix a TUI while a person watches and tests
-  backmux help agents               start an agent and give it work
-  backmux help messaging            exchange messages from any harness
-  backmux help service              run background services and CI jobs
+ Ctrl-P Ctrl-Q detach process with durable handle, full reattach control or end
+ Ctrl-P Ctrl-T recall floating user chat window after it has been dismissed
+ Ctrl-P Ctrl-H the rest of the control keys to control backmux
 
-LOOK UP DETAILS
-  backmux help COMMAND              syntax and options for one command
-  backmux help launch               launch modes, flags, and restarting calls
-  backmux help all                  complete command and option reference
-  https://github.com/RchGrav/backmux
+ backmux help aliases                   container aliases (100% less container)
+ backmux help agents                    orchestration and tui debugging details
+ backmux help all                       all our switches are belong to you
+
+ backmux manual                         examples, documentation, and explanation

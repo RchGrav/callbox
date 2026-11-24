@@ -1,4 +1,4 @@
-usage: backmux purge [<target>] [-a|--all] [-s|--system] [-u|--user] [--force]
+usage: backmux purge [<target>|all] [-a|--all] [-s|--system] [-u|--user] [--force]
 
 Remove ended calls and their stored records, logs, and screens.
 Without a target, sweep eligible calls; with a target, remove that call.
@@ -10,8 +10,11 @@ Without a target, sweep eligible calls; with a target, remove that call.
                    without a target: include stale calls, as -a does
 
 With a target, --force stops a running call before removing it. A sweep
-never removes saved or running calls, even with --force. The older spelling
-purge all is equivalent to a sweep with -a.
+never removes saved or running calls, even with --force.
+
+purge all ends every running call that is not saved and removes them all,
+with the ended ones. It lists what it will end and asks first; with no
+terminal to ask, --force is the answer. Saved calls are kept.
 
 Ordinary purge leaves saved calls alone. --name at launch does not save
 a call; save and rename do. Removing a record frees its name.

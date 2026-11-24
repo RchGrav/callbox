@@ -1146,6 +1146,21 @@ static void msg_done(struct pending_msg *m, const char *id) {
     memset(m, 0, sizeof(*m));
 }
 
+/* Whether this call's messages arrive formatted for an agent (backmux agent,
+ * or backmux set NAME agent). Read from the record at every delivery, so set
+ * and unset take effect from the next message with no relaunch. Unreadable
+ * record: formatted, as messages always were - a header never hurts an agent,
+ * while a raw line in an agent's input loses who sent it. */
+static bool agent_mode(const struct broker *b) {
+    if (!b->store || !b->run_id) return true;
+    struct hold_run_record r;
+    char path[HOLD_PATH_MAX];
+    if (hold_load_record_by_id(b->store->record_dir, b->run_id, &r, path, sizeof(path)) != 0) return true;
+    bool agent = r.recipe.mode_agent;
+    hold_free_run_record(&r);
+    return agent;
+}
+
 /* Type a queued message: bracketed paste when the program asked for it, else
  * newlines flattened so it cannot submit early; then Enter. The header says
  * who sent it and how to reply - addressing, nothing more (see
@@ -1163,7 +1178,12 @@ static void deliver_msg(struct broker *b, struct pending_msg *m, const char *fro
         msg_done(m, id);
         return;
     }
-    if (from)
+    /* Agent formatting: who sent it and how to reply, before the text.
+     * Without it the message arrives raw - exactly the text, then Enter, as
+     * if typed - so a message can run a command in a shell or a CLI. */
+    if (!agent_mode(b))
+        header[0] = '\0';
+    else if (from)
         snprintf(header, sizeof(header), "[msg from %.100s; reply: backmux msg %.100s \"...\"] ", from, from);
     else
         snprintf(header, sizeof(header), "[msg from outside backmux] ");

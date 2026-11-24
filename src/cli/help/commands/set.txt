@@ -1,0 +1,21 @@
+usage: backmux set <name|id> <setting>[=<value>]
+       backmux unset <name|id> <setting>
+
+Change a call's settings, running or ended.
+
+  agent              messages arrive formatted for an agent (unset: raw,
+                     the text then Enter). Takes effect from the next
+                     message, with no relaunch.
+  working=DIR        the folder recall starts it in (unset: wherever you
+                     run recall)
+  program=PROGRAM    the program it runs, a path or a name on PATH (cannot
+                     be unset)
+  args=A B C         its arguments, split on blanks; or, to keep an argument
+                     with spaces whole: backmux set NAME args -- A "B C"
+                     (unset: none)
+  name=NAME          its name, at once; the old name stops answering (cannot
+                     be unset)
+
+working, program and args take effect at the next launch (backmux recall):
+a running program's folder and command cannot change under it. The id never
+changes.

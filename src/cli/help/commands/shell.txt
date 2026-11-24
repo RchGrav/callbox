@@ -1,35 +1,12 @@
-usage: backmux shell [--name NAME] [--size COLS ROWS] [--chat-key KEY]
-                  [-e KEY=VALUE]... [--rm] [shell [args...]]
+usage: backmux shell [--name NAME] [--size COLS ROWS] [-e KEY=VALUE]... [--rm]
+                     [shell [args...]]
 
-Open your shell (or the one you name) on a PTY, with a chat window to the
-agents you run under backmux. Backmux's flags come before the shell's name;
-every word after it is the shell's own (backmux shell zsh -l). With no shell
-named: an executable $SHELL, else your login shell, else /bin/sh.
+Your shell (or the one you name) on a PTY, under backmux: it keeps running
+when you detach, and recall brings it back as a shell. Backmux's flags come
+before the shell's name; every word after it is the shell's own (backmux
+shell zsh -l). With no shell named: an executable $SHELL, else your login
+shell, else /bin/sh.
 
-  Ctrl-P           the lead key: it waits for the next key, and shows what it
-                   offers while it waits
-  Ctrl-P Ctrl-T    open chat, or move the keyboard between chat and the shell
-                   (--chat-key picks the second key, e.g. --chat-key ctrl-g)
-  Ctrl-P Ctrl-Q    detach (backmux attach <name> picks the shell back up, chat
-                   intact)
-  Ctrl-P Ctrl-P    send one Ctrl-P to the shell. Ctrl-P and any other key:
-                   both go through.
-  Esc              hide chat; the conversation stays, and so does the shell
-  Tab              choose who to talk to: a running TTY call, by name or id
-  Enter            send; Alt-Enter starts a new line
-  Ctrl-S           include a snapshot of the shell's screen in the next message
-  mouse            drag the title bar to move, the lower-right corner to
-                   resize, click the x to close; the wheel scrolls the
-                   conversation
-
-A message you send arrives in the agent's prompt from this shell's call, so
-the agent answers with an ordinary backmux msg <this shell> "...". Replies land
-in the chat window, never at your prompt; while chat is hidden, a corner badge
-counts what is unread. A message that could not be delivered says so. Chat is
-drawn over the shell, not into it: backmux peek, the log, and the shell itself
-never see it, and resizing or moving the window never resizes the shell.
-An agent can use peek and send to inspect and drive the shell while you
-stay attached; chat messages and terminal input remain separate.
-
-Flags: --name, --size, -e, --env-file, --rm, --detach-keys (two keys: the lead
-key, then the key that detaches) and --chat-key. See backmux help launch.
+It is a call like any other: chat and panes are not part of it. Ctrl-P
+Ctrl-T brings up chat over whatever you are attached to, and Ctrl-P Ctrl-A
+puts another call beside it (Ctrl-P Ctrl-H lists the keys).

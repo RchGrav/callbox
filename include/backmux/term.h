@@ -65,12 +65,22 @@ struct hold_term_detach {
     unsigned char pending[HOLD_TERM_DETACH_MAX_KEYS];
     size_t pending_len;
     unsigned char intr; /* 0 = none; else this byte reports *completed = 2 */
+    /* Command keys after the lead key (backmux's Ctrl-P Ctrl-<letter>):
+     * one reports *completed = 3 with it in command. With commands set, any
+     * other key after the lead key cancels - both are dropped - and an
+     * escape sequence (a mouse report) passes through while the lead key
+     * goes on waiting. */
+    unsigned char commands[16];
+    size_t ncommands;
+    unsigned char command;
+    int esc_pass; /* 0 none, 1 after ESC, 2 inside CSI */
 };
 
 /* Sink for bytes the FSM releases; nonzero aborts the feed/flush with -1. */
 typedef int (*hold_term_detach_sink)(void *ctx, const unsigned char *bytes, size_t n);
 
 void hold_term_detach_init(struct hold_term_detach *d, const unsigned char *keys, size_t nkeys);
+void hold_term_detach_set_commands(struct hold_term_detach *d, const unsigned char *cmds, size_t n);
 int hold_term_detach_feed(struct hold_term_detach *d, unsigned char c,
                           hold_term_detach_sink sink, void *ctx, int *completed);
 /* Send through whatever is held (the input has ended: no key will follow). */

@@ -22,6 +22,7 @@ struct hold_cli_owned_opts {
 };
 
 int hold_show_help(const char *topic);
+int hold_show_manual(void);
 bool hold_cli_command_is_parser_owned(const char *s);
 /* Every verb's name (aliases included), for matching a shortened word. */
 size_t hold_cli_verb_names(const char **out, size_t max);

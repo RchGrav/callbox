@@ -90,6 +90,26 @@ int hold_make_console_listener(const char *sock_path, int *fifo_writer);
  * is a read fd (returned) and a write fd (*output; the same fd for a socket). */
 int hold_make_fifo_listener(const char *path, int *writer);
 int hold_open_channel(const char *path, char kind, int *output);
+
+/* The person's terminal across a hand-off between plain attach and the
+ * compositor (attach.c): who has it raw and on the alternate screen, and how
+ * to give it back. */
+#include "backmux/term.h"
+struct hold_console_term {
+    bool owned;
+    bool alt_screen;
+    struct hold_term_saved saved;
+};
+extern struct hold_console_term g_console_term;
+void hold_console_term_release(void);
+
+/* The compositor (mux.c): panes of TTY calls and one floating window over
+ * them, drawn into the person's terminal. Starts on first_sock's call, as if
+ * the lead key then command had been pressed there. Returns how it ended;
+ * *handed_back with the console to show plainly when one pane is left and
+ * nothing floats. */
+int hold_mux_run(const struct hold_store *store, const char *chat_name, const char *first_sock,
+                 unsigned char command, char *handback, size_t n, bool *handed_back);
 /* After an attach was refused with EBUSY over FIFOs: the pid that has the
  * console, 0 if the broker did not say. */
 pid_t hold_fifo_busy_holder(void);

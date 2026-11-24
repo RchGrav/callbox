@@ -177,6 +177,7 @@ static int attach_console_record(const struct hold_invocation *inv,
     /* A call on pipes printed its output into this terminal as it went:
      * there is no screen to print again when it ends. */
     bool on_terminal = r->recipe.mode_tty && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
+    hold_prepare_mux(inv, store);
     int rc = hold_run_native_console(r->console_sock);
     pid_t by = 0;
     if (hold_console_was_refused(&by)) {

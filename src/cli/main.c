@@ -294,6 +294,13 @@ static const struct run_value_opt {
  * fix (another name) is obvious, rather than leaving a call half-reachable.
  * Calls already named so keep their names. */
 static int refuse_verb_name(const char *name) {
+    /* "all" too: list all and purge all would make a call named so
+     * ambiguous. */
+    if (name && (!strcmp(name, "all") || !strcmp(name, "run"))) {
+        fprintf(stderr, "backmux: error: '%s' is reserved (%s); pick another name\n", name,
+                !strcmp(name, "all") ? "backmux list all, backmux purge all" : "backmux run is Docker's spelling of a launch");
+        return HOLD_EXIT_USAGE;
+    }
     if (!name || !hold_cli_command_is_parser_owned(name)) return 0;
     fprintf(stderr, "backmux: error: '%s' is a backmux command; a call named so could not be redialed by name\n",
             name);
@@ -313,16 +320,11 @@ static int apply_run_value_opt(enum run_opt_id id, const char *value, struct cli
     case OPT_DETACH_KEYS:
         return configure_detach_keys_option(value);
     case OPT_CHAT_KEY:
-        /* The key pressed after the lead key to open chat (the default is
-         * ctrl-t): one control key, spelled as a detach key is - ^g, ctrl-g. */
-        if (!value || detach_key_token_value(value, strlen(value), &run->chat_key) != 0 || run->chat_key == 0 ||
-            run->chat_key >= 0x20 || run->chat_key == '\r' || run->chat_key == '\n' || run->chat_key == '\t' ||
-            run->chat_key == 0x1b) {
-            fprintf(stderr, "backmux: error: --chat-key takes one control key, such as ctrl-t or ^g\n");
-            return HOLD_EXIT_USAGE;
-        }
-        run->chat_key_seen = true;
-        return 0;
+        /* Chat is no longer part of a call: it floats over whatever you are
+         * attached to, on Ctrl-P Ctrl-T, so a call has no chat key to set. */
+        (void)value;
+        fprintf(stderr, "backmux: error: --chat-key is gone: chat belongs to no call; Ctrl-P Ctrl-T opens it anywhere\n");
+        return HOLD_EXIT_USAGE;
     case OPT_RESTART:
         return parse_restart_policy_arg(value, run->restart_policy);
     case OPT_RESTART_DELAY: {
@@ -457,6 +459,17 @@ int hold_cli_main(int argc, char **argv) {
         hold_usage();
         return 0;
     }
+    /* backmux run ...: Docker's spelling of the bare form (backmux help
+     * aliases), read exactly as if "run" were not there. */
+    if (!strcmp(argv[1], "run")) {
+        argv[1] = argv[0];
+        argv++;
+        argc--;
+        if (argc < 2) {
+            fprintf(stderr, "usage: backmux run [-d|-it|-dt|-dw] [--name NAME] [options] <program> [<args>...]\n");
+            return HOLD_EXIT_USAGE;
+        }
+    }
 
     int argi = 1;
     bool tail = false;
@@ -515,8 +528,90 @@ int hold_cli_main(int argc, char **argv) {
         if (sr == 1) argv[argi] = (char *)verb;
         if (sr == 2) argv[argi] = short_name;
     }
-    /* backmux shell [options] [shell [args...]]: a person's shell on a PTY, with
-     * the chat overlay. Backmux's options end at the shell's name; every word
+    /* backmux call|agent|server|detach [options] <program> [<args>...]: the
+     * four things people start, by name instead of by a matrix of -d/-i/-t.
+     * call: attached on a PTY, messages raw. agent: the same, with messages
+     * formatted for an agent (a header naming the sender and how to reply).
+     * server: detached, plain output to a log (-w keeps its exit code).
+     * detach: detached on a PTY, for attach, peek and send. The verb says
+     * the session mode, so -d/-i/-t after it are refused rather than
+     * silently fighting it; every other launch option still applies. The
+     * word after the options is always a program: never a call name. */
+    const char *launch_verb = NULL;
+    if (argi < argc && !force_raw && !tail &&
+        (!strcmp(argv[argi], "call") || !strcmp(argv[argi], "agent") || !strcmp(argv[argi], "server") ||
+         !strcmp(argv[argi], "detach"))) {
+        launch_verb = argv[argi++];
+        if (run.detach || run.interactive || run.tty || run.wait || console_mode) {
+            fprintf(stderr, "backmux: error: backmux %s takes no -d/-i/-t/-w before it; the verb says how it runs\n",
+                    launch_verb);
+            free_run_options(&run);
+            return HOLD_EXIT_USAGE;
+        }
+        while (argi < argc) {
+            if (!strcmp(argv[argi], "-h") || !strcmp(argv[argi], "--help")) {
+                free_run_options(&run);
+                return hold_show_help(launch_verb);
+            }
+            bool d = run.detach, i = run.interactive, t = run.tty, w = run.wait;
+            bool parsed_run_option = false;
+            int option_rc = parse_run_options(argc, argv, &argi, &run, &tail, &console_mode, &parsed_run_option);
+            if (option_rc != 0) {
+                free_run_options(&run);
+                return option_rc;
+            }
+            if (parsed_run_option) {
+                bool session = run.detach != d || run.interactive != i || run.tty != t || tail || console_mode;
+                bool wait_ok = run.wait != w && !strcmp(launch_verb, "server");
+                if (session || (run.wait != w && !wait_ok)) {
+                    fprintf(stderr, "backmux: error: %s does not apply to backmux %s; the verb says how it runs%s\n",
+                            argv[argi - 1], launch_verb,
+                            run.wait != w ? " (-w is for server: a background job that keeps its exit code)" : "");
+                    free_run_options(&run);
+                    return HOLD_EXIT_USAGE;
+                }
+                continue;
+            }
+            if (!strcmp(argv[argi], "--system")) {
+                oo.requested_system = true;
+                argi++;
+                continue;
+            }
+            if (!strcmp(argv[argi], "--quiet")) {
+                oo.quiet = true;
+                argi++;
+                continue;
+            }
+            if (!strcmp(argv[argi], "--")) {
+                argi++;
+                break;
+            }
+            if (argv[argi][0] == '-') {
+                fprintf(stderr, "backmux: error: unknown flag '%s' before the program\n%s\n", argv[argi],
+                        hold_cli_command_usage(launch_verb));
+                free_run_options(&run);
+                return HOLD_EXIT_USAGE;
+            }
+            break;
+        }
+        if (argi >= argc) {
+            fprintf(stderr, "%s\n", hold_cli_command_usage(launch_verb));
+            free_run_options(&run);
+            return HOLD_EXIT_USAGE;
+        }
+        if (!strcmp(launch_verb, "server")) {
+            run.detach = true;
+        } else if (!strcmp(launch_verb, "detach")) {
+            run.detach = run.tty = true;
+            console_mode = true;
+        } else {
+            run.interactive = run.tty = true;
+            console_mode = true;
+        }
+        force_raw = true;
+    }
+
+    /* backmux shell [options] [shell [args...]]: a person's shell on a PTY. Backmux's options end at the shell's name; every word
      * after it is the shell's own, so no `--` is needed (one is accepted). */
     bool shell_mode = false;
     char shell_buf[HOLD_PATH_MAX];
@@ -559,16 +654,12 @@ int hold_cli_main(int argc, char **argv) {
         }
         if (run.detach || run.wait || tail || run.restart_policy[0]) {
             fprintf(stderr, "backmux: error: backmux shell is a shell you sit at: -d, -w, --tail and --restart do not apply "
-                            "(a program to drive from a script is backmux -dt <cmd>)\n");
+                            "(a program to drive from a script is backmux detach <cmd>)\n");
             free_run_options(&run);
             return HOLD_EXIT_USAGE;
         }
         run.tty = true;
         console_mode = true;
-    } else if (run.chat_key_seen) {
-        fprintf(stderr, "backmux: error: --chat-key applies to backmux shell\n");
-        free_run_options(&run);
-        return HOLD_EXIT_USAGE;
     }
 
     if (argi >= argc && !shell_mode) {
@@ -800,44 +891,57 @@ int hold_cli_main(int argc, char **argv) {
          * messages typed in; the window is only for the switchless launch
          * and backmux shell. Without a terminal there is nowhere to draw
          * the window: the program still runs attached on its PTY. */
+        /* A program placed with no verb and no session flags is a call:
+         * attached on a PTY, as backmux call does. No call carries chat or
+         * splits any more - chat floats over whatever you are attached to
+         * (Ctrl-P Ctrl-T) and panes come from Ctrl-P Ctrl-A - so nothing
+         * here asks for them. */
         bool restart_asked = run.restart_policy[0] && strcmp(run.restart_policy, "no") != 0;
         bool bare = !run.detach && !run.interactive && !run.tty && !console_mode && !run.tail_flag && !run.wait &&
                     !restart_asked;
-        bool user_mode = !shell_mode && bare;
-        bool on_terminal = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
-        if (user_mode) {
-            run.tty = true;
+        if (!shell_mode && bare) {
+            run.interactive = run.tty = true;
             console_mode = true;
             tail = true;
             interactive_stdin = false;
         }
         struct hold_start_options opts = start_options_from_run(&run, tail, console_mode,
                                                                 interactive_stdin, cmd_argc, cmd_argv);
-        /* The chat window opens with the lead key, then the chat key: it needs
-         * detach keys that are a lead key plus one, with the chat key distinct
-         * (custom --detach-keys such as ctrl-a leave no room - the program
-         * then runs attached without the window, as -it always has). */
-        unsigned char dk[8];
-        size_t ndk = hold_console_get_detach_keys(dk, sizeof(dk));
-        unsigned char ck = run.chat_key ? run.chat_key : HOLD_CHAT_KEY_DEFAULT;
-        bool keys_fit_chat = ndk == 2 && ck != dk[0] && ck != dk[1];
-        opts.chat = shell_mode || (user_mode && on_terminal && keys_fit_chat);
-        opts.user_mode = user_mode && keys_fit_chat;
         opts.shell = shell_mode;
-        opts.chat_key = run.chat_key;
+        opts.agent = launch_verb && !strcmp(launch_verb, "agent");
         int rc = hold_perform_start_options(&inv, &start_store, &opts);
         free_run_options(&run);
         return rc;
     }
 
     int rc = 0;
-    if (!strcmp(canon, "save")) {
+    if (!strcmp(canon, "info")) {
+        rc = hold_cmd_info_action(&inv, &user_store, &system_store, cmd_argv[0]);
+    } else if (!strcmp(canon, "recall")) {
+        rc = hold_cmd_recall_action(&inv, &user_store, &system_store, cmd_argv[0]);
+    } else if (!strcmp(canon, "delete")) {
+        rc = hold_cmd_delete_action(&inv, &user_store, &system_store, cmd_argv[0]);
+    } else if (!strcmp(canon, "set") || !strcmp(canon, "unset")) {
+        bool unset = !strcmp(canon, "unset");
+        rc = !unset && cmd_argc >= 2 && !strncmp(cmd_argv[1], "name=", 5) ? refuse_verb_name(cmd_argv[1] + 5) : 0;
+        if (rc == 0) rc = hold_cmd_set_action(&inv, &user_store, &system_store, cmd_argc, cmd_argv, unset);
+    } else if (!strcmp(canon, "swap")) {
+        rc = hold_cmd_swap_action(&inv, &user_store, &system_store, cmd_argc, cmd_argv);
+    } else if (!strcmp(canon, "manual")) {
+        rc = hold_show_manual();
+    } else if (!strcmp(canon, "save")) {
         rc = hold_cmd_save_action(&inv, &user_store, &system_store, cmd_argv[0]);
     } else if (!strcmp(canon, "rename")) {
         rc = refuse_verb_name(cmd_argv[1]);
         if (rc == 0) rc = hold_cmd_rename_action(&inv, &user_store, &system_store, cmd_argv[0], cmd_argv[1]);
     } else if (!strcmp(canon, "list") || !strcmp(canon, "ps")) {
         const char *name_filter = cmd_argc == 1 ? cmd_argv[0] : NULL;
+        /* list shows what is running; list all adds the stopped ones. Why:
+         * "what is running" is the question asked most, and ended calls
+         * pile up. (ps is Docker's and keeps -a.) */
+        bool list_all = name_filter && !strcmp(name_filter, "all");
+        if (list_all) name_filter = NULL;
+        if (!strcmp(canon, "list") && !list_all && !name_filter) oo.live_only = true;
         if (name_filter && !hold_valid_alias(name_filter)) {
             fprintf(stderr, "backmux: error: invalid name '%s'\n", name_filter);
             rc = 5;
@@ -919,6 +1023,9 @@ int hold_cli_main(int argc, char **argv) {
                 }
                 fprintf(stderr, "backmux: global purge needs root: sudo backmux purge --system\n");
                 rc = 3;
+            } else if (target && !strcmp(target, "all")) {
+                /* purge all: end and remove every call not saved (it asks). */
+                rc = hold_cmd_purge_all_action(&inv, &user_store, &system_store, oo.force, purge_system);
             } else {
                 rc = hold_cmd_purge_action(&inv, &user_store, &system_store, target, oo.all, oo.force, purge_system);
             }

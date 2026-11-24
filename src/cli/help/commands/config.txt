@@ -1,7 +1,7 @@
 usage: backmux config get <setting>
        backmux config set <setting> <value>
        backmux config unset <setting>
-settings: detach-size COLS ROWS
+settings: detach-size COLS ROWS, chat-name NAME
 
 Your saved defaults, kept in ~/.config/backmux/config (one "name value" line
 each).
@@ -11,6 +11,9 @@ each).
                           this, then the invoking terminal's size, then 80 24.
                           Foreground launches never use it, and changing it
                           never resizes a running call (backmux resize does).
+  chat-name NAME          what you are called in chat and to the agents that
+                          reply to you (backmux msg NAME). Unset: a generated
+                          name, the same in every terminal.
 
 get prints the saved value (exit 1 when unset); set checks the value before
 saving, so a refused one leaves what was saved; unset clears it. Under sudo a

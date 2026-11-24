@@ -1,0 +1,4 @@
+usage: backmux manual
+
+The whole reference and the worked examples, as one document: backmux manual
+| less.

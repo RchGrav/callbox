@@ -1,0 +1,25 @@
+CONTAINER ALIASES (100% less container)
+
+Docker's words work, and do what backmux does. backmux contains nothing: no
+images, no volumes, no ports to publish - the program runs as you, here.
+
+  docker            backmux
+  run -it           call
+  run -d            server            (run -dw: server -w, keeps the exit code)
+  run -dt           detach
+  start             recall
+  stop              end
+  kill              kill
+  ps / ps -a        list / list all   (ps is machine-wide and running only)
+  logs [-f]         logs [-f]; tail follows a server
+  attach            attach
+  inspect           inspect (the record as JSON); info is the readable view
+  rm                purge <name>      (delete removes a saved one)
+  rename            set <name> name=<new>
+
+exec has no equivalent: there is no container to enter. Run the command
+itself: backmux call <program>.
+
+The flags of docker run that make sense here are taken as they are: --name,
+-e, --env-file, --rm, --restart, --detach-keys. -p, -v, --privileged and
+--cap-add are refused, with the reason.

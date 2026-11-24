@@ -15,6 +15,46 @@ static unsigned char g_detach_keys[HOLD_TERM_DETACH_MAX_KEYS] = {
 static size_t g_detach_key_count = 2;
 
 static char g_enclosing_sock[HOLD_PATH_MAX];
+
+/* The person's terminal, owned across a hand-off: plain attach and the
+ * compositor (mux.c) take turns at it without leaving the alternate screen
+ * in between, so going from one call to panes and back never flashes the
+ * shell underneath. Restored once, by whoever has it last. */
+struct hold_console_term g_console_term;
+
+void hold_console_term_release(void) {
+    struct hold_console_term *t = &g_console_term;
+    if (!t->owned) return;
+    if (t->saved.saved) {
+        /* A program run inside the console may have left terminal-global modes
+         * enabled - mouse reporting, bracketed paste, focus reports, application
+         * keypad/cursor keys, a cursor style, a hidden cursor - and the
+         * compositor sets them on its behalf (and may be cut off inside a
+         * synchronized update). These survive the PTY teardown and would leak
+         * back to the user's shell, so reset them before handing the terminal
+         * back. */
+        static const char reset_modes[] =
+            "\033[?2026l\033[0m"
+            "\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1015l"
+            "\033[?2004l\033[?1004l\033[?1l\033>\033[0 q\033[?25h";
+        (void)hold_write_all(STDOUT_FILENO, reset_modes, sizeof(reset_modes) - 1);
+    }
+    if (t->alt_screen) (void)hold_write_all(STDOUT_FILENO, "\033[?1049l", 8);
+    if (t->saved.saved) {
+        (void)hold_write_all(STDOUT_FILENO, "\033[?25h", 6);
+        hold_term_input_restore(&t->saved);
+    }
+    memset(t, 0, sizeof(*t));
+}
+
+static const struct hold_store *g_mux_store;
+static char g_chat_name[ALIAS_MAX_LEN + 1];
+static unsigned char g_mux_cmd; /* the command key that ended the last attach, 0 none */
+
+void hold_console_set_mux(const struct hold_store *store, const char *chat_name) {
+    g_mux_store = store;
+    snprintf(g_chat_name, sizeof(g_chat_name), "%s", chat_name ? chat_name : "");
+}
 /* How the last attach ended (see console.h). */
 static bool g_refused, g_gone, g_composited, g_line_mode, g_stream;
 static pid_t g_refused_by;
@@ -184,6 +224,16 @@ static int sent_or_over(int rc) {
     return (errno == EPIPE || errno == ECONNRESET) ? 1 : -1;
 }
 
+/* The lead key then a pane or floating-window key: let go of this console
+ * (the broker closes on DETACH) and hand the terminal to the compositor. */
+static int attach_on_command(void *ctx, unsigned char key) {
+    struct attach_state *a = ctx;
+    if (a->writer >= 0) (void)write_frame(a->writer, CONSOLE_FRAME_DETACH, NULL, 0);
+    a->detach_sent_ms = attach_now_ms();
+    g_mux_cmd = key;
+    return 1;
+}
+
 /* Bytes the keys release go to the broker as DATA frames. */
 static int attach_on_input(void *ctx, const unsigned char *bytes, size_t n) {
     struct attach_state *a = ctx;
@@ -329,8 +379,9 @@ static void read_parting_words(int sock, struct attach_state *a) {
     }
 }
 
-int hold_run_native_console(const char *sock_path) {
+static int attach_once(const char *sock_path) {
     int writer = -1;
+    g_mux_cmd = 0;
     g_refused = g_gone = g_heard = g_reader_gone = false;
     g_refused_by = 0;
     int sock = hold_open_channel(sock_path, 'A', &writer);
@@ -363,14 +414,22 @@ int hold_run_native_console(const char *sock_path) {
     struct hold_term_saved saved;
     memset(&saved, 0, sizeof(saved));
     bool alt_screen = false;
+    struct hold_console_term *term = &g_console_term;
     if (g_line_mode) {
         /* A program on pipes: the terminal keeps its lines and its scrollback
          * (no alternate screen); keys are read one by one so the detach keys
          * and Ctrl-C can be seen, and the line editor does the rest. */
         if (interactive) (void)hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_KEYS, &saved);
+    } else if (term->owned) {
+        /* handed back by the compositor: raw, on the alternate screen; the
+         * broker's repaint redraws it all */
+        (void)hold_write_all(STDOUT_FILENO, "\033[0m\033[H\033[2J", 10);
     } else if (interactive && hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_RAW, &saved) == 0 && saved.saved &&
                hold_write_all(STDOUT_FILENO, "\033[?1049h\033[H\033[2J", 15) == 0) {
         alt_screen = true;
+        term->owned = true;
+        term->saved = saved;
+        term->alt_screen = true;
     }
 
     struct attach_state a = {.sock = sock, .writer = writer, .holding = true, .line_mode = g_line_mode};
@@ -381,6 +440,15 @@ int hold_run_native_console(const char *sock_path) {
     struct hold_term_detach detach;
     hold_term_detach_init(&detach, g_detach_keys, g_composited ? 0 : g_detach_key_count);
     if (g_line_mode) hold_term_detach_set_interrupt(&detach, 0x03); /* Ctrl-C */
+    /* Ctrl-P then A (attach another call beside this one), T (chat), H
+     * (help), N (names), W (next window): the compositor's. Only with the
+     * default two-key lead form and a terminal to draw on. */
+    bool mux_keys = interactive && !g_line_mode && !g_composited && g_mux_store && g_detach_key_count == 2 &&
+                    term->owned;
+    if (mux_keys) {
+        static const unsigned char cmds[] = {0x01, 0x14, 0x08, 0x0e, 0x17};
+        hold_term_detach_set_commands(&detach, cmds, sizeof(cmds));
+    }
     enum hold_client_end end = HOLD_CLIENT_OUTPUT_ENDED;
     if (hold_write_all(writer, CONSOLE_ATTACH_MAGIC, CONSOLE_ATTACH_MAGIC_LEN) != 0) {
         if (errno == EPIPE || errno == ECONNRESET) g_gone = true; /* ended as we arrived */
@@ -410,6 +478,7 @@ int hold_run_native_console(const char *sock_path) {
             .want_sigint = true,
             .on_input_end = attach_on_input_end,
             .on_resize = attach_on_resize,
+            .on_command = mux_keys ? attach_on_command : NULL,
             .ctx = &a,
         };
         end = hold_client_run(&c);
@@ -452,31 +521,39 @@ int hold_run_native_console(const char *sock_path) {
         if (nest_writer != nest) close(nest_writer);
         close(nest);
     }
-    if (saved.saved && !g_line_mode) {
-        /* A program run inside the console may have left terminal-global modes
-         * enabled — mouse reporting, bracketed paste, focus reports, application
-         * keypad/cursor keys, a cursor style, a hidden cursor — and a backmux
-         * shell's display sets them on its behalf (and may be cut off inside a
-         * synchronized update). These survive the PTY teardown and would leak
-         * back to the user's shell, so reset them before handing the terminal
-         * back. */
-        static const char reset_modes[] =
-            "\033[?2026l\033[0m"
-            "\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1015l"
-            "\033[?2004l\033[?1004l\033[?1l\033>\033[0 q\033[?25h";
-        (void)hold_write_all(STDOUT_FILENO, reset_modes, sizeof(reset_modes) - 1);
-    }
-    if (alt_screen) {
-        (void)hold_write_all(STDOUT_FILENO, "\033[?1049l", 8);
-    }
-    if (saved.saved) {
-        if (!g_line_mode) (void)hold_write_all(STDOUT_FILENO, "\033[?25h", 6);
-        hold_term_input_restore(&saved);
+    (void)alt_screen;
+    if (g_line_mode) {
+        if (saved.saved) hold_term_input_restore(&saved);
+    } else if (!g_mux_cmd || end == HOLD_CLIENT_SIGNALED) {
+        hold_console_term_release(); /* (kept for the compositor on a hand-off) */
     }
     g_heard = a.heard;
     if (a.writer >= 0 && a.writer != sock) close(a.writer);
     close(sock);
     if (pipe_ignored) sigaction(SIGPIPE, &old_pipe, NULL);
-    if (end == HOLD_CLIENT_SIGNALED) hold_term_reraise_stop();
+    if (end == HOLD_CLIENT_SIGNALED) {
+        g_mux_cmd = 0;
+        hold_term_reraise_stop();
+    }
     return rc;
+}
+
+int hold_run_native_console(const char *sock_path) {
+    char cur[HOLD_PATH_MAX];
+    snprintf(cur, sizeof(cur), "%s", sock_path);
+    for (;;) {
+        int rc = attach_once(cur);
+        if (!g_mux_cmd) return rc;
+        /* Panes or a floating window were asked for: the compositor takes the
+         * terminal. With one pane left and nothing floating it hands back the
+         * call to show plainly, and this loop attaches to it as before. */
+        char back[HOLD_PATH_MAX] = "";
+        bool handed_back = false;
+        rc = hold_mux_run(g_mux_store, g_chat_name, cur, g_mux_cmd, back, sizeof(back), &handed_back);
+        if (!handed_back) {
+            hold_console_term_release();
+            return rc;
+        }
+        snprintf(cur, sizeof(cur), "%s", back);
+    }
 }

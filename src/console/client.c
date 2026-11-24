@@ -145,6 +145,8 @@ enum hold_client_end hold_client_run(const struct hold_client *c) {
                         stop = hook_stops(c->on_detach ? c->on_detach(c->ctx) : 1, &end);
                     } else if (completed == 2) {
                         stop = hook_stops(c->on_interrupt ? c->on_interrupt(c->ctx) : 1, &end);
+                    } else if (completed == 3) {
+                        stop = hook_stops(c->on_command ? c->on_command(c->ctx, c->keys->command) : 0, &end);
                     }
                 }
             } else if (n == 0 || errno == EBADF) { /* end of input, or none at all */

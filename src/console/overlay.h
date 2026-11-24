@@ -50,6 +50,8 @@ void comp_invalidate(struct compositor *c);
 /* Start a frame with the shell's screen as the base layer, clipped or padded
  * to the terminal. */
 void comp_begin(struct compositor *c, const struct hold_snapshot *base);
+/* A pane: snap's top-left rows x cols drawn at (row, col), clipped. */
+void comp_blit(struct compositor *c, const struct hold_snapshot *snap, int row, int col, int rows, int cols);
 /* Draw over the base. Cells outside the terminal are dropped; a wide
  * character cut in half by what is drawn over it becomes a blank. */
 void comp_put(struct compositor *c, int row, int col, uint32_t cp, const struct comp_style *st);

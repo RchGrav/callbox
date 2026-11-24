@@ -66,6 +66,12 @@ static bool chord_prefix(const unsigned char *keys, size_t nkeys,
     return true;
 }
 
+void hold_term_detach_set_commands(struct hold_term_detach *d, const unsigned char *cmds, size_t n) {
+    if (n > sizeof(d->commands)) n = sizeof(d->commands);
+    memcpy(d->commands, cmds, n);
+    d->ncommands = n;
+}
+
 void hold_term_detach_set_interrupt(struct hold_term_detach *d, unsigned char intr) {
     d->intr = intr;
 }
@@ -83,6 +89,32 @@ int hold_term_detach_flush(struct hold_term_detach *d, hold_term_detach_sink sin
 int hold_term_detach_feed(struct hold_term_detach *d, unsigned char c,
                           hold_term_detach_sink sink, void *ctx, int *completed) {
     *completed = 0;
+    /* While the lead key is held, an escape sequence goes through whole (a
+     * mouse report is not the second key; moving the mouse must never
+     * answer a key prompt), and the lead key goes on waiting. */
+    if (d->esc_pass) {
+        if (d->esc_pass == 1) d->esc_pass = c == '[' ? 2 : 0;
+        else if (c >= 0x40 && c <= 0x7e) d->esc_pass = 0;
+        return sink(ctx, &c, 1) != 0 ? -1 : 0;
+    }
+    if (d->ncommands && d->nkeys == 2 && d->pending_len == 1) {
+        if (c == 0x1b) {
+            d->esc_pass = 1;
+            return sink(ctx, &c, 1) != 0 ? -1 : 0;
+        }
+        if (c != d->keys[1] && c != d->keys[0]) {
+            d->pending_len = 0;
+            if (memchr(d->commands, c, d->ncommands)) {
+                d->command = c;
+                *completed = 3;
+            }
+            /* not a command: cancelled, both keys dropped. Why: with seven
+             * commands a wrong second key is almost always a mistyped one,
+             * and passing it on would hit the program with a stray Ctrl-P
+             * (previous command in a shell, completion in vim) and more. */
+            return 0;
+        }
+    }
     for (;;) {
         if (d->pending_len == 0 && d->intr && c == d->intr) {
             *completed = 2;

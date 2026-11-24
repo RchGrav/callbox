@@ -1,0 +1,7 @@
+usage: backmux detach [--name NAME] [options] <program> [<args>...]
+
+Run a terminal program in the background on a PTY, for later: backmux attach
+NAME shows it, and peek, send and wait drive it from a script or an agent.
+
+Options: --name, -e, --env-file, --size COLS ROWS, --rm, --restart. Docker's
+spelling: backmux run -dt.

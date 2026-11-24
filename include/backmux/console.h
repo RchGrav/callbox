@@ -123,14 +123,23 @@ struct hold_client {
     int (*on_interrupt)(void *ctx);
     int (*on_input_end)(void *ctx);
     int (*on_resize)(void *ctx, const struct winsize *ws);
+    int (*on_command)(void *ctx, unsigned char key); /* the lead key, then a command key */
     bool want_sigint;
     void *ctx;
 };
 enum hold_client_end hold_client_run(const struct hold_client *c);
 
 /* The attach client: connect to a call's console socket and bridge the
- * terminal until the detach chord (Ctrl-P Ctrl-Q by default) or the call ends. */
+ * terminal until the detach chord (Ctrl-P Ctrl-Q by default) or the call ends.
+ * Alone on the screen it passes the call's output straight through, as
+ * always; the lead key then a pane or floating-window key (Ctrl-P Ctrl-A,
+ * Ctrl-T, Ctrl-H, Ctrl-N) hands the terminal to the compositor (mux.c),
+ * which hands it back when one pane is left and nothing floats. */
 int hold_run_native_console(const char *sock_path);
+/* What the compositor needs, set by whoever attaches: the store whose TTY
+ * calls Ctrl-P Ctrl-A lists and chat reaches, and the person's chat name
+ * (their inbox). Unset (NULL): the keys are ignored, as before. */
+void hold_console_set_mux(const struct hold_store *store, const char *chat_name);
 /* The console of the call this process runs inside (BACKMUX_ID), when it
  * has one: an attach started from here is nested in that call's terminal,
  * and says so to that call's broker for as long as it is attached. The

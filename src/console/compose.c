@@ -110,6 +110,33 @@ void comp_begin(struct compositor *c, const struct hold_snapshot *base) {
     }
 }
 
+/* A pane: snap's top-left rows x cols drawn at (row, col), clipped to the
+ * frame. A wide character cut by the pane's right edge becomes a blank, as
+ * one cut by the terminal's edge does. Why a blit and not a base layer:
+ * with panes, several programs' screens share one frame. */
+void comp_blit(struct compositor *c, const struct hold_snapshot *snap, int row, int col, int rows, int cols) {
+    if (!c->frame || !snap) return;
+    for (int r = 0; r < rows && r < snap->rows; r++) {
+        int fr = row + r;
+        if (fr < 0 || fr >= c->rows) continue;
+        struct hold_cell *dst = c->frame + (size_t)fr * c->cols;
+        for (int k = 0; k < cols && k < snap->cols; k++) {
+            int fc = col + k;
+            if (fc < 0 || fc >= c->cols) continue;
+            struct hold_cell cell = snap->cells[(size_t)r * snap->cols + k];
+            if (cell.width > 2) cell.width = 1;
+            if (cell.ch[0] == 0 && cell.width != 0) cell.ch[0] = ' ';
+            bool cut = (cell.width == 2 && (k == cols - 1 || fc == c->cols - 1)) || (cell.width == 0 && k == 0);
+            if (cut) {
+                cell.ch[0] = ' ';
+                cell.ch[1] = cell.ch[2] = 0;
+                cell.width = 1;
+            }
+            dst[fc] = cell;
+        }
+    }
+}
+
 static void style_cell(struct hold_cell *cell, const struct comp_style *st) {
     cell->attrs = st->attrs;
     cell->flags = 0;

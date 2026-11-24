@@ -1,4 +1,4 @@
 usage: backmux save <target>
 
-Protect a call from purge. There is no unsave; backmux purge <target> --force
-removes a saved call.
+Keep a call as a profile: purge and purge all leave it alone, and backmux
+recall starts it again. backmux delete <target> removes it.

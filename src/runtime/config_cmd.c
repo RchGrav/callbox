@@ -13,7 +13,7 @@ static const char config_usage[] =
     "usage: backmux config get <setting>\n"
     "       backmux config set <setting> <value>\n"
     "       backmux config unset <setting>\n"
-    "settings: detach-size COLS ROWS\n";
+    "settings: detach-size COLS ROWS, chat-name NAME\n";
 
 /* The words after the setting's name -> the one-line form that is saved. */
 typedef int (*setting_parse)(int argc, char **argv, char *out, size_t n);
@@ -38,6 +38,17 @@ static int parse_size_value(int argc, char **argv, char *out, size_t n) {
     return 0;
 }
 
+/* chat-name: what you are called in chat and to agents that reply. Why a
+ * setting: a generated name works, and some people want their own. */
+static int parse_name_value(int argc, char **argv, char *out, size_t n) {
+    if (argc != 1 || !hold_valid_alias(argv[0])) {
+        fprintf(stderr, "backmux: error: a chat name is letters, digits, _ and -, up to %d of them\n", ALIAS_MAX_LEN);
+        return -1;
+    }
+    snprintf(out, n, "%s", argv[0]);
+    return 0;
+}
+
 static const struct setting {
     const char *name;
     setting_parse parse;
@@ -45,6 +56,7 @@ static const struct setting {
 } settings[] = {
     {"detach-size", parse_size_value,
      "detach-size is not set: a detached PTY call takes the invoking terminal's size, or 80 24 without one"},
+    {"chat-name", parse_name_value, "chat-name is not set: chat gives you a generated name"},
 };
 
 static const struct setting *find_setting(const char *name) {

@@ -24,6 +24,11 @@ struct hold_recipe {
     bool has_chat_key;
     bool has_keys;   /* backmux shell: its broker reads the lead key itself (lead_key, then detach_key) */
     int lead_key, detach_key;
+    bool mode_agent; /* backmux agent (or set NAME agent): messages arrive with a header naming the
+                        sender and how to reply; without it they arrive raw, the text then Enter.
+                        Read at each delivery, so set/unset take effect from the next message. */
+    char working[HOLD_PATH_MAX]; /* the folder recall starts it in; absent = where recall is run */
+    bool has_working;
     bool has_size;   /* placed with --size: redial replays it */
     int size_cols, size_rows;
     char restart_policy[64];
