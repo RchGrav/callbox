@@ -676,6 +676,41 @@ static int emit_pen(const struct hold_cell *c, char **buf, size_t *len, size_t *
     return buf_append(buf, len, cap, sgr, (size_t)n < sizeof(sgr) ? (size_t)n : sizeof(sgr) - 1);
 }
 
+/* One row as it looked: its text with its colors and styles (palette
+ * colors as palette indexes), trailing blanks dropped, then a reset - no
+ * cursor movement, so it can be printed into a terminal's scrollback. */
+int hold_snapshot_row_ansi(const struct hold_snapshot *snap, int row, char **buf, size_t *len, size_t *cap) {
+    if (row < 0 || row >= snap->rows) return 0;
+    const struct hold_cell *cells = snap->cells + (size_t)row * snap->cols;
+    int end = snap->cols;
+    while (end > 0) {
+        const struct hold_cell *c = &cells[end - 1];
+        bool blank = (c->ch[0] == 0 || c->ch[0] == ' ') && c->width != 0 && (c->flags & HOLD_CELL_BG_DEFAULT) &&
+                     !(c->attrs & (HOLD_ATTR_REVERSE | HOLD_ATTR_UNDERLINE | HOLD_ATTR_STRIKE));
+        if (!blank) break;
+        end--;
+    }
+    const struct hold_cell *pen = NULL;
+    for (int col = 0; col < end; col++) {
+        const struct hold_cell *c = &cells[col];
+        if (c->width == 0) continue; /* the right half of a wide character */
+        if (!pen || !same_pen(pen, c)) {
+            if (emit_pen(c, buf, len, cap) != 0) return -1;
+            pen = c;
+        }
+        if (c->ch[0] == 0) {
+            if (buf_append(buf, len, cap, " ", 1) != 0) return -1;
+            continue;
+        }
+        for (int k = 0; k < HOLD_CELL_CHARS && c->ch[k]; k++) {
+            char u[4];
+            size_t w = hold_utf8_encode(c->ch[k], u, sizeof(u));
+            if (buf_append(buf, len, cap, u, w) != 0) return -1;
+        }
+    }
+    return buf_append(buf, len, cap, "\033[0m", 4);
+}
+
 int hold_snapshot_repaint(const struct hold_snapshot *snap, char **buf, size_t *len, size_t *cap) {
     static const char clear[] = "\033[0m\033[H\033[2J";
     if (buf_append(buf, len, cap, clear, sizeof(clear) - 1) != 0) return -1;

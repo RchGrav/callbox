@@ -144,6 +144,9 @@ int hold_snapshot_write_text(const struct hold_snapshot *snap, FILE *f, bool rul
  * clear, every cell with its colors and attributes, the program's input modes,
  * and the cursor. Appends to *buf (realloc'd); returns -1 on allocation failure. */
 int hold_snapshot_repaint(const struct hold_snapshot *snap, char **buf, size_t *len, size_t *cap);
+/* One row as it looked: text with colors and styles, trailing blanks
+ * dropped, ending in a reset; no cursor movement. */
+int hold_snapshot_row_ansi(const struct hold_snapshot *snap, int row, char **buf, size_t *len, size_t *cap);
 /* One row's plain text into out (NUL-terminated, truncated to n). */
 void hold_snapshot_row_text(const struct hold_snapshot *snap, int row, char *out, size_t n);
 

@@ -177,9 +177,20 @@ int hold_print_final_screen(const struct hold_store *store, const char *id, FILE
         hold_snapshot_row_text(&snap, last, line, cap);
         if (line[0]) break;
     }
+    /* On a terminal, as it looked - colors and styles - so the last screen
+     * reads as what was there, not as a gray copy of it. Into a file or a
+     * pipe, plain text. */
+    bool colors = isatty(fileno(f));
     for (int r = 0; line && r <= last; r++) {
-        hold_snapshot_row_text(&snap, r, line, cap);
-        fprintf(f, "%s\n", line);
+        if (colors) {
+            char *row = NULL;
+            size_t rl = 0, rc2 = 0;
+            if (hold_snapshot_row_ansi(&snap, r, &row, &rl, &rc2) == 0 && row) fprintf(f, "%.*s\n", (int)rl, row);
+            free(row);
+        } else {
+            hold_snapshot_row_text(&snap, r, line, cap);
+            fprintf(f, "%s\n", line);
+        }
     }
     free(line);
     hold_snapshot_free(&snap);
