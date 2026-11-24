@@ -20,11 +20,71 @@ static char g_enclosing_sock[HOLD_PATH_MAX];
  * compositor (mux.c) take turns at it without leaving the alternate screen
  * in between, so going from one call to panes and back never flashes the
  * shell underneath. Restored once, by whoever has it last. */
-struct hold_console_term g_console_term;
+struct hold_console_term g_console_term = {.guard_fd = -1};
+
+/* What gives the person's terminal back: every mode a program inside (or
+ * the compositor) may have set, then off the alternate screen. */
+static const char g_reset_modes[] =
+    "\033[?2026l\033[0m"
+    "\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1015l"
+    "\033[?2004l\033[?1004l\033[?1l\033>\033[0 q\033[?25h";
+
+/* A guard for the terminal: a tiny child that holds nothing but the
+ * terminal and a pipe, and waits. If the client goes without saying so -
+ * kill -9, a crash - the pipe closes and the guard gives the terminal back:
+ * its settings, mouse reporting off, off the alternate screen. Why: nothing
+ * in a process can catch kill -9, and a terminal left raw with every mouse
+ * movement typed into the shell is unusable. Why a child, not a parent that
+ * supervises: the backmux the person ran keeps its pid and its exit status,
+ * which scripts rely on. It ignores SIGTTOU: once the client is gone the
+ * shell has the foreground, and the guard restores from the background. */
+static void start_guard(struct hold_console_term *t) {
+    int p[2];
+    if (pipe(p) != 0) return;
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(p[0]);
+        close(p[1]);
+        return;
+    }
+    if (pid == 0) {
+        for (int fd = 3; fd < 1024; fd++)
+            if (fd != p[0]) close(fd); /* never hold a console connection open */
+        signal(SIGINT, SIG_IGN);
+        signal(SIGQUIT, SIG_IGN);
+        signal(SIGTERM, SIG_IGN); /* a TERM to the client is handled there */
+        signal(SIGTTOU, SIG_IGN);
+        signal(SIGTTIN, SIG_IGN);
+        signal(SIGPIPE, SIG_IGN);
+        char c = 0;
+        ssize_t n;
+        do n = read(p[0], &c, 1);
+        while (n < 0 && errno == EINTR);
+        if (n == 1) _exit(0); /* the client let go itself */
+        (void)tcsetattr(t->saved.fd, TCSANOW, &t->saved.t);
+        (void)hold_write_all(STDOUT_FILENO, g_reset_modes, sizeof(g_reset_modes) - 1);
+        if (t->alt_screen) (void)hold_write_all(STDOUT_FILENO, "\033[?1049l", 8);
+        _exit(0);
+    }
+    close(p[0]);
+    (void)fcntl(p[1], F_SETFD, FD_CLOEXEC);
+    t->guard_fd = p[1];
+    t->guard_pid = pid;
+}
+
+static void stop_guard(struct hold_console_term *t) {
+    if (t->guard_fd < 0) return;
+    (void)hold_write_all(t->guard_fd, "q", 1);
+    close(t->guard_fd);
+    if (t->guard_pid > 0) (void)waitpid(t->guard_pid, NULL, 0);
+    t->guard_fd = -1;
+    t->guard_pid = 0;
+}
 
 void hold_console_term_release(void) {
     struct hold_console_term *t = &g_console_term;
     if (!t->owned) return;
+    stop_guard(t);
     if (t->saved.saved) {
         /* A program run inside the console may have left terminal-global modes
          * enabled - mouse reporting, bracketed paste, focus reports, application
@@ -33,11 +93,7 @@ void hold_console_term_release(void) {
          * synchronized update). These survive the PTY teardown and would leak
          * back to the user's shell, so reset them before handing the terminal
          * back. */
-        static const char reset_modes[] =
-            "\033[?2026l\033[0m"
-            "\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1015l"
-            "\033[?2004l\033[?1004l\033[?1l\033>\033[0 q\033[?25h";
-        (void)hold_write_all(STDOUT_FILENO, reset_modes, sizeof(reset_modes) - 1);
+        (void)hold_write_all(STDOUT_FILENO, g_reset_modes, sizeof(g_reset_modes) - 1);
     }
     if (t->alt_screen) (void)hold_write_all(STDOUT_FILENO, "\033[?1049l", 8);
     if (t->saved.saved) {
@@ -45,6 +101,7 @@ void hold_console_term_release(void) {
         hold_term_input_restore(&t->saved);
     }
     memset(t, 0, sizeof(*t));
+    t->guard_fd = -1;
 }
 
 static const struct hold_store *g_mux_store;
@@ -430,6 +487,7 @@ static int attach_once(const char *sock_path) {
         term->owned = true;
         term->saved = saved;
         term->alt_screen = true;
+        start_guard(term);
     }
 
     struct attach_state a = {.sock = sock, .writer = writer, .holding = true, .line_mode = g_line_mode};

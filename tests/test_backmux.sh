@@ -5856,6 +5856,36 @@ wait_gone() {
   return 1
 }
 
+# kill -9 cannot be caught, so a guard child gives the terminal back: its
+# settings, mouse reporting off, off the alternate screen - a terminal left
+# reporting every mouse movement into the shell is unusable. The calls run on.
+test_kill_9_gives_the_terminal_back() {
+  local cpid i
+  "$HOLD_BIN" detach --name app -- sh -c 'echo APP-UP; exec cat' >/dev/null || return 1
+  "$HOLD_BIN" detach --size 100 24 --name term -- /bin/sh >/dev/null || return 1
+  "$HOLD_BIN" send term "exec_attach() { \"$HOLD_REAL_BIN\" attach app; }; exec_attach" -k Enter || return 1
+  "$HOLD_BIN" wait term --match APP-UP --timeout 8000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" send term -k C-p -k C-t || return 1
+  "$HOLD_BIN" wait term --regex 'chat -> ' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  out_has '"mouse": "move"' "$HOLD_BIN" peek term --json || { echo "the compositor did not ask for the mouse" >&2; return 1; }
+  cpid=""
+  for i in $(seq 1 20); do
+    cpid=$(pgrep -f "$HOLD_REAL_BIN attach app" | head -1)
+    [ -n "$cpid" ] && break
+    sleep 0.1
+  done
+  [ -n "$cpid" ] || { echo "no attach client to kill" >&2; return 1; }
+  kill -9 "$cpid"
+  for i in $(seq 1 40); do
+    out_has '"mouse": "none"' "$HOLD_BIN" peek term --json && break
+    sleep 0.1
+  done
+  out_has '"mouse": "none"' "$HOLD_BIN" peek term --json || { echo "mouse reporting was left on" >&2; "$HOLD_BIN" peek term --json >&2; return 1; }
+  out_has '"alt_screen": false' "$HOLD_BIN" peek term --json || { echo "left on the alternate screen" >&2; return 1; }
+  out_has 'Up .* app$' "$HOLD_BIN" list || { echo "the call did not run on" >&2; return 1; }
+  "$HOLD_BIN" end app term >/dev/null 2>&1 || true
+}
+
 # Nothing splits by default: plain attach until Ctrl-P Ctrl-A brings a second
 # call in. It takes the left (B), the first stays right (A); keys go to the
 # focused pane; a click moves focus; when one pane is left it is plain attach
@@ -6712,6 +6742,7 @@ run_test "--size is the terminal the program first sees; redial replays it" test
 run_test "initial size: --size, saved detach-size, invoking terminal, 80x24" test_detach_size_default_and_precedence
 run_test "an invalid size starts nothing and replaces nothing" test_invalid_sizes_start_nothing
 run_test "panes: Ctrl-P Ctrl-A puts a call beside; one pane is plain attach again" test_panes_attach_beside_and_hand_back
+run_test "kill -9 of the client: a guard gives the terminal back" test_kill_9_gives_the_terminal_back
 run_test "panes: four to a window, the fifth opens window 2; swap by letter, number, name" test_panes_windows_and_swap
 run_test "chat is the person's: raw or with a header, replies come back, it follows them" test_chat_is_the_persons
 run_test "the lead key: Ctrl-P Ctrl-P is one Ctrl-P, any other key cancels, help floats" test_lead_key_commands_and_cancel

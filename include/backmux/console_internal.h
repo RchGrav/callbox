@@ -99,6 +99,8 @@ struct hold_console_term {
     bool owned;
     bool alt_screen;
     struct hold_term_saved saved;
+    int guard_fd;    /* write end of the guard's pipe; -1 none */
+    pid_t guard_pid;
 };
 extern struct hold_console_term g_console_term;
 void hold_console_term_release(void);
