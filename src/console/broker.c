@@ -392,6 +392,13 @@ struct attach_client {
     bool no_terminal;  /* nothing on the client's side answers terminal queries */
     bool name_shown;   /* the corner name was drawn for this client */
     int64_t name_until_ms; /* when to take it down again (0 = not up) */
+    /* While the name is up, output is sent as repaints of the screen with
+     * the name over it, not as raw bytes: a program that redraws its whole
+     * screen on attach (vim does, after the resize) would wipe the name
+     * the moment it appeared. */
+    char name_label[ALIAS_MAX_LEN + 8];
+    bool name_dirty;
+    int64_t name_frame_ms;
     unsigned char pending[16384];
     size_t pending_len;
 };
@@ -1530,15 +1537,21 @@ static void show_name(struct broker *b, struct attach_client *c) {
     struct hold_run_record r;
     char path[HOLD_PATH_MAX];
     if (hold_load_record_by_id(b->store->record_dir, b->run_id, &r, path, sizeof(path)) != 0) return;
-    char label[ALIAS_MAX_LEN + 32];
-    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " backmux: %s ", r.name);
+    /* The name alone: it is what msg, attach and every agent take; the
+     * command is what the person just typed. */
+    char label[ALIAS_MAX_LEN + 8];
+    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " %s ", r.name);
     else {
         char display[ID_DISPLAY_HEX_LEN + 1];
         hold_run_id_display(r.id, display);
-        snprintf(label, sizeof(label), " backmux: %s ", display);
+        snprintf(label, sizeof(label), " %s ", display);
     }
     hold_free_run_record(&r);
-    if (repaint_raw(b, c, label) == 0 && c->fd >= 0) c->name_until_ms = now_ms() + BROKER_NAME_MS;
+    snprintf(c->name_label, sizeof(c->name_label), "%s", label);
+    if (repaint_raw(b, c, label) == 0 && c->fd >= 0) {
+        c->name_until_ms = now_ms() + BROKER_NAME_MS;
+        c->name_frame_ms = now_ms();
+    }
 }
 
 /* b->target is our child: waitpid lifecycle, killed on cleanup. Never returns. */
@@ -1601,6 +1614,7 @@ static void broker_serve(struct broker *b) {
         if (msg_due < timeout) timeout = msg_due;
         if (cl.fd >= 0 && cl.name_until_ms) {
             int64_t due = cl.name_until_ms - now;
+            if (cl.name_dirty && cl.name_frame_ms + BROKER_FRAME_MS - now < due) due = cl.name_frame_ms + BROKER_FRAME_MS - now;
             if (due < timeout) timeout = due < 0 ? 0 : due;
         }
         for (int i = 0; i < BROKER_MAX_CONTROL; i++) {
@@ -1795,7 +1809,9 @@ static void broker_serve(struct broker *b) {
                     else flush_screen_output(b);
                     /* Before the repaint, the client gets nothing: the repaint
                      * already includes these bytes. */
-                    if (cl.fd >= 0 && !cl.needs_repaint && write_all_wait(cl.output, buf, (size_t)n) != 0) {
+                    if (cl.fd >= 0 && cl.name_until_ms) {
+                        cl.name_dirty = true; /* sent as a repaint with the name over it */
+                    } else if (cl.fd >= 0 && !cl.needs_repaint && write_all_wait(cl.output, buf, (size_t)n) != 0) {
                         drop_attach(b, &cl);
                     }
                 }
@@ -1815,6 +1831,11 @@ static void broker_serve(struct broker *b) {
         if (cl.fd >= 0 && cl.needs_repaint && cl.decided) {
             cl.needs_repaint = false;
             if (repaint_attach(b, &cl) != 0) drop_attach(b, &cl);
+        }
+        if (cl.fd >= 0 && cl.name_until_ms && cl.name_dirty && now - cl.name_frame_ms >= BROKER_FRAME_MS) {
+            cl.name_dirty = false;
+            cl.name_frame_ms = now;
+            if (repaint_raw(b, &cl, cl.name_label) != 0) drop_attach(b, &cl);
         }
         if (b->chat && cl.fd >= 0 && cl.decided && !cl.needs_repaint && chat_wants_frame(b->chat) &&
             now - b->frame_ms >= BROKER_FRAME_MS && send_frame(b, &cl, now) != 0) {

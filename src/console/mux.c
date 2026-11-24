@@ -363,6 +363,9 @@ static void show_name(struct mux *m, struct pane *p) {
 static void set_focus(struct mux *m, int slot) {
     if (slot < 0 || slot >= MUX_MAX_PANES || !m->slot[slot]) return;
     if (m->focus != slot) show_name(m, m->slot[slot]);
+    /* chat talks to the pane you are in: moving there while it is up moves
+     * the conversation with you (Tab still reaches anyone else) */
+    if (m->fl == FL_CHAT && m->focus != slot) snprintf(m->peer, sizeof(m->peer), "%s", m->slot[slot]->name);
     m->focus = slot;
     m->view = slot / 4;
     m->dirty = true;
@@ -651,7 +654,8 @@ static void chat_open(struct mux *m) {
     if (chat_path(m, "peer", path, sizeof(path)) == 0 && read_small(path, peer, sizeof(peer)) && hold_valid_alias(peer))
         snprintf(m->peer, sizeof(m->peer), "%s", peer);
     load_log(m);
-    if (!m->peer[0] && focused(m)) snprintf(m->peer, sizeof(m->peer), "%s", focused(m)->name);
+    /* It opens on the pane you are in: that is who you are working with. */
+    if (focused(m)) snprintf(m->peer, sizeof(m->peer), "%s", focused(m)->name);
     m->unread = 0;
     m->fl = FL_CHAT;
     m->dirty = true;
@@ -811,8 +815,10 @@ static void chat_next_peer(struct mux *m) {
 
 /* ---- drawing ----------------------------------------------------------- */
 
-static const struct comp_style ST_SEP = {HOLD_ATTR_DIM, -1, -1};
-static const struct comp_style ST_SEP_FOCUS = {0, 2, -1};
+/* Plain gray, not dim: a dim line all but disappears on many terminals.
+ * The stretch beside the focused pane is green, to say where keys go. */
+static const struct comp_style ST_SEP = {0, 244, -1};
+static const struct comp_style ST_SEP_FOCUS = {HOLD_ATTR_BOLD, 2, -1};
 static const struct comp_style ST_NAME = {HOLD_ATTR_REVERSE | HOLD_ATTR_BOLD, -1, -1};
 static const struct comp_style ST_BOX = {0, 252, 236};
 static const struct comp_style ST_BOX_DIM = {0, 245, 236};

@@ -5781,7 +5781,7 @@ test_invalid_sizes_start_nothing() {
 start_term() {
   local term="$1" call="$2" cols="${3:-100}" rows="${4:-24}"
   "$HOLD_BIN" -dt --size "$cols" "$rows" --name "$term" -- "$HOLD_REAL_BIN" attach "$call" </dev/null >/dev/null || return 1
-  "$HOLD_BIN" wait "$term" --match "backmux: $call" --timeout 8000 >/dev/null || { "$HOLD_BIN" peek "$term" >&2; return 1; }
+  "$HOLD_BIN" wait "$term" --regex " $call \$" --timeout 8000 >/dev/null || { "$HOLD_BIN" peek "$term" >&2; return 1; }
 }
 
 # Ctrl-P Ctrl-A, then the call whose arguments show MARK in the picker's
