@@ -1235,7 +1235,12 @@ int hold_perform_start_options(const struct hold_invocation *inv,
              * error: it ran, and what it printed and how it exited follow. */
             /* From a script, a call that was over before the stream reached
              * it (it sent nothing) is shown from the log, too. */
-            bool streamed = !(isatty(STDIN_FILENO) && isatty(STDOUT_FILENO));
+            /* Inline is a stream too: a program over before the attach got
+             * there can leave it with nothing (seen on macOS over FIFOs), and
+             * nothing is reprinted inline - so it is shown from the log. Not
+             * when the person detached: a quiet program has said nothing yet. */
+            bool streamed = !(isatty(STDIN_FILENO) && isatty(STDOUT_FILENO)) ||
+                            (hold_console_was_inline() && !hold_console_was_detached(NULL));
             bool unseen = hold_console_was_gone() || (streamed && tail_rc == 0 && !hold_console_heard_output());
             if (unseen) tail_rc = 0;
             /* Detached, or over (an attach that failed has said so itself).
