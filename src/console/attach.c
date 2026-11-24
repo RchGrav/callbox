@@ -115,6 +115,20 @@ void hold_console_set_inline(bool on) {
     g_inline = on;
 }
 
+/* The compositor split an inline screen: from here the screen is all
+ * backmux's, so it goes to the alternate screen, and letting go gives the
+ * person back their own screen exactly as the launch left it - not panes,
+ * split lines and stale prompts. A hand-back to one pane is then an ordinary
+ * attach on the alternate screen: repainted, not a stream already replayed. */
+void hold_console_leave_inline(void) {
+    struct hold_console_term *t = &g_console_term;
+    if (!g_was_inline || !t->owned) return;
+    if (!t->alt_screen) (void)hold_write_all(STDOUT_FILENO, "\033[?1049h\033[H\033[2J", 15);
+    t->alt_screen = true;
+    g_was_inline = false;
+    g_prog_alt = false;
+}
+
 bool hold_console_was_inline(void) {
     return g_was_inline;
 }
@@ -160,6 +174,13 @@ bool hold_console_was_gone(void) {
  * newer attach taking the process sets nothing - that is not a detach. */
 static bool g_detached;
 static char g_detached_names[512];
+/* The process a compositor handed back to plain attach: a detach from then
+ * on is from it, not from the one the attach began with. */
+static char g_attached_name[128];
+
+void hold_console_set_attached_name(const char *name) {
+    snprintf(g_attached_name, sizeof(g_attached_name), "%s", name ? name : "");
+}
 
 void hold_console_note_detached(const char *name) {
     if (!name) {
@@ -678,7 +699,10 @@ static int attach_once(const char *sock_path) {
 
     /* The connection closing just after the detach keys is the detach. */
     if (a.detach_sent_ms && attach_now_ms() - a.detach_sent_ms < 2000) rc = 0;
-    if (a.detach_sent_ms && !g_mux_cmd) hold_console_note_detached(NULL);
+    if (a.detach_sent_ms && !g_mux_cmd) {
+        hold_console_note_detached(NULL);
+        if (g_attached_name[0]) hold_console_note_detached(g_attached_name);
+    }
     /* Inline and letting go: the program's own full screen (vim) is switched
      * back, or, if there is none, the prompt that follows starts on a line
      * of its own instead of after the program's. A program that ended has
@@ -731,6 +755,7 @@ static int attach_once(const char *sock_path) {
 int hold_run_native_console(const char *sock_path) {
     char cur[HOLD_PATH_MAX];
     snprintf(cur, sizeof(cur), "%s", sock_path);
+    g_attached_name[0] = '\0';
     for (;;) {
         int rc = attach_once(cur);
         if (!g_mux_cmd) return rc;

@@ -64,10 +64,12 @@ void comp_assume(struct compositor *c, const struct hold_snapshot *base) {
     c->term_known = false;
 }
 
-void comp_forget_row(struct compositor *c, int row) {
+void comp_forget(struct compositor *c, int row, int col, int n) {
     if (!c->shown || row < 0 || row >= c->rows) return;
-    /* width 255 matches no real cell, so the next frame writes them all */
-    for (int col = 0; col < c->cols; col++) c->shown[(size_t)row * (size_t)c->cols + (size_t)col].width = 255;
+    if (col < 0) n += col, col = 0;
+    if (col + n > c->cols) n = c->cols - col;
+    /* width 255 matches no real cell, so the next frame writes them */
+    for (int i = 0; i < n; i++) c->shown[(size_t)row * (size_t)c->cols + (size_t)(col + i)].width = 255;
 }
 
 int comp_set_size(struct compositor *c, int rows, int cols) {

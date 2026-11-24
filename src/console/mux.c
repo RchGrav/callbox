@@ -319,7 +319,42 @@ static void place(int n, int k, int rows, int cols, int *r, int *c, int *h, int 
 
 /* Every pane where it goes; a pane toggled full takes its window's whole
  * screen (the others in that window wait behind it, at their sizes). */
+/* Inline, leaving the person's screen for the alternate one: first one
+ * plain frame on theirs - the pane alone, the cursor where the program has
+ * it - which erases the corner label and anything this compositor drew
+ * there; the alternate screen then keeps their screen as it is. */
+static void go_alt(struct mux *m) {
+    struct pane *f = NULL;
+    for (int i = 0; i < MUX_MAX_PANES && !f; i++) f = m->slot[i];
+    if (f) {
+        struct comp_want want = {0};
+        struct hold_snapshot snap;
+        comp_begin(m->comp, NULL);
+        if (hold_screen_snapshot(f->scr, &snap) == 0) {
+            comp_blit(m->comp, &snap, 0, 0, snap.rows, snap.cols);
+            want.cursor_row = snap.cursor_row;
+            want.cursor_col = snap.cursor_col;
+            want.cursor_visible = snap.modes.cursor_visible;
+            hold_snapshot_free(&snap);
+        }
+        char *buf = NULL;
+        size_t len = 0, cap = 0;
+        if (comp_flush(m->comp, &want, &buf, &len, &cap) == 0 && len) (void)hold_write_all(STDOUT_FILENO, buf, len);
+        free(buf);
+    }
+    hold_console_leave_inline();
+    comp_invalidate(m->comp);
+    m->assumed = false;
+    m->dirty = true;
+}
+
 static void relayout(struct mux *m) {
+    /* An inline terminal still shows the person's lines above the launch,
+     * which no pane holds: once a second pane splits the screen it is all
+     * ours - on the alternate screen, so leaving gives theirs back - and
+     * the next frame paints all of it. (Before the panes are resized: the
+     * last frame on the person's screen is the pane as it was.) */
+    if (m->assumed && pane_total(m) > 1) go_alt(m);
     for (int w = 0; w < MUX_MAX_WINDOWS; w++) {
         int n = win_count(m, w);
         for (int k = 0; k < n; k++) {
@@ -333,13 +368,6 @@ static void relayout(struct mux *m) {
                 pane_resize(p, h, wd);
             }
         }
-    }
-    /* An inline terminal still shows the person's lines above the launch,
-     * which no pane holds: once a second pane splits the screen it is all
-     * ours, so the next frame paints all of it instead of assuming. */
-    if (m->assumed && pane_total(m) > 1) {
-        comp_invalidate(m->comp);
-        m->assumed = false;
     }
     m->dirty = true;
     m->advertise = true;
@@ -1120,6 +1148,11 @@ static void floater_key(struct mux *m, const unsigned char *seq, size_t n) {
 
 static void open_floater(struct mux *m, enum floater f) {
     if (m->chat && f != FL_NONE) chat_put_away(m->chat); /* one floating window at a time */
+    /* The attach picker is the way to a split, and a split takes the whole
+     * screen: inline, it goes to the alternate screen before it draws, so
+     * the person's own screen - their lines above the launch, which no pane
+     * holds - is never drawn over and comes back as it was on leaving. */
+    if (f == FL_ATTACH && m->assumed) go_alt(m);
     m->pick_sel = 0;
     m->swap_first = -1;
     if (f == FL_ATTACH) load_picks(m);
@@ -1406,10 +1439,13 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
         if (hold_screen_snapshot(first->scr, &snap) == 0) {
             comp_assume(m->comp, &snap);
             hold_snapshot_free(&snap);
-            /* The top row also holds the broker's corner label ("name  hold
+            /* The top row may also hold the broker's corner label ("name  hold
              * Ctrl-Space: help"), which is not in the program's screen:
-             * assumed blank, it was never erased and stayed over the panes. */
-            comp_forget_row(m->comp, 0);
+             * assumed blank, it was never erased and stayed over the panes.
+             * Only its cells: the rest of the row may be the person's. */
+            char label[ALIAS_MAX_LEN + 32];
+            int ll = snprintf(label, sizeof(label), " %s  hold Ctrl-Space: help ", first->name);
+            if (ll > 0) comp_forget(m->comp, 0, m->tcols - ll, ll);
             m->assumed = true;
         }
     }
@@ -1438,12 +1474,16 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
         nul_tick(m);
         if (pane_total(m) == 1 && m->fl == FL_NONE && !m->lead && !m->holding && !m->nul_pending && !m->full &&
             !(m->chat && chat_on_screen(m->chat, m->now))) {
-            struct pane *p = m->slot[0];
+            /* the one pane left: windows keep their numbers, so it need not
+             * be in the first */
+            struct pane *p = NULL;
+            for (int i = 0; i < MUX_MAX_PANES && !p; i++) p = m->slot[i];
             /* the last frame, with nothing over the program: inline nothing
              * repaints after this, so nothing of chat may be left on it */
             m->dirty = true;
             render(m);
             snprintf(handback, hn, "%s", p->sock);
+            hold_console_set_attached_name(p->name); /* a detach names it */
             /* The mouse reporting this compositor asked for goes off before
              * plain attach takes over: until the program's own repaint
              * arrives, every movement would be typed into it. */

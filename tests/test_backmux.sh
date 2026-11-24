@@ -5963,6 +5963,11 @@ test_detach_says_so_and_split_is_clean() {
   if "$HOLD_BIN" peek dterm | grep -q '^backmux: detached'; then echo "a pane's detach left the terminal" >&2; "$HOLD_BIN" peek dterm >&2; return 1; fi
   "$HOLD_BIN" send dterm -k C-p -k C-q || return 1
   "$HOLD_BIN" wait dterm --regex '^backmux: detached dinl$' --timeout 5000 >/dev/null || { echo "the last detach did not say so" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
+  # the split was on the alternate screen: the person's own screen is back
+  # as it was - their line whole, no corner label, no split lines, no picker
+  out_has '^PERSON-LINE$' "$HOLD_BIN" peek dterm || { echo "the person's screen did not come back" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
+  out_has 'shell --name dinl$' "$HOLD_BIN" peek dterm || { echo "the person's command line was cut" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
+  if "$HOLD_BIN" peek dterm | grep -q 'hold Ctrl-Space\|│\|attach a running'; then echo "the split left marks on the person's screen" >&2; "$HOLD_BIN" peek dterm >&2; return 1; fi
   "$HOLD_BIN" end dside dinl dterm >/dev/null 2>&1 || true
 }
 

@@ -49,9 +49,9 @@ void comp_size(const struct compositor *c, int *rows, int *cols);
 void comp_invalidate(struct compositor *c);
 /* The terminal already shows base: the next frame paints only what differs. */
 void comp_assume(struct compositor *c, const struct hold_snapshot *base);
-/* Cells of this row may show something the compositor does not know of: the
- * next frame writes the whole row. */
-void comp_forget_row(struct compositor *c, int row);
+/* These cells may show something the compositor does not know of: the next
+ * frame writes them. */
+void comp_forget(struct compositor *c, int row, int col, int n);
 /* Start a frame with the shell's screen as the base layer, clipped or padded
  * to the terminal. */
 void comp_begin(struct compositor *c, const struct hold_snapshot *base);
