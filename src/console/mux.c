@@ -43,8 +43,6 @@
 #define MUX_FRAME_MS 16      /* output is drawn at most this often */
 #define MUX_LOOK_MS 250      /* how often chat looks at the inbox and its owner */
 #define MUX_PICK_MAX 64
-#define MUX_CHAT_LINES 200
-#define MUX_DRAFT_MAX 4000
 
 #define KEY_LEAD 0x10   /* Ctrl-P */
 #define KEY_DETACH 0x11 /* Ctrl-Q */
@@ -68,7 +66,7 @@ struct pane {
     bool heard;
 };
 
-enum floater { FL_NONE, FL_ATTACH, FL_SWAP, FL_HELP, FL_CHAT };
+enum floater { FL_NONE, FL_ATTACH, FL_SWAP, FL_HELP };
 
 struct pick {
     char id[ID_STR_LEN];
@@ -78,23 +76,6 @@ struct pick {
     char args[512];
     char working[HOLD_PATH_MAX];
     char started[64];
-};
-
-struct chat_line {
-    int64_t at;
-    bool mine;
-    char peer[ALIAS_MAX_LEN + 1];
-    char *text;
-    int state; /* 0 received, 1 sending, 2 delivered, 3 failed */
-    char why[ALIAS_MAX_LEN + 96];
-};
-
-struct sending {
-    pid_t pid;
-    int fd;
-    int line; /* index into lines */
-    char result[200];
-    size_t rlen;
 };
 
 struct mux {
@@ -113,28 +94,21 @@ struct mux {
     int64_t names_until;
     int hover; /* slot under the pointer, -1 none */
     bool advertise; /* the panes changed: rewrite chat/mux.<pid> for backmux swap */
-    bool pasting;   /* inside a bracketed paste, in the chat draft */
-    /* the floating window */
+    /* the attach picker's list, as last drawn (a click picks a row) */
+    int pick_x, pick_w, pick_top, pick_first, pick_rows;
+    /* the floating window that is not chat */
     enum floater fl;
     struct pick picks[MUX_PICK_MAX];
     int npicks, pick_sel;
     int swap_first; /* swap: the first slot chosen, -1 none */
     char notice[160];
     int64_t notice_until;
-    /* chat */
-    char peer[ALIAS_MAX_LEN + 1];
-    char draft[MUX_DRAFT_MAX];
-    size_t draft_len;
-    struct chat_line lines[MUX_CHAT_LINES];
-    int nlines;
-    int unread;
-    char unread_from[ALIAS_MAX_LEN + 1];
+    /* chat: the person's, the chat backmux shell always had (chat.c),
+     * floating over the panes */
+    struct chat *chat;
+    bool chat_loaded; /* the conversation log is replayed into it */
     off_t inbox_off;
     int64_t next_look;
-    struct sending send[4];
-    int chat_x, chat_y, chat_w, chat_h; /* where the window is; x < 0: not placed yet */
-    bool dragging;
-    int drag_dx, drag_dy;
     /* input not yet whole: an escape sequence split across reads */
     unsigned char esc[64];
     size_t esc_len;
@@ -365,7 +339,10 @@ static void set_focus(struct mux *m, int slot) {
     if (m->focus != slot) show_name(m, m->slot[slot]);
     /* chat talks to the pane you are in: moving there while it is up moves
      * the conversation with you (Tab still reaches anyone else) */
-    if (m->fl == FL_CHAT && m->focus != slot) snprintf(m->peer, sizeof(m->peer), "%s", m->slot[slot]->name);
+    if (m->chat && m->focus != slot) {
+        chat_set_screen(m->chat, m->slot[slot]->scr); /* Ctrl-S sends this pane's screen */
+        chat_show_call(m->chat, m->slot[slot]->id, m->slot[slot]->name);
+    }
     m->focus = slot;
     m->view = slot / 4;
     m->dirty = true;
@@ -488,10 +465,11 @@ static void load_picks(struct mux *m) {
 }
 
 /* ---- chat --------------------------------------------------------------
- * Chat belongs to the person, not to any call: one window, over whatever
- * they are attached to, under their own name (an inbox, as for any sender
- * outside a call). Only one terminal shows it: opening it in another moves
- * it there, with its draft and conversation. */
+ * Chat belongs to the person, not to any call: the chat window backmux shell
+ * always had (chat.c), floating over whatever is on screen, split or not,
+ * under the person's chat name (an inbox, as for any sender outside a call).
+ * Only one terminal shows it: opening it in another moves it there, and the
+ * conversation log (chat/<name>.log) carries the history along. */
 
 static int chat_path(const struct mux *m, const char *what, char *out, size_t n) {
     char dir[HOLD_PATH_MAX];
@@ -527,36 +505,34 @@ static bool chat_mine(const struct mux *m) {
     return atoi(text) == (int)getpid();
 }
 
-static void chat_save_draft(struct mux *m) {
-    char path[HOLD_PATH_MAX];
-    if (chat_path(m, "draft", path, sizeof(path)) == 0) write_small(path, m->draft, m->draft_len);
-    if (chat_path(m, "peer", path, sizeof(path)) == 0) write_small(path, m->peer, strlen(m->peer));
+/* Who a name is: a call (its id, so a rename keeps the conversation) or a
+ * sender outside any call (its inbox name). */
+struct find_walk {
+    const char *name;
+    char id[ID_STR_LEN];
+};
+
+static int find_cb(const char *id, const char *path, struct hold_run_record *r, void *ctx) {
+    (void)path;
+    struct find_walk *f = ctx;
+    if (!r || !r->has_name || strcmp(r->name, f->name) != 0) return 0;
+    snprintf(f->id, sizeof(f->id), "%s", id);
+    return 1;
 }
 
-static void add_line(struct mux *m, bool mine, const char *peer, const char *text, size_t len, int state) {
-    if (m->nlines == MUX_CHAT_LINES) {
-        free(m->lines[0].text);
-        memmove(m->lines, m->lines + 1, (MUX_CHAT_LINES - 1) * sizeof(m->lines[0]));
-        m->nlines--;
-        for (int i = 0; i < 4; i++)
-            if (m->send[i].pid) m->send[i].line--;
-    }
-    struct chat_line *l = &m->lines[m->nlines++];
-    memset(l, 0, sizeof(*l));
-    l->at = (int64_t)time(NULL);
-    l->mine = mine;
-    snprintf(l->peer, sizeof(l->peer), "%s", peer);
-    l->text = strndup(text, len);
-    l->state = state;
-    m->dirty = true;
+static bool call_id_of(const struct mux *m, const char *name, char *id, size_t n) {
+    struct find_walk f = {.name = name};
+    (void)hold_for_each_record(m->store->record_dir, find_cb, &f);
+    snprintf(id, n, "%s", f.id);
+    return f.id[0] != '\0';
 }
 
-/* The conversation log: every line in and out, so whichever terminal shows
- * chat next has it. "UNIXTIME DIR PEER HEXTEXT", DIR > sent, < received. */
+/* The conversation log: every line in and out. "UNIXTIME DIR PEER HEXTEXT",
+ * DIR > sent, < received. */
 static void log_line(struct mux *m, bool mine, const char *peer, const char *text, size_t len) {
     char path[HOLD_PATH_MAX];
     if (chat_path(m, "log", path, sizeof(path)) != 0) return;
-    size_t cap = 64 + ALIAS_MAX_LEN + 2 * len;
+    size_t cap = 64 + ALIAS_MAX_LEN + ID_STR_LEN + 2 * len;
     char *buf = malloc(cap);
     if (!buf) return;
     int k = snprintf(buf, cap, "%lld %c %s ", (long long)time(NULL), mine ? '>' : '<', peer);
@@ -574,11 +550,15 @@ static void log_line(struct mux *m, bool mine, const char *peer, const char *tex
     free(buf);
 }
 
-static void load_log(struct mux *m) {
-    for (int i = 0; i < m->nlines; i++) free(m->lines[i].text);
-    m->nlines = 0;
+static void on_sent(void *app, const char *label, const char *text, size_t len) {
+    log_line(app, true, label, text, len);
+}
+
+/* The history, into the chat window, the first time this terminal shows it. */
+static void replay_log(struct mux *m) {
     char path[HOLD_PATH_MAX];
-    if (chat_path(m, "log", path, sizeof(path)) != 0) return;
+    if (m->chat_loaded || chat_path(m, "log", path, sizeof(path)) != 0) return;
+    m->chat_loaded = true;
     FILE *f = fopen(path, "re");
     if (!f) return;
     char *line = NULL;
@@ -598,8 +578,9 @@ static void load_log(struct mux *m) {
             if (sscanf(hex + i, "%2x", &v) != 1) break;
             text[tl++] = (char)v;
         }
-        add_line(m, dir == '>', peer, text, tl, dir == '>' ? 2 : 0);
-        m->lines[m->nlines - 1].at = at;
+        char id[ID_STR_LEN];
+        bool call = call_id_of(m, peer, id, sizeof(id));
+        chat_replay(m->chat, dir == '>', call ? id : peer, peer, !call, (time_t)at, text, tl);
         free(text);
     }
     free(line);
@@ -608,14 +589,12 @@ static void load_log(struct mux *m) {
 
 static int inbox_cb(time_t at, const char *from, const char *text, size_t len, void *ctx) {
     struct mux *m = ctx;
-    add_line(m, false, from, text, len, 0);
-    m->lines[m->nlines - 1].at = (int64_t)at;
+    (void)at;
+    char id[ID_STR_LEN];
+    bool call = call_id_of(m, from, id, sizeof(id));
     log_line(m, false, from, text, len);
-    if (m->fl != FL_CHAT || strcmp(m->peer, from) != 0) {
-        m->unread++;
-        snprintf(m->unread_from, sizeof(m->unread_from), "%s", from);
-    }
-    if (!m->peer[0]) snprintf(m->peer, sizeof(m->peer), "%s", from);
+    if (m->chat) chat_inbound(m->chat, call ? id : from, from, !call, text, len);
+    m->dirty = true;
     return 0;
 }
 
@@ -632,184 +611,41 @@ static void chat_look(struct mux *m) {
         }
     }
     /* Another terminal opened chat: it moved there. */
-    if (m->fl == FL_CHAT && !chat_mine(m)) {
-        m->fl = FL_NONE;
+    if (m->chat && chat_visible(m->chat) && !chat_mine(m)) {
+        chat_put_away(m->chat);
         m->dirty = true;
     }
 }
 
-static void chat_open(struct mux *m) {
-    char path[HOLD_PATH_MAX], text[32];
-    if (!m->me[0]) {
+/* Keys that are not chat's go to the focused pane; a pointer report outside
+ * the window is the compositor's to route. */
+static void to_pane(struct mux *m, const unsigned char *b, size_t n);
+static void handle_mouse(struct mux *m, int b, int x, int y, bool release);
+static void chat_to_app(void *app, const unsigned char *bytes, size_t n) {
+    to_pane(app, bytes, n);
+}
+static void chat_pointer(void *app, int b, int x, int y, bool release) {
+    handle_mouse(app, b, x, y, release);
+}
+
+/* Ctrl-P Ctrl-T: chat here (it leaves any other terminal), opened on the
+ * pane you are in; pressed again, the keyboard moves between chat and the
+ * program, as it always did. */
+static void chat_key_pressed(struct mux *m) {
+    if (!m->chat) {
         notice(m, "chat needs a name: this terminal could not get one");
         return;
     }
+    char path[HOLD_PATH_MAX], text[32];
     if (chat_path(m, "active", path, sizeof(path)) == 0) {
         int k = snprintf(text, sizeof(text), "%d\n", (int)getpid());
         write_small(path, text, (size_t)k);
     }
-    /* what the last terminal to show it left: the draft and who to */
-    if (chat_path(m, "draft", path, sizeof(path)) == 0) m->draft_len = read_small(path, m->draft, sizeof(m->draft));
-    char peer[ALIAS_MAX_LEN + 2] = "";
-    if (chat_path(m, "peer", path, sizeof(path)) == 0 && read_small(path, peer, sizeof(peer)) && hold_valid_alias(peer))
-        snprintf(m->peer, sizeof(m->peer), "%s", peer);
-    load_log(m);
-    /* It opens on the pane you are in: that is who you are working with. */
-    if (focused(m)) snprintf(m->peer, sizeof(m->peer), "%s", focused(m)->name);
-    m->unread = 0;
-    m->fl = FL_CHAT;
-    m->dirty = true;
-}
-
-static void chat_close(struct mux *m) {
-    chat_save_draft(m);
-    m->fl = FL_NONE;
-    m->dragging = false;
-    m->dirty = true;
-}
-
-static _Noreturn void send_helper(const char *sock, const char *me, const char *text, size_t len, int wfd) {
-    for (int fd = 3; fd < 1024; fd++)
-        if (fd != wfd) close(fd);
-    signal(SIGPIPE, SIG_IGN);
-    size_t ml = strlen(me);
-    size_t cap = 64 + 2 * ml + 2 * len;
-    char *req = malloc(cap);
-    static const char hx[] = "0123456789abcdef";
-    char line[200] = "error out of memory\n";
-    if (req) {
-        /* from an operator: its inbox name, marked op=1 (what backmux msg
-         * sends from outside any call), so replies come to this chat */
-        size_t k = (size_t)snprintf(req, cap, "msg op=1 from=");
-        for (size_t i = 0; i < ml; i++) {
-            req[k++] = hx[(unsigned char)me[i] >> 4];
-            req[k++] = hx[(unsigned char)me[i] & 15];
-        }
-        req[k++] = '\n';
-        for (size_t i = 0; i < len; i++) {
-            req[k++] = hx[(unsigned char)text[i] >> 4];
-            req[k++] = hx[(unsigned char)text[i] & 15];
-        }
-        unsigned char *reply = NULL;
-        size_t rl = 0;
-        if (hold_console_request(sock, req, k, &reply, &rl) != 0)
-            snprintf(line, sizeof(line), "error %s\n", errno == ENOENT ? "it has ended" : strerror(errno));
-        else
-            snprintf(line, sizeof(line), "%.*s\n", (int)strcspn((char *)reply, "\n"), (char *)reply);
-        free(reply);
-    }
-    (void)hold_write_all(wfd, line, strlen(line));
-    _exit(0);
-}
-
-struct find_walk {
-    const char *name;
-    char sock[HOLD_PATH_MAX];
-    bool found, live;
-};
-
-static int find_cb(const char *id, const char *path, struct hold_run_record *r, void *ctx) {
-    (void)id;
-    (void)path;
-    struct find_walk *f = ctx;
-    if (!r || !r->has_name || strcmp(r->name, f->name) != 0) return 0;
-    f->found = true;
-    f->live = r->has_console && !r->has_exit_code && hold_path_exists(r->console_sock);
-    if (f->live) snprintf(f->sock, sizeof(f->sock), "%s", r->console_sock);
-    return f->live ? 1 : 0;
-}
-
-static void chat_send(struct mux *m) {
-    if (!m->draft_len) return;
-    if (!m->peer[0]) {
-        notice(m, "Tab chooses who to talk to");
-        return;
-    }
-    add_line(m, true, m->peer, m->draft, m->draft_len, 1);
-    int li = m->nlines - 1;
-    log_line(m, true, m->peer, m->draft, m->draft_len);
-    struct find_walk f = {.name = m->peer};
-    (void)hold_for_each_record(m->store->record_dir, find_cb, &f);
-    if (!f.found) {
-        /* not a call: another person or agent outside any call, by inbox */
-        if (hold_inbox_deliver(m->store, m->peer, m->me, m->draft, m->draft_len) == 0) m->lines[li].state = 2;
-        else {
-            m->lines[li].state = 3;
-            snprintf(m->lines[li].why, sizeof(m->lines[li].why), "%s is not a running call or an inbox", m->peer);
-        }
-    } else if (!f.live) {
-        m->lines[li].state = 3;
-        snprintf(m->lines[li].why, sizeof(m->lines[li].why), "%s is not running", m->peer);
-    } else {
-        struct sending *s = NULL;
-        for (int i = 0; i < 4 && !s; i++)
-            if (!m->send[i].pid) s = &m->send[i];
-        int fds[2];
-        if (!s || pipe(fds) != 0) {
-            m->lines[li].state = 3;
-            snprintf(m->lines[li].why, sizeof(m->lines[li].why), "too many messages on their way");
-        } else {
-            pid_t pid = fork();
-            if (pid == 0) {
-                close(fds[0]);
-                send_helper(f.sock, m->me, m->draft, m->draft_len, fds[1]);
-            }
-            close(fds[1]);
-            if (pid < 0) {
-                close(fds[0]);
-                m->lines[li].state = 3;
-                snprintf(m->lines[li].why, sizeof(m->lines[li].why), "could not send");
-            } else {
-                (void)fcntl(fds[0], F_SETFL, fcntl(fds[0], F_GETFL) | O_NONBLOCK);
-                memset(s, 0, sizeof(*s));
-                s->pid = pid;
-                s->fd = fds[0];
-                s->line = li;
-            }
-        }
-    }
-    m->draft_len = 0;
-    m->dirty = true;
-}
-
-static void send_done(struct mux *m, struct sending *s) {
-    s->result[s->rlen < sizeof(s->result) ? s->rlen : sizeof(s->result) - 1] = '\0';
-    if (s->line >= 0 && s->line < m->nlines) {
-        struct chat_line *l = &m->lines[s->line];
-        if (!strncmp(s->result, "ok", 2)) l->state = 2;
-        else {
-            l->state = 3;
-            snprintf(l->why, sizeof(l->why), "%.*s", (int)strcspn(s->result + (strncmp(s->result, "error ", 6) ? 0 : 6), "\n"),
-                     s->result + (strncmp(s->result, "error ", 6) ? 0 : 6));
-        }
-    }
-    close(s->fd);
-    (void)waitpid(s->pid, NULL, 0);
-    memset(s, 0, sizeof(*s));
-    m->dirty = true;
-}
-
-/* Tab: the next one to talk to - the panes first, then every other running
- * call, then anyone in the conversation (an agent outside any call). Why
- * all running calls: the one to ask is often not on screen. */
-static void chat_next_peer(struct mux *m) {
-    const char *names[MUX_MAX_PANES + MUX_PICK_MAX + MUX_CHAT_LINES];
-    int n = 0;
-    for (int i = 0; i < MUX_MAX_PANES; i++)
-        if (m->slot[i]) names[n++] = m->slot[i]->name;
-    load_picks(m);
-    for (int i = 0; i < m->npicks; i++) names[n++] = m->picks[i].name;
-    for (int i = 0; i < m->nlines; i++) {
-        bool dup = false;
-        for (int k = 0; k < n && !dup; k++) dup = !strcmp(names[k], m->lines[i].peer);
-        if (!dup) names[n++] = m->lines[i].peer;
-    }
-    if (!n) return;
-    int at = -1;
-    for (int k = 0; k < n; k++)
-        if (!strcmp(names[k], m->peer)) at = k;
-    snprintf(m->peer, sizeof(m->peer), "%s", names[(at + 1) % n]);
-    if (!strcmp(m->peer, m->unread_from)) m->unread = 0;
+    replay_log(m);
+    m->fl = FL_NONE; /* one floating window at a time */
+    struct pane *f = focused(m);
+    if (!chat_visible(m->chat) && f && f->id[0]) chat_open_on(m->chat, f->id, f->name);
+    else chat_toggle(m->chat);
     m->dirty = true;
 }
 
@@ -875,6 +711,7 @@ static void draw_pick(struct mux *m) {
     int list_h = (h - 2) / 2;
     if (m->npicks == 0) put(m, y + 2, x + 2, w - 4, "No other running TTY calls.", &ST_BOX_DIM);
     int first = m->pick_sel >= list_h ? m->pick_sel - list_h + 1 : 0;
+    m->pick_x = x, m->pick_w = w, m->pick_top = y + 1, m->pick_first = first, m->pick_rows = list_h;
     for (int i = first; i < m->npicks && i - first < list_h; i++) {
         const struct comp_style *st = i == m->pick_sel ? &ST_SEL : &ST_BOX;
         comp_fill(m->comp, y + 1 + i - first, x + 1, w - 2, st);
@@ -933,106 +770,6 @@ static void draw_help(struct mux *m) {
     int x = (m->tcols - w) / 2, y = (m->trows - h) / 2;
     draw_box(m, y, x, h, w, "backmux keys");
     for (int i = 0; i < n && i + 2 < h; i++) put(m, y + 2 + i, x + 2, w - 4, help_lines[i], &ST_BOX);
-}
-
-/* One message, wrapped to width: how many rows it takes, drawn from row
- * y when draw is set. */
-static int wrap_rows(struct mux *m, const char *text, int width, int y, int x, int bottom, bool draw,
-                     const struct comp_style *st) {
-    int rows = 0;
-    size_t len = strlen(text), i = 0;
-    if (width < 4) return 1;
-    while (i <= len) {
-        size_t start = i;
-        int cols = 0;
-        while (i < len && text[i] != '\n') {
-            uint32_t cp;
-            size_t k = comp_utf8_next(text + i, len - i, &cp);
-            int cw = hold_char_width(cp);
-            if (cw < 0) cw = 1;
-            if (cols + cw > width) break;
-            cols += cw;
-            i += k;
-        }
-        if (draw && y + rows >= 0 && y + rows < bottom)
-            comp_text(m->comp, y + rows, x, width, text + start, i - start, st);
-        rows++;
-        if (i < len && text[i] == '\n') i++;
-        else if (i >= len) break;
-    }
-    return rows;
-}
-
-static void draw_chat(struct mux *m, int *cur_row, int *cur_col) {
-    int w = m->tcols - 4 < 64 ? m->tcols - 4 : 64, h = m->trows - 2 < 16 ? m->trows - 2 : 16;
-    if (w < 24 || h < 6) return;
-    if (m->chat_x < 0 || m->chat_w != w || m->chat_h != h) {
-        if (m->chat_x < 0) {
-            m->chat_x = m->tcols - w - 2;
-            m->chat_y = m->trows - h - 1;
-        }
-        m->chat_w = w, m->chat_h = h;
-    }
-    if (m->chat_x + w > m->tcols) m->chat_x = m->tcols - w;
-    if (m->chat_y + h > m->trows) m->chat_y = m->trows - h;
-    if (m->chat_x < 0) m->chat_x = 0;
-    if (m->chat_y < 0) m->chat_y = 0;
-    int x = m->chat_x, y = m->chat_y;
-    char title[ALIAS_MAX_LEN * 3 + 64];
-    /* new messages in another conversation: said in the title, so a reply
-     * from someone not on show is never missed (Tab goes there) */
-    if (m->unread > 0)
-        snprintf(title, sizeof(title), "%s chat -> %s  +%d new from %s", m->me, m->peer[0] ? m->peer : "(Tab)",
-                 m->unread, m->unread_from);
-    else
-        snprintf(title, sizeof(title), "%s chat -> %s", m->me, m->peer[0] ? m->peer : "(Tab: who to)");
-    draw_box(m, y, x, h, w, title);
-    comp_put(m->comp, y, x + w - 2, 0xd7, &ST_TITLE); /* × */
-    /* the conversation with this peer, newest at the bottom */
-    int top = y + 1, bottom = y + h - 2, inner = w - 2;
-    int row = bottom;
-    for (int i = m->nlines - 1; i >= 0 && row > top; i--) {
-        struct chat_line *l = &m->lines[i];
-        if (strcmp(l->peer, m->peer) != 0) continue;
-        char head[ALIAS_MAX_LEN + 64];
-        struct tm tmv;
-        time_t at = (time_t)l->at;
-        char when[8] = "";
-        if (localtime_r(&at, &tmv)) strftime(when, sizeof(when), "%H:%M", &tmv);
-        const char *state = l->state == 1 ? " (sending)" : l->state == 3 ? " NOT DELIVERED" : "";
-        snprintf(head, sizeof(head), "%s %s%s", when, l->mine ? m->me : l->peer, state);
-        int body = wrap_rows(m, l->text ? l->text : "", inner - 2, 0, 0, 0, false, &ST_BOX);
-        int extra = l->state == 3 && l->why[0] ? 1 : 0;
-        int need = 1 + body + extra;
-        int start = row - need;
-        put(m, start, x + 1, inner, head, l->state == 3 ? &ST_BAD : &ST_BOX_DIM);
-        wrap_rows(m, l->text ? l->text : "", inner - 2, start + 1, x + 3, row, true, &ST_BOX);
-        if (extra) put(m, start + 1 + body, x + 3, inner - 2, l->why, &ST_BAD);
-        row = start;
-        (void)top;
-    }
-    /* repaint the title over anything that ran up into it */
-    draw_box(m, y, x, 1, w, title);
-    comp_put(m->comp, y, x + w - 2, 0xd7, &ST_TITLE);
-    /* the draft, last line of it */
-    int iy = y + h - 1;
-    comp_fill(m->comp, iy, x, w, &ST_SEL);
-    size_t from = 0;
-    for (size_t i = 0; i < m->draft_len; i++)
-        if (m->draft[i] == '\n') from = i + 1;
-    int room = w - 4;
-    size_t vis = m->draft_len - from;
-    /* keep the cursor in view: show the tail */
-    while (vis > (size_t)room) {
-        uint32_t cp;
-        size_t k = comp_utf8_next(m->draft + from, m->draft_len - from, &cp);
-        from += k;
-        vis -= k;
-    }
-    put(m, iy, x + 1, 2, ">", &ST_SEL);
-    int used = comp_text(m->comp, iy, x + 3, room, m->draft + from, m->draft_len - from, &ST_SEL);
-    *cur_row = iy;
-    *cur_col = x + 3 + used;
 }
 
 /* chat/mux.<pid>: which panes this terminal shows, for backmux swap from
@@ -1107,7 +844,9 @@ static void render(struct mux *m) {
         want.cursor_style = hold_screen_cursor_style(f->scr);
         want.title = hold_screen_title(f->scr);
     }
-    int crow = -1, ccol = -1;
+    /* chat over the panes (or its corner badge), then any other floating
+     * window over chat: only one is up at a time anyway */
+    if (m->chat) chat_draw(m->chat, m->comp, m->now, &want);
     if (m->fl == FL_ATTACH) {
         draw_pick(m);
         want.cursor_visible = false;
@@ -1117,18 +856,6 @@ static void render(struct mux *m) {
     } else if (m->fl == FL_HELP) {
         draw_help(m);
         want.cursor_visible = false;
-    } else if (m->fl == FL_CHAT) {
-        draw_chat(m, &crow, &ccol);
-        if (crow >= 0) {
-            want.cursor_row = crow;
-            want.cursor_col = ccol;
-            want.cursor_visible = true;
-            want.bracketed_paste = true;
-        }
-    } else if (m->unread > 0) {
-        char text[ALIAS_MAX_LEN + 64];
-        snprintf(text, sizeof(text), " chat: %d new from %s | Ctrl-P Ctrl-T ", m->unread, m->unread_from);
-        draw_badge(m, 0, m->tcols, text, &ST_NAME);
     }
     if (m->lead)
         draw_badge(m, m->trows - 1, m->tcols,
@@ -1151,36 +878,35 @@ static int slot_at(const struct mux *m, int row, int col) {
     return -1;
 }
 
+static void floater_key(struct mux *m, const unsigned char *seq, size_t n);
+
 /* A pointer report, SGR form: b;x;y then M (press, motion) or m (release). */
 static void handle_mouse(struct mux *m, int b, int x, int y, bool release) {
     int row = y - 1, col = x - 1;
     bool motion = (b & 32) != 0;
     bool wheel = (b & 64) != 0;
     int button = b & 3;
-    if (m->fl == FL_CHAT) {
-        bool on_title = row == m->chat_y && col >= m->chat_x && col < m->chat_x + m->chat_w;
-        if (!motion && !release && on_title && col == m->chat_x + m->chat_w - 2) {
-            chat_close(m);
-            return;
-        }
-        if (!motion && !release && on_title && button == 0) {
-            m->dragging = true;
-            m->drag_dx = col - m->chat_x;
-            m->drag_dy = row - m->chat_y;
-            return;
-        }
-        if (m->dragging && motion) {
-            m->chat_x = col - m->drag_dx;
-            m->chat_y = row - m->drag_dy;
+    if (m->fl == FL_HELP) {
+        /* help is read, not worked in: any click puts it away */
+        if (!motion && !release) {
+            m->fl = FL_NONE;
             m->dirty = true;
-            return;
         }
-        if (m->dragging && release) {
-            m->dragging = false;
-            return;
+        return;
+    } else if (m->fl == FL_ATTACH) {
+        /* a click on a name attaches it; anywhere else closes the picker */
+        if (motion || release) return;
+        int k = row - m->pick_top + m->pick_first;
+        if (row >= m->pick_top && row < m->pick_top + m->pick_rows && col >= m->pick_x && col < m->pick_x + m->pick_w &&
+            k >= 0 && k < m->npicks) {
+            static const unsigned char enter = '\r';
+            m->pick_sel = k;
+            floater_key(m, &enter, 1);
+        } else {
+            m->fl = FL_NONE;
+            m->dirty = true;
         }
-        bool inside = row >= m->chat_y && row < m->chat_y + m->chat_h && col >= m->chat_x && col < m->chat_x + m->chat_w;
-        if (inside) return;
+        return;
     } else if (m->fl != FL_NONE) {
         return;
     }
@@ -1228,7 +954,6 @@ static void to_pane(struct mux *m, const unsigned char *b, size_t n) {
 }
 
 static void open_floater(struct mux *m, enum floater f);
-static void floater_chat_key(struct mux *m, const unsigned char *seq, size_t n, bool esc, bool enter);
 
 /* Keys for the floating window that has the keyboard. seq is one key: a
  * byte, or a whole escape sequence. */
@@ -1288,51 +1013,13 @@ static void floater_key(struct mux *m, const unsigned char *seq, size_t n) {
         m->dirty = true;
         return;
     }
-    case FL_CHAT:
-        floater_chat_key(m, seq, n, esc, enter);
-        /* Saved as it changes, not only on close: another terminal that
-         * opens chat takes over at once, with this draft and peer. */
-        if (m->fl == FL_CHAT) chat_save_draft(m);
-        return;
     default:
         return;
     }
 }
 
-static void floater_chat_key(struct mux *m, const unsigned char *seq, size_t n, bool esc, bool enter) {
-    {
-        if (esc) {
-            chat_close(m);
-        } else if (enter && m->pasting) {
-            if (m->draft_len + 1 < sizeof(m->draft)) m->draft[m->draft_len++] = '\n';
-        } else if (enter) {
-            chat_send(m);
-        } else if (n == 1 && seq[0] == '\t') {
-            chat_next_peer(m);
-        } else if (n == 1 && seq[0] == 0x0a) { /* Ctrl-J: a new line in the draft */
-            if (m->draft_len + 1 < sizeof(m->draft)) m->draft[m->draft_len++] = '\n';
-        } else if (n == 2 && seq[0] == 0x1b && (seq[1] == '\r' || seq[1] == '\n')) { /* Alt-Enter */
-            if (m->draft_len + 1 < sizeof(m->draft)) m->draft[m->draft_len++] = '\n';
-        } else if (n == 1 && (seq[0] == 0x7f || seq[0] == 0x08)) {
-            while (m->draft_len > 0) {
-                unsigned char c = (unsigned char)m->draft[--m->draft_len];
-                if ((c & 0xc0) != 0x80) break; /* a whole UTF-8 character */
-            }
-        } else if (n == 1 && seq[0] == 0x15) { /* Ctrl-U */
-            m->draft_len = 0;
-        } else if (n == 6 && !memcmp(seq, "\033[200~", 6)) {
-            m->pasting = true; /* a paste: its newlines stay in the draft */
-        } else if (n == 6 && !memcmp(seq, "\033[201~", 6)) {
-            m->pasting = false;
-        } else if (n == 1 && seq[0] >= 0x20) {
-            if (m->draft_len + 1 < sizeof(m->draft)) m->draft[m->draft_len++] = (char)seq[0];
-        }
-        m->dirty = true;
-    }
-}
-
 static void open_floater(struct mux *m, enum floater f) {
-    if (m->fl == FL_CHAT && f != FL_CHAT) chat_save_draft(m); /* only one floats */
+    if (m->chat && f != FL_NONE) chat_put_away(m->chat); /* one floating window at a time */
     switch (f) {
     case FL_ATTACH:
         load_picks(m);
@@ -1344,9 +1031,6 @@ static void open_floater(struct mux *m, enum floater f) {
         break;
     case FL_HELP:
         m->fl = FL_HELP;
-        break;
-    case FL_CHAT:
-        chat_open(m);
         break;
     default:
         m->fl = FL_NONE;
@@ -1360,15 +1044,13 @@ static int command(struct mux *m, unsigned char key) {
     case KEY_DETACH:
         return 1;
     case KEY_LEAD:
-        if (m->fl == FL_CHAT) floater_key(m, &key, 1);
-        else to_pane(m, &key, 1);
+        if (!(m->chat && chat_has_keyboard(m->chat))) to_pane(m, &key, 1);
         return 0;
     case KEY_ATTACH:
         open_floater(m, m->fl == FL_ATTACH ? FL_NONE : FL_ATTACH);
         return 0;
     case KEY_CHAT:
-        if (m->fl == FL_CHAT) chat_close(m);
-        else open_floater(m, FL_CHAT);
+        chat_key_pressed(m);
         return 0;
     case KEY_HELP:
         open_floater(m, m->fl == FL_HELP ? FL_NONE : FL_HELP);
@@ -1438,13 +1120,18 @@ static int handle_input(struct mux *m, const unsigned char *buf, size_t n) {
                 tmp[tl] = '\0';
                 if (sscanf(tmp, "%d;%d;%d", &mb, &mx, &my) == 3) {
                     flush_keys(m);
-                    handle_mouse(m, mb, mx, my, s[k - 1] == 'm');
+                    /* chat picks out what is its own (its window, a drag
+                     * of it, its badge) and hands the rest back */
+                    if (m->fl == FL_NONE && m->chat) chat_input(m->chat, s, k, m->now);
+                    else handle_mouse(m, mb, mx, my, s[k - 1] == 'm');
                 }
             } else if (m->lead) {
                 m->lead = false; /* a key that is not a command: cancelled */
                 m->dirty = true;
             } else if (m->fl != FL_NONE) {
                 floater_key(m, s, k);
+            } else if (m->chat && chat_has_keyboard(m->chat)) {
+                chat_input(m->chat, s, k, m->now);
             } else {
                 to_pane(m, s, k);
             }
@@ -1465,9 +1152,11 @@ static int handle_input(struct mux *m, const unsigned char *buf, size_t n) {
             continue;
         }
         if (m->fl != FL_NONE) floater_key(m, &b, 1);
+        else if (m->chat && chat_has_keyboard(m->chat)) chat_input(m->chat, &b, 1, m->now);
         else to_pane(m, &b, 1);
     }
     flush_keys(m);
+    if (m->chat && chat_wants_frame(m->chat)) m->dirty = true;
     return rc;
 }
 
@@ -1501,7 +1190,6 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
     snprintf(m->me, sizeof(m->me), "%s", chat_name ? chat_name : "");
     m->comp = comp_new();
     m->hover = -1;
-    m->chat_x = -1;
     m->swap_first = -1;
     m->now = mono_ms();
     struct winsize ws;
@@ -1515,6 +1203,17 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
     comp_set_size(m->comp, m->trows, m->tcols);
     comp_invalidate(m->comp);
     if (m->me[0]) m->inbox_off = hold_inbox_size(store, m->me);
+    if (m->me[0]) {
+        struct chat_host host = {
+            .screen = NULL, .master = -1, .store = store, .run_id = NULL, .program = true,
+            .person = m->me, .app = m, .to_app = chat_to_app, .app_pointer = chat_pointer,
+        };
+        m->chat = chat_new(&host);
+        if (m->chat) {
+            chat_set_on_sent(m->chat, on_sent);
+            chat_ready(m->chat, m->trows, m->tcols, m->now);
+        }
+    }
     int rc = 0;
 
     /* the call this started on: its record names it */
@@ -1553,6 +1252,7 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
     }
     (void)add_pane(m, first);
     first->name_until = 0;
+    if (m->chat) chat_set_screen(m->chat, first->scr);
     struct hold_term_signals sig;
     hold_term_signals_install(&sig, true);
     if (command(m, cmd) == 1) goto detach;
@@ -1567,6 +1267,7 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
             m->trows = ws.ws_row;
             m->tcols = ws.ws_col;
             comp_set_size(m->comp, m->trows, m->tcols);
+            if (m->chat) chat_terminal_resized(m->chat, m->trows, m->tcols);
             relayout(m);
         }
         (void)hold_term_take_interrupt(); /* Ctrl-C arrives as a key for the focused pane */
@@ -1574,7 +1275,8 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
         if (pane_total(m) == 0) break; /* every pane has ended */
         /* One pane left and nothing floating: back to plain attach, the
          * screen exactly as it is without panes. */
-        if (pane_total(m) == 1 && m->fl == FL_NONE && !m->lead && m->now >= m->names_until) {
+        if (pane_total(m) == 1 && m->fl == FL_NONE && !m->lead && m->now >= m->names_until &&
+            !(m->chat && (chat_visible(m->chat) || chat_dragging(m->chat)))) {
             struct pane *p = m->slot[0];
             snprintf(handback, hn, "%s", p->sock);
             (void)frame(p->wfd, CONSOLE_FRAME_DETACH, NULL, 0);
@@ -1603,7 +1305,7 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
         chat_look(m);
         render(m);
 
-        struct pollfd pfds[1 + MUX_MAX_PANES + 4];
+        struct pollfd pfds[1 + MUX_MAX_PANES + CHAT_MAX_OUTBOUND];
         int idx[MUX_MAX_PANES];
         nfds_t nf = 0;
         pfds[nf++] = (struct pollfd){.fd = STDIN_FILENO, .events = POLLIN};
@@ -1614,16 +1316,25 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
                 pfds[nf++] = (struct pollfd){.fd = m->slot[i]->rfd, .events = POLLIN};
             }
         }
-        int sidx = (int)nf;
-        for (int i = 0; i < 4; i++)
-            pfds[nf++] = (struct pollfd){.fd = m->send[i].pid ? m->send[i].fd : -1, .events = POLLIN};
+        /* chat's sends in flight, and its timers (a lone Esc, a hint) */
+        int sidx = (int)nf, snf = m->chat ? chat_poll_fds(m->chat, pfds + nf, CHAT_MAX_OUTBOUND) : 0;
+        nf += (nfds_t)snf;
         int timeout = m->dirty ? MUX_FRAME_MS : MUX_LOOK_MS;
+        if (m->chat) {
+            int64_t due = chat_due_in(m->chat, m->now);
+            if (due >= 0 && due < timeout) timeout = (int)due;
+        }
         int pr = poll(pfds, nf, timeout);
         if (pr < 0 && errno != EINTR) {
             rc = 1;
             break;
         }
         m->now = mono_ms();
+        if (m->chat) {
+            if (pr > 0 && snf > 0) chat_poll_done(m->chat, pfds + sidx, snf, m->now);
+            chat_tick(m->chat, m->now);
+            if (chat_wants_frame(m->chat)) m->dirty = true;
+        }
         if (pr <= 0) {
             m->dirty = true; /* timers: names that expire, notices */
             continue;
@@ -1642,13 +1353,6 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
                 p->ended = true;
             }
         }
-        for (int i = 0; i < 4; i++) {
-            struct sending *s = &m->send[i];
-            if (!s->pid || !(pfds[sidx + i].revents & (POLLIN | POLLHUP | POLLERR))) continue;
-            ssize_t k = read(s->fd, s->result + s->rlen, sizeof(s->result) - 1 - s->rlen);
-            if (k > 0) s->rlen += (size_t)k;
-            if (k <= 0 || memchr(s->result, '\n', s->rlen)) send_done(m, s);
-        }
         if (pfds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
             unsigned char buf[4096];
             ssize_t k = read(STDIN_FILENO, buf, sizeof(buf));
@@ -1666,15 +1370,9 @@ detach:
         if (m->slot[i]) (void)frame(m->slot[i]->wfd, CONSOLE_FRAME_DETACH, NULL, 0);
     rc = 0;
 out:
-    if (m->fl == FL_CHAT) chat_save_draft(m);
     hold_term_signals_restore(&sig);
     for (int i = 0; i < MUX_MAX_PANES; i++) pane_free(m->slot[i]);
-    for (int i = 0; i < 4; i++)
-        if (m->send[i].pid) {
-            close(m->send[i].fd);
-            (void)waitpid(m->send[i].pid, NULL, 0);
-        }
-    for (int i = 0; i < m->nlines; i++) free(m->lines[i].text);
+    chat_free(m->chat);
     comp_free(m->comp);
     char mux_path[HOLD_PATH_MAX];
     if (hold_checked_snprintf(mux_path, sizeof(mux_path), "%s/chat/mux.%d", store->base, (int)getpid()) == 0)

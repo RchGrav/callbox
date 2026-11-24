@@ -637,9 +637,9 @@ static int buf_printf(char **buf, size_t *len, size_t *cap, const char *fmt, ...
 }
 
 static bool same_pen(const struct hold_cell *a, const struct hold_cell *b) {
-    const uint8_t dflt = HOLD_CELL_FG_DEFAULT | HOLD_CELL_BG_DEFAULT;
-    return a->attrs == b->attrs && (a->flags & dflt) == (b->flags & dflt) && !memcmp(a->fg, b->fg, 3) &&
-           !memcmp(a->bg, b->bg, 3);
+    const uint8_t kind = HOLD_CELL_FG_DEFAULT | HOLD_CELL_BG_DEFAULT | HOLD_CELL_FG_INDEXED | HOLD_CELL_BG_INDEXED;
+    return a->attrs == b->attrs && (a->flags & kind) == (b->flags & kind) && !memcmp(a->fg, b->fg, 3) &&
+           !memcmp(a->bg, b->bg, 3) && a->fg_idx == b->fg_idx && a->bg_idx == b->bg_idx;
 }
 
 static int emit_pen(const struct hold_cell *c, char **buf, size_t *len, size_t *cap) {
@@ -653,10 +653,25 @@ static int emit_pen(const struct hold_cell *c, char **buf, size_t *len, size_t *
     if (c->attrs & HOLD_ATTR_REVERSE) n += snprintf(sgr + n, sizeof(sgr) - n, ";7");
     if (c->attrs & HOLD_ATTR_CONCEAL) n += snprintf(sgr + n, sizeof(sgr) - n, ";8");
     if (c->attrs & HOLD_ATTR_STRIKE) n += snprintf(sgr + n, sizeof(sgr) - n, ";9");
-    if (!(c->flags & HOLD_CELL_FG_DEFAULT))
+    /* A palette color goes back as its index, never as the RGB this screen
+     * resolved it to: the terminal on the other end has its own palette, and
+     * an RGB here overrode it - colors shifted while a repaint was on screen
+     * and came back when the program next drew. Only a color the program
+     * gave as RGB is sent as RGB. */
+    if (c->flags & HOLD_CELL_FG_INDEXED) {
+        if (c->fg_idx < 8) n += snprintf(sgr + n, sizeof(sgr) - n, ";3%u", c->fg_idx);
+        else if (c->fg_idx < 16) n += snprintf(sgr + n, sizeof(sgr) - n, ";9%u", c->fg_idx - 8);
+        else n += snprintf(sgr + n, sizeof(sgr) - n, ";38;5;%u", c->fg_idx);
+    } else if (!(c->flags & HOLD_CELL_FG_DEFAULT)) {
         n += snprintf(sgr + n, sizeof(sgr) - n, ";38;2;%u;%u;%u", c->fg[0], c->fg[1], c->fg[2]);
-    if (!(c->flags & HOLD_CELL_BG_DEFAULT))
+    }
+    if (c->flags & HOLD_CELL_BG_INDEXED) {
+        if (c->bg_idx < 8) n += snprintf(sgr + n, sizeof(sgr) - n, ";4%u", c->bg_idx);
+        else if (c->bg_idx < 16) n += snprintf(sgr + n, sizeof(sgr) - n, ";10%u", c->bg_idx - 8);
+        else n += snprintf(sgr + n, sizeof(sgr) - n, ";48;5;%u", c->bg_idx);
+    } else if (!(c->flags & HOLD_CELL_BG_DEFAULT)) {
         n += snprintf(sgr + n, sizeof(sgr) - n, ";48;2;%u;%u;%u", c->bg[0], c->bg[1], c->bg[2]);
+    }
     n += snprintf(sgr + n, sizeof(sgr) - n, "m");
     return buf_append(buf, len, cap, sgr, (size_t)n < sizeof(sgr) ? (size_t)n : sizeof(sgr) - 1);
 }

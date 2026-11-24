@@ -5954,8 +5954,11 @@ test_chat_is_the_persons() {
   "$HOLD_BIN" wait term --regex '[a-z0-9_-]+ chat -> ' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
   me=$("$HOLD_BIN" peek term | grep -o '[a-z0-9_-]* chat -> ' | head -1 | cut -d' ' -f1)
   [ -n "$me" ] || return 1
-  for i in $(seq 1 6); do "$HOLD_BIN" peek term | grep -q 'chat -> rcv' && break; "$HOLD_BIN" send term -k Tab; sleep 0.2; done
-  out_has 'chat -> rcv' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
+  # Tab: who to talk to; typing narrows the list, Enter picks
+  "$HOLD_BIN" send term -k Tab || return 1
+  "$HOLD_BIN" wait term --match 'who to talk to' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" send term --text rcv -k Enter || return 1
+  "$HOLD_BIN" wait term --match 'chat -> rcv' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" send term 'echo raw' --enter || return 1
   "$HOLD_BIN" wait rcv --regex '^typed:echo raw$' --timeout 5000 >/dev/null || { echo "a raw message was not typed" >&2; "$HOLD_BIN" peek rcv >&2; return 1; }
   "$HOLD_BIN" set rcv agent 2>/dev/null || return 1
@@ -5967,12 +5970,11 @@ test_chat_is_the_persons() {
   BACKMUX_ID="$rid" "$HOLD_BIN" msg "$me" 'pong from rcv' >/dev/null 2>&1 || return 1
   "$HOLD_BIN" wait term --match 'pong from rcv' --timeout 5000 >/dev/null || { echo "the reply did not reach chat" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   if "$HOLD_BIN" peek other | grep -q 'chat ->\|pong'; then echo "chat was drawn into a program's screen" >&2; return 1; fi
-  # another terminal opens chat: it moves there, draft and all
-  "$HOLD_BIN" send term 'half typed' || return 1
-  sleep 0.3
+  # another terminal opens chat: it moves there, with the conversation
   start_term term2 rcv || return 1
   "$HOLD_BIN" send term2 -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term2 --match '> half typed' --timeout 5000 >/dev/null || { echo "the draft did not follow" >&2; "$HOLD_BIN" peek term2 >&2; return 1; }
+  "$HOLD_BIN" wait term2 --match 'chat -> rcv' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term2 >&2; return 1; }
+  out_has 'pong from rcv' "$HOLD_BIN" peek term2 || { echo "the conversation did not follow" >&2; "$HOLD_BIN" peek term2 >&2; return 1; }
   wait_gone term 'chat ->' || return 1
   "$HOLD_BIN" send term2 -k Escape || return 1
   wait_gone term2 'chat ->' || return 1

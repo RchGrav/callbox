@@ -138,6 +138,7 @@ struct chat {
     uint32_t serial;
 
     bool dirty, screen_dirty;
+    void (*on_sent)(void *app, const char *label, const char *text, size_t len);
     int cur_row, cur_col; /* where the chat's own cursor was last drawn */
     int badge_col;        /* the corner badge's first column, -1 = none shown */
     int body_rows;        /* of the last frame, for paging */
@@ -204,7 +205,8 @@ static void set_tip(struct chat *c, const char *what, const char *then) {
 }
 
 static void to_shell(struct chat *c, const unsigned char *p, size_t n) {
-    if (n > 0 && c->host.master >= 0) (void)hold_write_all(c->host.master, p, n);
+    if (n > 0 && c->host.to_app) c->host.to_app(c->host.app, p, n); /* the focused pane's */
+    else if (n > 0 && c->host.master >= 0) (void)hold_write_all(c->host.master, p, n);
 }
 
 /* Input the screen layer encoded for the program (a forwarded mouse event). */
@@ -532,7 +534,7 @@ struct pick_scan {
 static int pick_record(const char *id, const char *path, struct hold_run_record *r, void *vctx) {
     (void)path;
     struct chat *c = ((struct pick_scan *)vctx)->c;
-    if (!r || c->npicks >= CHAT_MAX_PICK || !strcmp(id, c->host.run_id)) return 0;
+    if (!r || c->npicks >= CHAT_MAX_PICK || (c->host.run_id && !strcmp(id, c->host.run_id))) return 0;
     /* A call that can be messaged: on a PTY, not known to have ended, its
      * console still listening. */
     if (!r->has_console || r->has_exit_code || !r->has_state || strcmp(r->state, "running") != 0 ||
@@ -652,13 +654,14 @@ static void hex_into(char *out, const char *s, size_t n) {
  * busy console is retried for up to 10 s), so it runs beside the broker,
  * which must keep the shell's display alive. It names this call as the
  * sender (self_id), so the reply comes back to this chat. */
-static _Noreturn void send_helper(const char *sock, const char *self_id, const char *body, size_t body_len, int wfd) {
+static _Noreturn void send_helper(const char *sock, const char *self_id, bool op, const char *body, size_t body_len, int wfd) {
     for (int fd = 3; fd < 1024; fd++)
         if (fd != wfd) close(fd);
     signal(SIGTERM, SIG_DFL);
     signal(SIGPIPE, SIG_IGN);
     char head[160 + 2 * ID_STR_LEN];
-    int hn = snprintf(head, sizeof(head), "msg from=");
+    /* op=1: from a person's chat name (an inbox), not from a call */
+    int hn = snprintf(head, sizeof(head), op ? "msg op=1 from=" : "msg from=");
     size_t idl = strlen(self_id);
     hex_into(head + hn, self_id, idl);
     hn += (int)(2 * idl);
@@ -700,6 +703,10 @@ static _Noreturn void send_helper(const char *sock, const char *self_id, const c
 static void self_label(const struct chat *c, char *out, size_t n) {
     struct hold_run_record r;
     char path[HOLD_PATH_MAX];
+    if (c->host.person) {
+        snprintf(out, n, "%s", c->host.person);
+        return;
+    }
     snprintf(out, n, "%.12s", c->host.run_id);
     if (c->host.store && hold_load_record_by_id(c->host.store->record_dir, c->host.run_id, &r, path, sizeof(path)) == 0) {
         if (r.has_name && r.name[0]) snprintf(out, n, "%s", r.name);
@@ -711,7 +718,7 @@ static void self_label(const struct chat *c, char *out, size_t n) {
  * so never the chat window. */
 static char *with_screen(const struct chat *c, const char *text, size_t len, size_t *out_len) {
     struct hold_snapshot snap;
-    if (hold_screen_snapshot(c->host.screen, &snap) != 0) return NULL;
+    if (!c->host.screen || hold_screen_snapshot(c->host.screen, &snap) != 0) return NULL;
     size_t row_cap = (size_t)snap.cols * 4 * HOLD_CELL_CHARS + 2;
     size_t cap = len + 256 + (size_t)snap.rows * row_cap;
     char *out = malloc(cap), name[ALIAS_MAX_LEN + 1];
@@ -769,6 +776,7 @@ static void send_message(struct chat *c) {
         set_notice(c, "out of memory");
         return;
     }
+    if (c->on_sent) c->on_sent(c->host.app, t->label, c->input, len);
     m->serial = ++c->serial;
     m->with_screen = c->include_screen;
     t->active_ms = c->now;
@@ -836,7 +844,8 @@ static void send_message(struct chat *c) {
     pid_t pid = fork();
     if (pid == 0) {
         close(fds[0]);
-        send_helper(sock, c->host.run_id, body ? body : m->text, body_len, fds[1]);
+        send_helper(sock, c->host.person ? c->host.person : c->host.run_id, c->host.person != NULL,
+                    body ? body : m->text, body_len, fds[1]);
     }
     close(fds[1]);
     free(body);
@@ -1073,6 +1082,14 @@ static void app_mouse(struct chat *c, enum hold_mouse_event ev, int button, int 
     flush_screen_input(c);
 }
 
+/* A pointer report that is not chat's: the compositor's to route (to the
+ * pane under it), or the shell's program's. */
+static void pass_pointer(struct chat *c, int b, int x, int y, bool release, enum hold_mouse_event ev, int button, int row,
+                         int col, int mods) {
+    if (c->host.app_pointer) c->host.app_pointer(c->host.app, b, x, y, release);
+    else app_mouse(c, ev, button, row, col, mods);
+}
+
 static bool on_close(const struct chat *c, int row, int col) {
     return row == c->y && col >= c->x + c->w - 3 && col < c->x + c->w;
 }
@@ -1115,7 +1132,7 @@ static void chat_mouse(struct chat *c, int b, int x, int y, bool release) {
     /* A gesture belongs to whoever it started on until the button is let go,
      * wherever the pointer wanders in between. */
     if (c->grab == GRAB_APP) {
-        app_mouse(c, ev, button, row, col, mods);
+        pass_pointer(c, b, x, y, release, ev, button, row, col, mods);
         if (ev == HOLD_MOUSE_RELEASE) c->grab = GRAB_NONE;
         return;
     }
@@ -1157,13 +1174,13 @@ static void chat_mouse(struct chat *c, int b, int x, int y, bool release) {
              * press is the program's (if it listens for the mouse). */
             set_focus(c, false);
             c->grab = GRAB_APP;
-            app_mouse(c, ev, button, row, col, mods);
+            pass_pointer(c, b, x, y, release, ev, button, row, col, mods);
         }
     } else if (wheel) {
         if (over) scroll_by(c, ev == HOLD_MOUSE_WHEEL_UP ? 3 : -3);
-        else app_mouse(c, ev, button, row, col, mods);
+        else pass_pointer(c, b, x, y, release, ev, button, row, col, mods);
     } else if (!over) {
-        app_mouse(c, ev, button, row, col, mods);
+        pass_pointer(c, b, x, y, release, ev, button, row, col, mods);
     }
 }
 
@@ -1801,4 +1818,102 @@ void chat_detached(struct chat *c) {
     c->lead_pending = c->want_detach = false;
     /* The window, the keyboard's place, and the draft are as they were when
      * the person comes back. */
+}
+
+/* ---- hosted by the compositor ------------------------------------------------------------- */
+
+void chat_ready(struct chat *c, int rows, int cols, int64_t now) {
+    c->now = now;
+    c->attached = true;
+    c->grab = GRAB_NONE;
+    c->pend_len = 0;
+    c->pasting = false;
+    chat_terminal_resized(c, rows, cols);
+    self_label(c, c->self, sizeof(c->self));
+    c->dirty = true;
+}
+
+void chat_set_screen(struct chat *c, struct hold_screen *screen) {
+    c->host.screen = screen;
+}
+
+void chat_toggle(struct chat *c) {
+    chat_key(c);
+}
+
+void chat_open_on(struct chat *c, const char *call_id, const char *label) {
+    struct chat_thread *t = call_id && *call_id ? get_thread(c, TH_CALL, call_id, label ? label : call_id) : NULL;
+    if (t) c->current = t;
+    if (!c->visible) open_chat(c);
+    else if (t) show_thread(c, t);
+    set_focus(c, true);
+}
+
+void chat_put_away(struct chat *c) {
+    if (c->visible) hide(c);
+}
+
+bool chat_has_keyboard(const struct chat *c) {
+    return c->visible && c->focused;
+}
+
+bool chat_covers(const struct chat *c, int row, int col) {
+    return (c->visible && inside(c, row, col)) || (!c->visible && c->badge_col >= 0 && row == 0 && col >= c->badge_col);
+}
+
+bool chat_dragging(const struct chat *c) {
+    return c->grab != GRAB_NONE;
+}
+
+void chat_set_on_sent(struct chat *c, void (*fn)(void *app, const char *label, const char *text, size_t len)) {
+    c->on_sent = fn;
+}
+
+void chat_replay(struct chat *c, bool mine, const char *key, const char *label, bool operator, time_t at,
+                 const char *text, size_t len) {
+    struct chat_thread *t = key && *key ? get_thread(c, operator ? TH_OPERATOR : TH_CALL, key, label ? label : key)
+                                        : get_thread(c, TH_OUTSIDE, "", "outside backmux");
+    if (!t) return;
+    struct chat_msg *m = add_msg(t, mine ? MSG_SENT : MSG_IN, text, len);
+    if (m) m->at = at;
+}
+
+void chat_draw(struct chat *c, struct compositor *comp, int64_t now, struct comp_want *want) {
+    struct compositor *own = c->comp;
+    c->comp = comp;
+    c->now = now;
+    /* the compositor always asks for the pointer: chat picks out what is
+     * its own, and hands the rest back */
+    c->mouse_on = true;
+    if (c->visible) {
+        refit(c);
+        draw_window(c);
+        c->badge_col = -1;
+    } else {
+        draw_badge(c, now);
+    }
+    if (c->visible && c->focused) {
+        want->bracketed_paste = true; /* a paste arrives whole, never as keys */
+        want->cursor_visible = c->cur_row >= 0;
+        if (c->cur_row >= 0) {
+            want->cursor_row = c->cur_row;
+            want->cursor_col = c->cur_col;
+        }
+    } else if (c->visible && inside(c, want->cursor_row, want->cursor_col)) {
+        want->cursor_visible = false;
+    }
+    c->comp = own;
+    c->dirty = c->screen_dirty = false;
+}
+
+bool chat_visible(const struct chat *c) {
+    return c->visible;
+}
+
+/* The conversation with a call on show, without taking the keyboard: the
+ * person moved to that call's pane. */
+void chat_show_call(struct chat *c, const char *call_id, const char *label) {
+    if (!c->visible || !call_id || !*call_id) return;
+    struct chat_thread *t = get_thread(c, TH_CALL, call_id, label ? label : call_id);
+    if (t && t != c->current) show_thread(c, t);
 }

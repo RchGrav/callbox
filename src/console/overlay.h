@@ -82,6 +82,18 @@ struct chat_host {
     /* Any program in user mode, not a shell: the hints name the program
      * ("backmux", "typing in the program") instead of the shell. */
     bool program;
+    /* Hosted by the compositor (mux.c) instead of one call's broker: chat
+     * belongs to the person, and floats over whatever panes are on screen.
+     * person: their chat name - what they send goes out from it (as backmux
+     * msg from outside any call does) and replies come to its inbox.
+     * to_app: keys that are not chat's (the focused pane's). app_pointer: a
+     * pointer report (SGR b;x;y, release) outside the window, for the
+     * compositor to route. screen (above) is the focused pane's, for
+     * Ctrl-S. */
+    const char *person;
+    void *app;
+    void (*to_app)(void *app, const unsigned char *bytes, size_t n);
+    void (*app_pointer)(void *app, int b, int x, int y, bool release);
 };
 
 #define CHAT_MAX_OUTBOUND 8
@@ -113,5 +125,34 @@ void chat_screen_changed(struct chat *c);
 bool chat_wants_frame(const struct chat *c);
 /* Compose a frame for the attached terminal; bytes are appended to *buf. */
 int chat_render(struct chat *c, int64_t now, char **buf, size_t *len, size_t *cap);
+
+/* ---- hosted by the compositor ---------------------------------------------
+ * The compositor composes the panes into comp, then chat draws its window
+ * (or its corner badge) over them; want gets the cursor and modes chat
+ * needs while it has the keyboard. */
+void chat_draw(struct chat *c, struct compositor *comp, int64_t now, struct comp_want *want);
+/* The terminal is ready for chat to draw on (rows x cols), with no tip. */
+void chat_ready(struct chat *c, int rows, int cols, int64_t now);
+/* The focused pane changed: its screen is what Ctrl-S sends. */
+void chat_set_screen(struct chat *c, struct hold_screen *screen);
+/* The chat key (Ctrl-P Ctrl-T): open chat, or hand the keyboard between
+ * chat and the program. chat_open_on: open it on a call's conversation. */
+void chat_toggle(struct chat *c);
+void chat_open_on(struct chat *c, const char *call_id, const char *label);
+void chat_put_away(struct chat *c);
+bool chat_visible(const struct chat *c);
+/* The person moved to a call's pane: its conversation on show, if chat is
+ * up, without taking the keyboard. */
+void chat_show_call(struct chat *c, const char *call_id, const char *label);
+/* What the compositor routes by: chat has the keyboard; (row, col) is over
+ * the window; a drag that started on the window is under way. */
+bool chat_has_keyboard(const struct chat *c);
+bool chat_covers(const struct chat *c, int row, int col);
+bool chat_dragging(const struct chat *c);
+/* A message sent from this chat, as it went out: for the conversation log. */
+void chat_set_on_sent(struct chat *c, void (*fn)(void *app, const char *label, const char *text, size_t len));
+/* History from the conversation log, as if it had just happened. */
+void chat_replay(struct chat *c, bool mine, const char *key, const char *label, bool operator, time_t at,
+                 const char *text, size_t len);
 
 #endif /* HOLD_CONSOLE_OVERLAY_H */
