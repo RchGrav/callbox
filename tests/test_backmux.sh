@@ -6063,13 +6063,11 @@ test_settings_recall_delete_purge_all() {
   [ "$rc" -eq 1 ] && grep -q 'end live1 first' "$TEST_ROOT/del.err" || { cat "$TEST_ROOT/del.err" >&2; return 1; }
   "$HOLD_BIN" delete job2 2>/dev/null || return 1
   ! out_has ' job2$' "$HOLD_BIN" list all || { echo "delete left the call" >&2; return 1; }
-  # purge all: refuses without a terminal to ask; --force is the answer
+  # purge all: ends and removes every call not saved, naming what it ended
   "$HOLD_BIN" server --name kept -- sleep 60 >/dev/null 2>&1 || return 1
   "$HOLD_BIN" save kept 2>/dev/null || return 1
-  rc=0; "$HOLD_BIN" purge all </dev/null 2>"$TEST_ROOT/pa.err" || rc=$?
-  [ "$rc" -eq 1 ] && grep -q 'live1' "$TEST_ROOT/pa.err" || { cat "$TEST_ROOT/pa.err" >&2; return 1; }
-  out_has 'Up .* live1$' "$HOLD_BIN" list || { echo "a refused purge all ended a call" >&2; return 1; }
-  "$HOLD_BIN" purge all --force </dev/null >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" purge all </dev/null 2>"$TEST_ROOT/pa.err" || { cat "$TEST_ROOT/pa.err" >&2; return 1; }
+  grep -q 'ends 1 running call: live1' "$TEST_ROOT/pa.err" || { cat "$TEST_ROOT/pa.err" >&2; return 1; }
   ! out_has ' live1$' "$HOLD_BIN" list all || { echo "purge all left live1" >&2; return 1; }
   out_has 'Up .* kept$' "$HOLD_BIN" list || { echo "purge all took a saved call" >&2; return 1; }
   "$HOLD_BIN" end kept >/dev/null 2>&1 || true

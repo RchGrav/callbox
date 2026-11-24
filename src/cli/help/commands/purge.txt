@@ -14,8 +14,8 @@ With a target, --force stops a running call before removing it. A sweep
 never removes saved or running calls, even with --force.
 
 purge all ends every running call that is not saved and removes them all,
-with the ended ones. It lists what it will end and asks first; with no
-terminal to ask, --force is the answer. Saved calls are kept.
+with the ended ones, and names the calls it ended. Saved calls are kept:
+backmux save is how a call is kept.
 
 Ordinary purge leaves saved calls alone. --name at launch does not save
 a call; save and rename do. Removing a record frees its name.

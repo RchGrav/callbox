@@ -125,9 +125,9 @@ backmux 1.0.0-dedbeef
 - **`list all` and `purge all` are positional; `all` is a reserved name.**
   Why: positional reads like the rest of the native surface, and a call
   named `all` would be ambiguous.
-- **`purge all` lists what it will end and asks first.** Why: it is the only
-  command that both stops live calls and deletes them, and people run real
-  agents.
+- **`purge all` names the calls it ends.** Why: it is the only command that
+  both stops live calls and deletes them; saying which keeps it from going
+  unnoticed. Saving a call is how one is kept.
 - **`purge` alone touches only stopped calls not saved.** Why: cleaning up
   must never end anything running.
 - **Wrong-kind targets (open):** `tail` on a `detach` call reads its log;

@@ -388,28 +388,15 @@ int hold_cmd_purge_all_action(const struct hold_invocation *inv,
         hold_sig_note(inv, "backmux: nothing to purge (saved calls are kept)\n");
         goto out;
     }
-    /* It is the only command that both stops live calls and deletes them,
-     * and people run real agents: it lists what it will do and asks. With
-     * no one to ask (not a terminal), it takes --force as the answer. */
+    /* It does what it says, as the menu has it - end and purge all calls
+     * not saved - and says which it ended, so nothing goes unnoticed.
+     * Saving a call (backmux save) is how one is kept. */
+    (void)force;
     if (w.running > 0) {
         fprintf(stderr, "backmux: purge all ends %d running call%s:", w.running, w.running == 1 ? "" : "s");
         for (int i = 0; i < w.n; i++)
             if (w.live[i]) fprintf(stderr, " %s", w.labels[i]);
-        fprintf(stderr, "\n  and removes %d call%s in all (saved calls are kept)\n", w.n, w.n == 1 ? "" : "s");
-        if (!force) {
-            if (!isatty(STDIN_FILENO)) {
-                fprintf(stderr, "backmux: not a terminal to ask: backmux purge all --force does it without asking\n");
-                rc = 1;
-                goto out;
-            }
-            fprintf(stderr, "End and remove them? [y/N] ");
-            char answer[16] = "";
-            if (!fgets(answer, sizeof(answer), stdin) || (answer[0] != 'y' && answer[0] != 'Y')) {
-                fprintf(stderr, "backmux: nothing ended or removed\n");
-                rc = 1;
-                goto out;
-            }
-        }
+        fputc('\n', stderr);
     }
     int removed = 0;
     for (int i = 0; i < w.n; i++) {

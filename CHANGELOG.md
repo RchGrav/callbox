@@ -32,8 +32,8 @@ records are not carried over; the two never touch each other's calls.
 ### Changed
 
 - `list` shows running calls; `list all` adds the stopped ones.
-- `purge all` ends and removes every call that is not saved, after listing
-  them and asking (`--force` without a terminal).
+- `purge all` ends and removes every call that is not saved, naming the
+  calls it ended; saved calls are kept.
 - A message to a call without the agent setting arrives raw: the text, then
   Enter, as if typed. `-it` (now `call`) calls included.
 - `Ctrl-P` followed by a key that is not a command cancels; both keys are
