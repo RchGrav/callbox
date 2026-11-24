@@ -642,12 +642,12 @@ test_lifecycle() {
   id=$(printf '%s\n' "$out" | extract_id)
   [ -n "$id" ] || return 1
   printf '%s\n' "$id" | grep -Eq '^[0-9a-f]{12}$' || return 1
-  "$HOLD_BIN" list | grep -Eq "^$id[[:space:]].*Up "
+  "$HOLD_BIN" list all | grep -Eq "^$id[[:space:]].*Up "
   "$HOLD_BIN" end "$id" >/dev/null
   record_ended_soon "$id" || return 1
-  "$HOLD_BIN" list -a | grep -Eq "^$id[[:space:]].*Exited"
+  "$HOLD_BIN" list all -a | grep -Eq "^$id[[:space:]].*Exited"
   "$HOLD_BIN" purge >/dev/null
-  lines=$("$HOLD_BIN" list -a | wc -l)
+  lines=$("$HOLD_BIN" list all -a | wc -l)
   [ "$lines" -eq 1 ]
 }
 
@@ -719,7 +719,7 @@ test_exec_replacement_remains_controllable() {
   id=$(printf '%s\n' "$out" | extract_id)
   pgid=$(record_pgid "$id")
   [ -n "$id" ] && [ -n "$pgid" ] || return 1
-  "$HOLD_BIN" list | grep -Eq "^$id[[:space:]].*Up " || return 1
+  "$HOLD_BIN" list all | grep -Eq "^$id[[:space:]].*Up " || return 1
   "$HOLD_BIN" stop "$id" >/dev/null || return 1
   pgid_terminated "$pgid"
 }
@@ -727,7 +727,7 @@ test_exec_replacement_remains_controllable() {
 test_corrupt_record_handling() {
   ensure_user_fixture_store || return 1
   printf 'garbage\n' > "$HOME/.local/state/backmux/badbad00cafe0000000000000000000000000000000000000000000000000000.json" || return 1
-  "$HOLD_BIN" list >"$TEST_ROOT/list.out" 2>"$TEST_ROOT/list.err" || return 1
+  "$HOLD_BIN" list all >"$TEST_ROOT/list.out" 2>"$TEST_ROOT/list.err" || return 1
   ! grep -q '^badbad00cafe' "$TEST_ROOT/list.out"
   ! grep -Eq '^0[[:space:]]' "$TEST_ROOT/list.out"
   grep -q 'warning: skipping corrupt record badbad00cafe0000000000000000000000000000000000000000000000000000.json' "$TEST_ROOT/list.err"
@@ -744,7 +744,7 @@ test_deep_json_record_rejected_not_crashed() {
   for i in $(seq 1 80); do json="${json}]"; done
   json="${json},\"version\":1,\"id\":\"abc12445cafe\",\"pid\":12345,\"pgid\":12345,\"sid\":12345,\"start_unix_ns\":0,\"argv\":[\"x\"],\"cmdline_display\":\"x\",\"uid\":0,\"gid\":0,\"proc_starttime_ticks\":0,\"exe_dev\":0,\"exe_ino\":0}"
   printf '%s\n' "$json" > "$HOME/.local/state/backmux/abc12445cafe0000000000000000000000000000000000000000000000000000.json" || return 1
-  "$HOLD_BIN" list >"$TEST_ROOT/list.out" 2>"$TEST_ROOT/list.err" || return 1
+  "$HOLD_BIN" list all >"$TEST_ROOT/list.out" 2>"$TEST_ROOT/list.err" || return 1
   ! grep -q '^abc12445cafe' "$TEST_ROOT/list.out" || return 1
   grep -q 'warning: skipping corrupt record abc12445cafe0000000000000000000000000000000000000000000000000000.json' "$TEST_ROOT/list.err"
 }
@@ -755,7 +755,7 @@ test_symlinked_record_rejected() {
 {"version":1,"id":"abc12545cafe0000000000000000000000000000000000000000000000000000","pid":12345,"pgid":12345,"sid":12345,"start_unix_ns":0,"argv":["x"],"cmdline_display":"x","uid":0,"gid":0,"proc_starttime_ticks":0,"exe_dev":0,"exe_ino":0}
 JSON
   ln -s "$TEST_ROOT/record-target.json" "$HOME/.local/state/backmux/abc12545cafe0000000000000000000000000000000000000000000000000000.json" || return 1
-  "$HOLD_BIN" list >"$TEST_ROOT/list.out" 2>"$TEST_ROOT/list.err" || return 1
+  "$HOLD_BIN" list all >"$TEST_ROOT/list.out" 2>"$TEST_ROOT/list.err" || return 1
   ! grep -q '^abc12545cafe' "$TEST_ROOT/list.out" || return 1
   grep -q 'warning: skipping corrupt record abc12545cafe0000000000000000000000000000000000000000000000000000.json' "$TEST_ROOT/list.err"
 }
@@ -785,7 +785,7 @@ test_invalid_pgid_record() {
   cat > "$HOME/.local/state/backmux/abc12345cafe0000000000000000000000000000000000000000000000000000.json" <<'JSON'
 {"version":1,"id":"abc12345cafe0000000000000000000000000000000000000000000000000000","pid":12345,"pgid":0,"sid":12345,"start_unix_ns":0,"argv":["x"],"cmdline_display":"x","uid":0,"gid":0,"proc_starttime_ticks":0,"exe_dev":0,"exe_ino":0}
 JSON
-  "$HOLD_BIN" list >"$TEST_ROOT/list.out" 2>"$TEST_ROOT/list.err" || return 1
+  "$HOLD_BIN" list all >"$TEST_ROOT/list.out" 2>"$TEST_ROOT/list.err" || return 1
   ! grep -q '^abc12345cafe' "$TEST_ROOT/list.out"
 }
 
@@ -889,7 +889,7 @@ test_argument_edges() {
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || { cat "$TEST_ROOT/bare-backmux.out" "$TEST_ROOT/bare-backmux.err" >&2; return 1; }
-  grep -q 'START A CALL' "$TEST_ROOT/bare-backmux.out" || { cat "$TEST_ROOT/bare-backmux.out" >&2; return 1; }
+  grep -q 'backmux call <program>' "$TEST_ROOT/bare-backmux.out" || { cat "$TEST_ROOT/bare-backmux.out" >&2; return 1; }
   set +e
   "$HOLD_BIN" purge -all >/dev/null 2>"$TEST_ROOT/prune-flag.err"
   rc=$?
@@ -991,9 +991,9 @@ test_persistent_stale_records() {
   store="$HOME/.local/state/backmux"
   stale_log=$(log_path "$id" "$store") || return 1
   [ -f "$stale_log" ] || return 1
-  HOLD_BOOT_ID_PATH="$bootfile" "$HOLD_BIN" list >/dev/null || return 1
+  HOLD_BOOT_ID_PATH="$bootfile" "$HOLD_BIN" list all >/dev/null || return 1
   printf 'boot-b\n' >"$bootfile" || return 1
-  list_out=$(HOLD_BOOT_ID_PATH="$bootfile" "$HOLD_BIN" list -a) || return 1
+  list_out=$(HOLD_BOOT_ID_PATH="$bootfile" "$HOLD_BIN" list all -a) || return 1
   printf '%s\n' "$list_out" | grep -Eq "^$id[[:space:]].*Stale"
   set +e
   HOLD_BOOT_ID_PATH="$bootfile" "$HOLD_BIN" stop "$id" >/dev/null 2>"$TEST_ROOT/stop.err"
@@ -1024,7 +1024,7 @@ test_boot_unavailable_does_not_force_stale() {
   pgid=$(record_pgid "$id")
   [ -n "$pgid" ] || return 1
   rm -f "$bootfile"
-  list_out=$(HOLD_BOOT_ID_PATH="$bootfile" "$HOLD_BIN" list) || return 1
+  list_out=$(HOLD_BOOT_ID_PATH="$bootfile" "$HOLD_BIN" list all) || return 1
   printf '%s\n' "$list_out" | grep -Eq "^$id[[:space:]].*Up " || return 1
   ! printf '%s\n' "$list_out" | grep -Eq "^$id[[:space:]].*Stale" || return 1
   set +e
@@ -1041,7 +1041,7 @@ test_leader_zombie_group_still_running() {
   id=$("$HOLD_BIN" -d bash -c 'sleep 60 & exit 0' 2>&1 | extract_id) || return 1
   [ -n "$id" ] || return 1
   sleep 0.3
-  list_out=$("$HOLD_BIN" list) || return 1
+  list_out=$("$HOLD_BIN" list all) || return 1
   printf '%s\n' "$list_out" | grep -Eq "^$id[[:space:]].*Up " || return 1
   "$HOLD_BIN" end "$id" >/dev/null || return 1
 }
@@ -1108,7 +1108,7 @@ test_console_round_trip_and_log_tee() {
   grep -q '"console_sock": "' "$record" || { cat "$record" >&2; return 1; }
   sock=$(sed -n 's/.*"console_sock":[[:space:]]*"\([^"]*\)".*/\1/p' "$record" | head -n1)
   [ -n "$sock" ] || { cat "$record" >&2; return 1; }
-  "$HOLD_BIN" list >"$TEST_ROOT/console-list.out" || return 1
+  "$HOLD_BIN" list all >"$TEST_ROOT/console-list.out" || return 1
   grep -Eq "^$id[[:space:]].*Up " "$TEST_ROOT/console-list.out" || {
     cat "$TEST_ROOT/console-list.out" >&2
     return 1
@@ -1742,7 +1742,9 @@ test_prune_all_keeps_running() {
   id2=$(printf '%s\n' "$out2" | extract_id)
   [ -n "$id1" ] && [ -n "$id2" ] || return 1
   store="$HOME/.local/state/backmux"
-  "$HOLD_BIN" prune all >/dev/null || return 1
+  # the sweep (with stale calls: -a) never touches a running call; purge all
+  # is the one that ends them, and it asks first (see the settings test)
+  "$HOLD_BIN" prune -a >/dev/null || return 1
   record_exists "$id1" "$store" || return 1
   ! record_exists "$id2" "$store" || return 1
   ! log_exists "$id2" "$store" || return 1
@@ -1833,10 +1835,10 @@ test_rm_removed_on_kill_end_and_wait_reports_code() {
   for f in -d -dt; do
     "$HOLD_BIN" $f --rm --name rmk -- sleep 30 >/dev/null || return 1
     "$HOLD_BIN" kill rmk >/dev/null || return 1
-    ! "$HOLD_BIN" list | grep -q ' rmk$' || { echo "$f: --rm call still listed after kill" >&2; return 1; }
+    ! "$HOLD_BIN" list all | grep -q ' rmk$' || { echo "$f: --rm call still listed after kill" >&2; return 1; }
     "$HOLD_BIN" $f --rm --name rmk -- sleep 30 >/dev/null || { echo "$f: name not free after kill" >&2; return 1; }
     "$HOLD_BIN" end rmk >/dev/null || return 1
-    ! "$HOLD_BIN" list | grep -q ' rmk$' || { echo "$f: --rm call still listed after end" >&2; return 1; }
+    ! "$HOLD_BIN" list all | grep -q ' rmk$' || { echo "$f: --rm call still listed after end" >&2; return 1; }
     # wait while it runs: the code, then the name is free
     "$HOLD_BIN" $f --rm --name rmw -- /bin/sh -c 'sleep 0.4; exit 3' >/dev/null || return 1
     out=$("$HOLD_BIN" wait rmw) || return 1
@@ -1871,7 +1873,7 @@ PY
   "$HOLD_BIN" logs grpk | grep -qx late-line || { echo "output lost when the caller's group was killed" >&2; return 1; }
   [ "$("$HOLD_BIN" wait grpr --timeout 10000)" = 2 ] || { echo "--rm exit lost when the caller's group was killed" >&2; return 1; }
   sleep 0.5
-  ! "$HOLD_BIN" list | grep -q ' grpr$' || { echo "--rm call left behind when the caller's group was killed" >&2; return 1; }
+  ! "$HOLD_BIN" list all | grep -q ' grpr$' || { echo "--rm call left behind when the caller's group was killed" >&2; return 1; }
 }
 
 test_env_flag_is_recipe_data_only() {
@@ -1907,7 +1909,7 @@ test_public_root_index_list_is_redacted() {
   # Public root-index rows appear with -a in redacted form: the USER and COMMAND
   # cells both read the literal "hidden" (exists-but-not-yours-to-see, not "-"),
   # and the STATUS reflects the projected state.
-  "$HOLD_BIN" list -a >"$TEST_ROOT/list.out" 2>"$TEST_ROOT/list.err" || return 1
+  "$HOLD_BIN" list all -a >"$TEST_ROOT/list.out" 2>"$TEST_ROOT/list.err" || return 1
   # Projected rows speak the table's Docker phrasing: "Up <age>", not the raw hint.
   grep -Eq '^abc12345cafe[[:space:]]+hidden[[:space:]]+hidden[[:space:]].*[[:space:]]Up ' "$TEST_ROOT/list.out" || { cat "$TEST_ROOT/list.out" >&2; return 1; }
   ! grep -q 'secret' "$TEST_ROOT/list.out"
@@ -1934,13 +1936,14 @@ JSON
   chmod 0644 "$HOLD_TEST_SYSTEM_STATE_DIR/public/$id.json" || return 1
   # A recorded exit reads like any call's ("Exited (7)"); USER and COMMAND
   # stay redacted to the literal "hidden". Ended public rows need -a.
-  "$HOLD_BIN" list -a >"$TEST_ROOT/list.out" 2>"$TEST_ROOT/list.err" || return 1
+  "$HOLD_BIN" list all -a >"$TEST_ROOT/list.out" 2>"$TEST_ROOT/list.err" || return 1
   grep -Eq '^deadbeefcafe[[:space:]]+hidden[[:space:]]+hidden[[:space:]].*[[:space:]]Exited \(7\)([[:space:]]|$)' "$TEST_ROOT/list.out" || { cat "$TEST_ROOT/list.out" >&2; return 1; }
   ! grep -q 'secret' "$TEST_ROOT/list.out"
 }
 
-# `backmux list` is the ledger: a user's own calls, live and past, by default, with
-# a USER column naming the caller; -l/--live narrows it to the running ones.
+# `backmux list all` is the ledger: a user's own calls, live and past, with a
+# USER column naming the caller; plain `backmux list` (and -l/--live) shows the
+# running ones - the question asked most.
 test_list_default_is_full_ledger_live_narrows() {
   local live_out ended_out live_id ended_id me
   me="$TEST_USER" # the acting user (as root, the suite acts as a test user)
@@ -1951,17 +1954,20 @@ test_list_default_is_full_ledger_live_narrows() {
   record_ended_soon "$ended_id" || return 1
   # Default view: the USER column, then both the live and the past call, each
   # attributed to the calling user.
-  "$HOLD_BIN" list >"$TEST_ROOT/ledger.out" 2>&1 || return 1
+  "$HOLD_BIN" list all >"$TEST_ROOT/ledger.out" 2>&1 || return 1
   grep -Eq "^CALL ID[[:space:]]+USER[[:space:]]+COMMAND[[:space:]]+CREATED[[:space:]]+STATUS[[:space:]]+PORTS[[:space:]]+NAMES$" "$TEST_ROOT/ledger.out" || { cat "$TEST_ROOT/ledger.out" >&2; return 1; }
   grep -Eq "^$live_id[[:space:]]+$me[[:space:]].*Up " "$TEST_ROOT/ledger.out" || { cat "$TEST_ROOT/ledger.out" >&2; return 1; }
   grep -Eq "^$ended_id[[:space:]]+$me[[:space:]].*Exited \\(4\\)" "$TEST_ROOT/ledger.out" || { cat "$TEST_ROOT/ledger.out" >&2; return 1; }
   # -l (and its --live long form) drop the past call, keep the live one.
   local flag
   for flag in -l --live; do
-    "$HOLD_BIN" list "$flag" >"$TEST_ROOT/live.out" 2>&1 || return 1
+    "$HOLD_BIN" list all "$flag" >"$TEST_ROOT/live.out" 2>&1 || return 1
     grep -Eq "^$live_id[[:space:]].*Up " "$TEST_ROOT/live.out" || { cat "$TEST_ROOT/live.out" >&2; return 1; }
     ! grep -q "^$ended_id" "$TEST_ROOT/live.out" || { echo "$flag still showed the past call" >&2; cat "$TEST_ROOT/live.out" >&2; return 1; }
   done
+  "$HOLD_BIN" list >"$TEST_ROOT/plain.out" 2>&1 || return 1
+  grep -Eq "^$live_id[[:space:]].*Up " "$TEST_ROOT/plain.out" || { cat "$TEST_ROOT/plain.out" >&2; return 1; }
+  ! grep -q "^$ended_id" "$TEST_ROOT/plain.out" || { echo "plain list showed the stopped call" >&2; return 1; }
   "$HOLD_BIN" stop "$live_id" >/dev/null 2>&1 || true
 }
 
@@ -1974,7 +1980,7 @@ test_list_name_filter_matches_call_name() {
   webby_id=$(printf '%s\n' "$out" | extract_id); [ -n "$webby_id" ] || return 1
   out=$("$HOLD_BIN" -d --name other_call sleep 300 2>&1) || return 1
   other_id=$(printf '%s\n' "$out" | extract_id); [ -n "$other_id" ] || return 1
-  "$HOLD_BIN" list webby >"$TEST_ROOT/named.out" 2>&1 || return 1
+  "$HOLD_BIN" list all webby >"$TEST_ROOT/named.out" 2>&1 || return 1
   grep -Eq "^$webby_id[[:space:]].*[[:space:]]webby$" "$TEST_ROOT/named.out" || { cat "$TEST_ROOT/named.out" >&2; return 1; }
   ! grep -q 'other_call' "$TEST_ROOT/named.out" || { echo "name filter leaked another call" >&2; cat "$TEST_ROOT/named.out" >&2; return 1; }
   "$HOLD_BIN" stop "$webby_id" >/dev/null 2>&1 || true
@@ -1991,7 +1997,7 @@ test_list_all_renders_global_ports_projection() {
 {"id":"facefeed12340000000000000000000000000000000000000000000000000000","root_managed":true,"name":"global_web","state_hint":"running","created_at":"2026-06-15T18:42:11Z","observed_ports":"127.0.0.1:8080/tcp, [::]:9090/tcp","argv":["secret"],"cmdline_display":"secret command"}
 JSON
   chmod 0644 "$HOLD_TEST_SYSTEM_STATE_DIR/public/$id.json" || return 1
-  "$HOLD_BIN" list -a >"$TEST_ROOT/list.out" 2>&1 || return 1
+  "$HOLD_BIN" list all -a >"$TEST_ROOT/list.out" 2>&1 || return 1
   # The redacted row shows the generated name and the projected ports; USER and
   # COMMAND read "hidden" and the command line never appears.
   grep -Eq "^${id:0:12}[[:space:]]+hidden[[:space:]]+hidden[[:space:]].*127\\.0\\.0\\.1:8080/tcp.*global_web$" "$TEST_ROOT/list.out" || { cat "$TEST_ROOT/list.out" >&2; return 1; }
@@ -2097,14 +2103,14 @@ JSON
   out=$(as_root env HOLD_TEST_HOME_ROOT="$homes" "$HOLD_REAL_BIN" -d --name global_root sleep 300 2>&1) || { printf '%s\n' "$out" >&2; return 1; }
   gid_call=$(printf '%s\n' "$out" | extract_id); [ -n "$gid_call" ] || { printf '%s\n' "$out" >&2; return 1; }
   # Plain root list: the global call only, no personal rows.
-  as_root env HOLD_TEST_HOME_ROOT="$homes" "$HOLD_REAL_BIN" list >"$TEST_ROOT/root-list.out" 2>&1 || return 1
+  as_root env HOLD_TEST_HOME_ROOT="$homes" "$HOLD_REAL_BIN" list all >"$TEST_ROOT/root-list.out" 2>&1 || return 1
   grep -Eq "^$gid_call[[:space:]].*global_root$" "$TEST_ROOT/root-list.out" || { cat "$TEST_ROOT/root-list.out" >&2; return 1; }
   ! grep -q 'peer_call' "$TEST_ROOT/root-list.out" || { echo "plain root list walked personal stores" >&2; cat "$TEST_ROOT/root-list.out" >&2; return 1; }
   # Root list -a: USER column (second, after CALL ID); the peer call attributed
   # to its record owner, the global call to its recorded invoking user. Under
   # sudo that is the invoking account; run directly as root it would be "root".
   # In both cases the label equals `id -un` in this harness, so assert that.
-  as_root env HOLD_TEST_HOME_ROOT="$homes" "$HOLD_REAL_BIN" list -a >"$TEST_ROOT/root-list-a.out" 2>&1 || return 1
+  as_root env HOLD_TEST_HOME_ROOT="$homes" "$HOLD_REAL_BIN" list all -a >"$TEST_ROOT/root-list-a.out" 2>&1 || return 1
   grep -Eq "^CALL ID[[:space:]]+USER[[:space:]]+COMMAND[[:space:]]+CREATED[[:space:]]+STATUS[[:space:]]+PORTS[[:space:]]+NAMES$" "$TEST_ROOT/root-list-a.out" || { cat "$TEST_ROOT/root-list-a.out" >&2; return 1; }
   grep -Eq "^aa11bb22cc33[[:space:]]+$owner[[:space:]].*peer_call$" "$TEST_ROOT/root-list-a.out" || { cat "$TEST_ROOT/root-list-a.out" >&2; return 1; }
   grep -Eq "^$gid_call[[:space:]]+$owner[[:space:]].*global_root$" "$TEST_ROOT/root-list-a.out" || { cat "$TEST_ROOT/root-list-a.out" >&2; return 1; }
@@ -2175,7 +2181,7 @@ test_foreground_keys_interrupt_or_detach() {
   "$HOLD_BIN" wait kdrv2 --match keeper-up --timeout 8000 >/dev/null || return 1
   "$HOLD_BIN" send kdrv2 -k C-p -k C-q || return 1
   "$HOLD_BIN" wait kdrv2 --match 'keeper keeps running; follow it again: backmux --tail keeper' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek kdrv2 >&2; return 1; }
-  out_has 'Up ' "$HOLD_BIN" list keeper || { echo "detaching stopped the call" >&2; return 1; }
+  out_has 'Up ' "$HOLD_BIN" list all keeper || { echo "detaching stopped the call" >&2; return 1; }
   "$HOLD_BIN" end keeper kdrv kdrv2 >/dev/null 2>&1 || true
 }
 
@@ -2222,6 +2228,7 @@ done
 EOF
   chmod 755 "$TEST_ROOT/responder.sh"
   "$HOLD_BIN" -dt --name resp -- "$TEST_ROOT/responder.sh" >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" set resp agent >/dev/null || return 1
   "$HOLD_BIN" wait resp --match responder-up --timeout 8000 >/dev/null || { "$HOLD_BIN" peek resp >&2; return 1; }
   rc=0; out=$(BACKMUX_ID= BACKMUX_NAME= "$HOLD_BIN" msg resp "what is 2+2" --wait-reply --timeout 10000 2>"$TEST_ROOT/op.err") || rc=$?
   [ "$rc" -eq 0 ] || { echo "--wait-reply: rc=$rc" >&2; cat "$TEST_ROOT/op.err" >&2; "$HOLD_BIN" peek resp >&2; return 1; }
@@ -2411,36 +2418,36 @@ for trial in range(2):
 PY
 }
 
-# User mode at a terminal (a switchless launch): a message for the call goes
-# to its chat window and is never typed into the program; send still types
-# into it; redial brings the program back the same way.
-test_user_mode_messages_go_to_chat() {
+# A program placed with no verb and no session flags is a call: attached on
+# a PTY, no chat (chat belongs to the person), and a message arrives raw -
+# the text, then Enter, as if typed. recall brings it back the same way.
+test_bare_launch_is_a_call_with_raw_messages() {
   "$HOLD_BIN" -dt --size 120 30 --name udrv -- "$HOLD_REAL_BIN" --name umode -- sh -c 'echo umode-ready; while IFS= read -r l; do echo "typed:$l"; done' >/dev/null || return 1
   "$HOLD_BIN" wait udrv --match umode-ready --timeout 8000 >/dev/null || { "$HOLD_BIN" peek udrv >&2; return 1; }
-  out_has '"chat": true' "$HOLD_BIN" inspect umode || { echo "not in user mode" >&2; return 1; }
-  BACKMUX_ID= BACKMUX_NAME= "$HOLD_BIN" msg umode 'for the chat' || return 1
-  "$HOLD_BIN" wait udrv --match 'chat: 1 new' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek udrv >&2; return 1; }
-  if "$HOLD_BIN" peek umode | grep -q 'typed:'; then echo "the message was typed into the program" >&2; return 1; fi
-  "$HOLD_BIN" send umode --text 'by send' -k Enter >/dev/null || return 1
-  "$HOLD_BIN" wait umode --match 'typed:by send' --timeout 5000 >/dev/null || { echo "send did not reach the program" >&2; return 1; }
+  if "$HOLD_BIN" inspect umode | grep -q '"chat": true'; then echo "a call carries chat" >&2; return 1; fi
+  out_has '"tty": true' "$HOLD_BIN" inspect umode || return 1
+  BACKMUX_ID= BACKMUX_NAME= "$HOLD_BIN" msg umode 'for the program' >/dev/null || return 1
+  "$HOLD_BIN" wait umode --match 'typed:for the program' --timeout 5000 >/dev/null ||
+    { echo "the raw message was not typed" >&2; "$HOLD_BIN" peek umode >&2; return 1; }
+  if "$HOLD_BIN" peek umode | grep -q 'typed:\[msg from'; then echo "a call without agent got a header" >&2; return 1; fi
   "$HOLD_BIN" end umode udrv >/dev/null 2>&1 || true
-  "$HOLD_BIN" -dt --size 120 30 --name udrv2 -- "$HOLD_REAL_BIN" umode >/dev/null || return 1
-  "$HOLD_BIN" wait udrv2 --match umode-ready --timeout 8000 >/dev/null || { "$HOLD_BIN" peek udrv2 >&2; return 1; }
-  out_has '"chat": true' "$HOLD_BIN" inspect umode || { echo "redial did not come back in user mode" >&2; return 1; }
-  "$HOLD_BIN" end umode udrv2 >/dev/null 2>&1 || true
 }
 
-# -it is not user mode: attached on a PTY with no chat window, and a message
-# for it is typed into the program, as for any call (an agent run with -it
-# must get its messages).
-test_it_launch_messages_are_typed() {
-  "$HOLD_BIN" -dt --size 120 30 --name idrv -- "$HOLD_REAL_BIN" -it --name itcall -- sh -c 'echo it-ready; while IFS= read -r l; do echo "typed:$l"; done' >/dev/null || return 1
+# backmux agent: the same attached call, with each message behind a header
+# naming the sender and how to reply. It is a setting: unset takes the header
+# away from the next message, with no relaunch; set puts it back.
+test_agent_verb_formats_messages_live() {
+  "$HOLD_BIN" -dt --size 120 30 --name idrv -- "$HOLD_REAL_BIN" agent --name itcall -- sh -c 'echo it-ready; while IFS= read -r l; do echo "typed:$l"; done' >/dev/null || return 1
   "$HOLD_BIN" wait idrv --match it-ready --timeout 8000 >/dev/null || { "$HOLD_BIN" peek idrv >&2; return 1; }
-  if "$HOLD_BIN" inspect itcall | grep -q '"chat": true'; then echo "-it got the chat window" >&2; return 1; fi
+  out_has '"agent": true' "$HOLD_BIN" inspect itcall || return 1
   out_has '"tty": true' "$HOLD_BIN" inspect itcall || return 1
-  BACKMUX_ID= BACKMUX_NAME= "$HOLD_BIN" msg itcall 'for the program' || return 1
+  BACKMUX_ID= BACKMUX_NAME= "$HOLD_BIN" msg itcall 'for the program' >/dev/null || return 1
   "$HOLD_BIN" wait itcall --regex 'typed:\[msg from [a-z0-9_-]+; reply: backmux msg [a-z0-9_-]+ "\.\.\."\] for the program' --timeout 5000 >/dev/null ||
-    { echo "the message was not typed into the -it program" >&2; "$HOLD_BIN" peek itcall >&2; return 1; }
+    { echo "the message was not typed with its header" >&2; "$HOLD_BIN" peek itcall >&2; return 1; }
+  "$HOLD_BIN" unset itcall agent 2>/dev/null || return 1
+  BACKMUX_ID= BACKMUX_NAME= "$HOLD_BIN" msg itcall 'now raw' >/dev/null || return 1
+  "$HOLD_BIN" wait itcall --match 'typed:now raw' --timeout 5000 >/dev/null ||
+    { echo "unset agent did not take effect at once" >&2; "$HOLD_BIN" peek itcall >&2; return 1; }
   "$HOLD_BIN" end itcall idrv >/dev/null 2>&1 || true
 }
 
@@ -2468,7 +2475,7 @@ test_pipe_input_keys_detach_and_attach() {
   "$HOLD_BIN" wait pdrv --match 'got:ab' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek pdrv >&2; return 1; }
   "$HOLD_BIN" send pdrv -k C-p -k C-q || return 1
   "$HOLD_BIN" wait pdrv --match 'detached from piper' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek pdrv >&2; return 1; }
-  out_has 'Up ' "$HOLD_BIN" list piper || { echo "detaching stopped the call" >&2; return 1; }
+  out_has 'Up ' "$HOLD_BIN" list all piper || { echo "detaching stopped the call" >&2; return 1; }
   "$HOLD_BIN" -dt --name pdrv2 -- "$HOLD_REAL_BIN" attach piper >/dev/null || return 1
   sleep 0.5
   "$HOLD_BIN" send pdrv2 again -k Enter || return 1
@@ -2632,7 +2639,7 @@ test_sigterm_to_a_launch_reaches_program() {
   term_after 2 "$HOLD_BIN" --name termed -- sh -c 'trap "exit 7" TERM; while :; do sleep 0.2; done' </dev/null >/dev/null 2>&1
   set -e
   "$HOLD_BIN" wait termed --exit --timeout 5000 >/dev/null 2>&1 || true
-  out_has 'Exited (7)' "$HOLD_BIN" list -a termed || { echo "the program did not get the SIGTERM" >&2; "$HOLD_BIN" list -a >&2; return 1; }
+  out_has 'Exited (7)' "$HOLD_BIN" list all -a termed || { echo "the program did not get the SIGTERM" >&2; "$HOLD_BIN" list all -a >&2; return 1; }
 }
 
 # A piped attach to a -di call does not end its input: the next attach can
@@ -2779,7 +2786,7 @@ test_cannot_start_exits_127_and_126() {
   printf 'echo hi\n' > "$TEST_ROOT/not-exec"; chmod 644 "$TEST_ROOT/not-exec"
   rc=0; "$HOLD_BIN" -d "$TEST_ROOT/not-exec" >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 126 ] || { echo "not executable: rc=$rc (want 126)" >&2; return 1; }
-  if "$HOLD_BIN" list -a | grep -q 'no-such-command\|not-exec'; then echo "a failed start left a record" >&2; return 1; fi
+  if "$HOLD_BIN" list all -a | grep -q 'no-such-command\|not-exec'; then echo "a failed start left a record" >&2; return 1; fi
 }
 
 # The same file is "permission denied" (126) by bare name on PATH as by its
@@ -2802,7 +2809,7 @@ test_cannot_start_126_by_path_and_restart() {
   rc=0; PATH="$TEST_ROOT/locked:$PATH" "$HOLD_BIN" -d no-such-command-xyz >/dev/null 2>&1 || rc=$?
   chmod 700 "$TEST_ROOT/locked"
   [ "$rc" -eq 127 ] || { echo "behind a locked PATH dir, not found: rc=$rc (want 127)" >&2; return 1; }
-  if "$HOLD_BIN" list -a | grep -q 'not-exec\|no-such-command'; then echo "a failed start left a record" >&2; return 1; fi
+  if "$HOLD_BIN" list all -a | grep -q 'not-exec\|no-such-command'; then echo "a failed start left a record" >&2; return 1; fi
 }
 
 # Until backmux reports the named call ended (its observed state).
@@ -2826,7 +2833,7 @@ test_redial_keeps_saved_and_name() {
   name_ended_soon keepme || return 1
   out_has '"saved": true' "$HOLD_BIN" inspect keepme || { echo "redial dropped saved" >&2; "$HOLD_BIN" inspect keepme >&2; return 1; }
   "$HOLD_BIN" purge >/dev/null 2>&1 || true
-  out_has keepme "$HOLD_BIN" list -a || { echo "plain purge removed a saved, redialed call" >&2; return 1; }
+  out_has keepme "$HOLD_BIN" list all -a || { echo "plain purge removed a saved, redialed call" >&2; return 1; }
 }
 
 # A burst of redials of one ended call starts it once: the rest find it
@@ -2874,7 +2881,7 @@ test_purge_stands_back_from_a_redial() {
   flock "$store/.$id.reserve" sleep 3 &
   sleep 0.3
   "$HOLD_BIN" purge >/dev/null 2>&1 || true
-  out_has inflight "$HOLD_BIN" list -a || { echo "a sweep purged a call mid-redial" >&2; return 1; }
+  out_has inflight "$HOLD_BIN" list all -a || { echo "a sweep purged a call mid-redial" >&2; return 1; }
   rc=0; "$HOLD_BIN" purge inflight >/dev/null 2>"$TEST_ROOT/inflight.err" || rc=$?
   [ "$rc" -eq 2 ] || { echo "targeted purge mid-redial: rc=$rc (want 2)" >&2; cat "$TEST_ROOT/inflight.err" >&2; return 1; }
   grep -q 'being redialed' "$TEST_ROOT/inflight.err" || { cat "$TEST_ROOT/inflight.err" >&2; return 1; }
@@ -2985,7 +2992,7 @@ test_long_command_list_truncates_instead_of_skips() {
   id=$(printf '%s\n' "$out" | extract_id)
   [ -n "$id" ] || return 1
   sleep 0.2
-  list_out=$("$HOLD_BIN" list -a) || return 1
+  list_out=$("$HOLD_BIN" list all -a) || return 1
   printf '%s\n' "$list_out" | grep -Eq "^$id[[:space:]]" || return 1
   printf '%s\n' "$list_out" | grep -Eq "^$id[[:space:]].*\.\.\."
 }
@@ -3127,7 +3134,7 @@ PY
     sleep 0.1
   done
   [ "$matched" = 1 ] || { cat "$TEST_ROOT/root-public-state-compare.err" "$TEST_ROOT/root-private-state.json" "$public_json" >&2; return 1; }
-  list_out=$("$HOLD_BIN" list -a) || return 1
+  list_out=$("$HOLD_BIN" list all -a) || return 1
   printf '%s
 ' "$list_out" | grep -Eq "^$id[[:space:]].*(Up|Exited|running|exited)"
 }
@@ -3373,7 +3380,7 @@ test_ps_table_humanized_status_and_saved() {
 
   # list carries the same Up/Exited/(saved) STATUS phrasing as ps, but its own
   # header adds the USER column in Docker's IMAGE slot (second, after CALL ID).
-  list_out=$("$HOLD_BIN" list -a) || return 1
+  list_out=$("$HOLD_BIN" list all -a) || return 1
   printf '%s\n' "$list_out" | grep -Eq "^CALL ID[[:space:]]+USER[[:space:]]+COMMAND[[:space:]]+CREATED[[:space:]]+STATUS[[:space:]]+PORTS[[:space:]]+NAMES$" ||
     { printf '%s\n' "$list_out" >&2; return 1; }
   printf '%s\n' "$list_out" | grep -Eq "^$id[[:space:]].*Up .*\(saved\)" || { printf '%s\n' "$list_out" >&2; return 1; }
@@ -3622,9 +3629,9 @@ test_usage_errors_go_to_stderr_and_help_names_both_views() {
   [ -z "$out" ] || { echo "usage error leaked to stdout" >&2; printf '%s\n' "$out" >&2; return 1; }
   grep -q '^usage: backmux' "$TEST_ROOT/flags-only.err" || { cat "$TEST_ROOT/flags-only.err" >&2; return 1; }
   out=$("$HOLD_BIN" 2>/dev/null)
-  printf '%s\n' "$out" | grep -Fq 'WORK WITH CALLS (backmux COMMAND)' || { echo "help does not explain command syntax" >&2; return 1; }
-  printf '%s\n' "$out" | grep -Eq '^  ps[[:space:]]+list running calls' || { echo "help missing a distinct ps line" >&2; return 1; }
-  printf '%s\n' "$out" | grep -q 'ps is an alias' && { echo "help still claims ps is an alias" >&2; return 1; }
+  printf '%s\n' "$out" | grep -Eq '^ backmux list +list only running' || { echo "help does not show list" >&2; return 1; }
+  printf '%s\n' "$out" | grep -Eq '^ backmux help aliases' || { echo "help does not point to the Docker words" >&2; return 1; }
+  out_has 'ps / ps -a' "$HOLD_BIN" help aliases || { echo "help aliases does not map ps" >&2; return 1; }
   return 0
 }
 
@@ -3703,7 +3710,7 @@ test_restart_final_status_recorded() {
   record_ended_soon "$id" || { echo "restart call never marked exited" >&2; return 1; }
   record=$(record_path "$id") || return 1
   grep -q '"exit_code": 3' "$record" || { cat "$record" >&2; return 1; }
-  "$HOLD_BIN" list -a | grep -F "Exited (3)" >/dev/null || { "$HOLD_BIN" list -a >&2; return 1; }
+  "$HOLD_BIN" list all -a | grep -F "Exited (3)" >/dev/null || { "$HOLD_BIN" list all -a >&2; return 1; }
 }
 
 test_end_restart_call_records_term_status() {
@@ -3732,10 +3739,10 @@ test_unwitnessed_death_renders_exited_unknown() {
   kill -9 "$ppid" 2>/dev/null || true
   kill -9 "-$pid" 2>/dev/null || true
   for tries in $(seq 1 40); do
-    "$HOLD_BIN" list -a | grep -F "Exited (?)" >/dev/null && return 0
+    "$HOLD_BIN" list all -a | grep -F "Exited (?)" >/dev/null && return 0
     sleep 0.05
   done
-  "$HOLD_BIN" list -a >&2
+  "$HOLD_BIN" list all -a >&2
   cat "$record" >&2
   return 1
 }
@@ -3860,8 +3867,8 @@ PY
   # Docker parity: foreground -it prints no id; the detached run is found via listing.
   # The lone running call is the detached -it child; take the first table row's
   # CALL ID (the Docker-shaped COMMAND column ellipsizes the long temp path).
-  id=$("$HOLD_BIN" list | awk 'NR==2 {print $1; exit}')
-  [ -n "$id" ] || { "$HOLD_BIN" list >&2; return 1; }
+  id=$("$HOLD_BIN" list all | awk 'NR==2 {print $1; exit}')
+  [ -n "$id" ] || { "$HOLD_BIN" list all >&2; return 1; }
   record=$(record_path "$id") || { find "$HOME/.local/state/backmux" -maxdepth 1 -type f -print >&2 || true; return 1; }
   grep -q '"console_sock": "' "$record" || { cat "$record" >&2; return 1; }
   "$HOLD_BIN" ps >"$TEST_ROOT/docker-tty-ps.out" || return 1
@@ -3898,8 +3905,8 @@ PY
   # Docker parity: foreground -it prints no id; the detached run is found via listing.
   # The lone running call is the detached -it child; take the first table row's
   # CALL ID (the Docker-shaped COMMAND column ellipsizes the long temp path).
-  id=$("$HOLD_BIN" list | awk 'NR==2 {print $1; exit}')
-  [ -n "$id" ] || { "$HOLD_BIN" list >&2; return 1; }
+  id=$("$HOLD_BIN" list all | awk 'NR==2 {print $1; exit}')
+  [ -n "$id" ] || { "$HOLD_BIN" list all >&2; return 1; }
   "$HOLD_BIN" ps >"$TEST_ROOT/docker-tty-custom-ps.out" || return 1
   grep -Eq "^$id[[:space:]]+.*Up " "$TEST_ROOT/docker-tty-custom-ps.out" || { cat "$TEST_ROOT/docker-tty-custom-ps.out" >&2; return 1; }
   "$HOLD_BIN" stop "$id" >/dev/null || return 1
@@ -4337,17 +4344,17 @@ test_list_user_scope_only_personal() {
   gid_call=$(printf '%s\n' "$gout" | extract_id)
   [ -n "$gid_call" ] || { printf '%s\n' "$gout" >&2; return 1; }
   # Under sudo, -u lists the invoking user's ledger only.
-  as_sudo_from_user "$HOLD_REAL_BIN" list -u >"$TEST_ROOT/sudo-list-u.out" 2>&1 || return 1
+  as_sudo_from_user "$HOLD_REAL_BIN" list all -u >"$TEST_ROOT/sudo-list-u.out" 2>&1 || return 1
   grep -Eq "^$uid_call[[:space:]]+$TEST_USER[[:space:]].*personal_scope$" "$TEST_ROOT/sudo-list-u.out" || { cat "$TEST_ROOT/sudo-list-u.out" >&2; return 1; }
   ! grep -q "$gid_call" "$TEST_ROOT/sudo-list-u.out" || { echo "sudo list -u leaked a global call" >&2; cat "$TEST_ROOT/sudo-list-u.out" >&2; return 1; }
   ! grep -q 'hidden' "$TEST_ROOT/sudo-list-u.out" || { echo "sudo list -u carried redacted rows" >&2; cat "$TEST_ROOT/sudo-list-u.out" >&2; return 1; }
   # Long spelling matches.
-  as_sudo_from_user "$HOLD_REAL_BIN" list --user >"$TEST_ROOT/sudo-list-user.out" 2>&1 || return 1
+  as_sudo_from_user "$HOLD_REAL_BIN" list all --user >"$TEST_ROOT/sudo-list-user.out" 2>&1 || return 1
   grep -Eq "^$uid_call[[:space:]]+$TEST_USER[[:space:]].*personal_scope$" "$TEST_ROOT/sudo-list-user.out" || { cat "$TEST_ROOT/sudo-list-user.out" >&2; return 1; }
   # As a plain user, -u excludes the global projection that -a includes.
-  "$HOLD_BIN" list -a >"$TEST_ROOT/user-list-a.out" 2>&1 || return 1
+  "$HOLD_BIN" list all -a >"$TEST_ROOT/user-list-a.out" 2>&1 || return 1
   grep -q "$gid_call" "$TEST_ROOT/user-list-a.out" || { echo "list -a fixture missing the global call" >&2; cat "$TEST_ROOT/user-list-a.out" >&2; return 1; }
-  "$HOLD_BIN" list -u >"$TEST_ROOT/user-list-u.out" 2>&1 || return 1
+  "$HOLD_BIN" list all -u >"$TEST_ROOT/user-list-u.out" 2>&1 || return 1
   grep -Eq "^$uid_call[[:space:]]" "$TEST_ROOT/user-list-u.out" || { cat "$TEST_ROOT/user-list-u.out" >&2; return 1; }
   ! grep -q "$gid_call" "$TEST_ROOT/user-list-u.out" || { echo "user list -u leaked a global call" >&2; cat "$TEST_ROOT/user-list-u.out" >&2; return 1; }
   as_root "$HOLD_REAL_BIN" stop "system:$gid_call" >/dev/null 2>&1 || true
@@ -4390,13 +4397,13 @@ test_global_plain_d_seen_live_by_users() {
   [ -n "$pid" ] || { cat "$public" >&2; return 1; }
   parent=$(ps -o ppid= -p "$pid" | tr -d ' ')
   ! is_backmux_process "$parent" || { echo "root -d left a backmux process" >&2; return 1; }
-  "$HOLD_BIN" list -s | grep -Eq "Up .* globald$" || { "$HOLD_BIN" list -s >&2; return 1; }
+  "$HOLD_BIN" list all -s | grep -Eq "Up .* globald$" || { "$HOLD_BIN" list all -s >&2; return 1; }
   as_root kill -KILL "$pid" || return 1
   sleep 0.3
   grep -q '"state_hint": "running"' "$public" || { echo "something rewrote the public entry" >&2; return 1; }
-  ! "$HOLD_BIN" list -s | grep -Eq "Up .* globald$" || { echo "a dead global call still listed as running" >&2; return 1; }
-  "$HOLD_BIN" list -s | grep -Eq "Exited .* globald$" || { "$HOLD_BIN" list -s >&2; return 1; }
-  ! "$HOLD_BIN" list -s -l | grep -q " globald$" || { echo "list --live showed a dead global call" >&2; return 1; }
+  ! "$HOLD_BIN" list all -s | grep -Eq "Up .* globald$" || { echo "a dead global call still listed as running" >&2; return 1; }
+  "$HOLD_BIN" list all -s | grep -Eq "Exited .* globald$" || { "$HOLD_BIN" list all -s >&2; return 1; }
+  ! "$HOLD_BIN" list all -s -l | grep -q " globald$" || { echo "list --live showed a dead global call" >&2; return 1; }
   as_root "$HOLD_REAL_BIN" purge -s globald >/dev/null 2>&1 || true
 }
 
@@ -4420,7 +4427,7 @@ test_orphan_public_entry_swept() {
   as_root "$HOLD_REAL_BIN" purge -s >/dev/null 2>&1 || return 1
   [ ! -e "$public_json" ] || { echo "orphan public entry survived sudo backmux purge" >&2; cat "$public_json" >&2; return 1; }
   # No view resurrects it.
-  "$HOLD_BIN" list -a >"$TEST_ROOT/orphan-list.out" 2>&1 || return 1
+  "$HOLD_BIN" list all -a >"$TEST_ROOT/orphan-list.out" 2>&1 || return 1
   ! grep -q "^$id" "$TEST_ROOT/orphan-list.out" || { echo "swept orphan still listed" >&2; cat "$TEST_ROOT/orphan-list.out" >&2; return 1; }
 }
 
@@ -4452,7 +4459,7 @@ test_restart_unless_stopped() {
   count=$(wc -l <"$HOME/us-count" 2>/dev/null || echo 0)
   count=$((count))
   [ "$count" -eq 3 ] || { echo "unless-stopped restarted after backmux end: attempts=$count" >&2; return 1; }
-  "$HOLD_BIN" list -a | grep -Eq "^$id[[:space:]].*Exited" || { "$HOLD_BIN" list -a >&2; return 1; }
+  "$HOLD_BIN" list all -a | grep -Eq "^$id[[:space:]].*Exited" || { "$HOLD_BIN" list all -a >&2; return 1; }
 }
 
 # backmux msg: a call messages another; the header names the sender's call and
@@ -4460,6 +4467,7 @@ test_restart_unless_stopped() {
 # flattened when there is no bracketed paste.
 test_msg_between_calls() {
   "$HOLD_BIN" -dt --name lead -- /bin/sh -c 'stty -echo; echo lead-ready; while IFS= read -r l; do printf "LEAD GOT: %s\n" "$l"; done' >/dev/null || return 1
+  "$HOLD_BIN" set lead agent >/dev/null || return 1
   "$HOLD_BIN" wait lead --match lead-ready --timeout 5000 || return 1
   "$HOLD_BIN" resize lead 200 24 || return 1 # headers stay on one line
   # The sender runs in a new session, as agent harnesses run tool commands:
@@ -4499,6 +4507,7 @@ test_msg_between_calls() {
 # claimed name up. And --received still reads a log past 1 MiB.
 test_msg_claim_cannot_forge_or_crash() {
   "$HOLD_BIN" -dt --name lead -- /bin/sh -c 'stty -echo; echo lead-ready; while IFS= read -r l; do printf "LEAD GOT: %s\n" "$l"; done' >/dev/null || return 1
+  "$HOLD_BIN" set lead agent >/dev/null || return 1
   "$HOLD_BIN" wait lead --match lead-ready --timeout 5000 || return 1
   "$HOLD_BIN" resize lead 200 24 || return 1
   local store="$HOME/.local/state/backmux" lid lpath
@@ -5115,7 +5124,7 @@ test_wait_timeout_ended_and_exit_code() {
   "$HOLD_BIN" -d --name plain -- /bin/sh -c 'exit 4' >/dev/null || return 1
   [ "$("$HOLD_BIN" wait plain --timeout 5000 2>"$TEST_ROOT/plain.err")" = -1 ] || return 1
   grep -q "records no exit code" "$TEST_ROOT/plain.err" || { cat "$TEST_ROOT/plain.err" >&2; return 1; }
-  "$HOLD_BIN" list -a | grep -Eq "Exited [0-9L].* plain$" || { "$HOLD_BIN" list -a >&2; return 1; }
+  "$HOLD_BIN" list all -a | grep -Eq "Exited [0-9L].* plain$" || { "$HOLD_BIN" list all -a >&2; return 1; }
 }
 
 # wait --idle counts silence from the start of the wait, and settles.
@@ -5198,6 +5207,7 @@ test_wait_more_clients_than_slots() {
 test_fifo_console_full_capability() {
   local ep mid n
   BACKMUX_CONSOLE_TRANSPORT=fifo "$HOLD_BIN" -dt --name ff -- /bin/sh -c 'stty -echo; echo ready; while IFS= read -r l; do printf "GOT %s\n" "$l"; done' >/dev/null || return 1
+  "$HOLD_BIN" set ff agent >/dev/null || return 1
   ep=$("$HOLD_BIN" inspect ff | sed -n 's/.*"console_sock": "\(.*\)",/\1/p')
   [ -p "$ep" ] || { ls -l "$ep" >&2; echo "the console endpoint is not a FIFO" >&2; return 1; }
   "$HOLD_BIN" wait ff --match ready --timeout 5000 || return 1
@@ -5300,7 +5310,7 @@ test_inspect_reports_observed_state() {
   [ -n "$pid" ] && [ -n "$reaper" ] || return 1
   kill -KILL "$reaper" "$pid" 2>/dev/null || as_root kill -KILL "$reaper" "$pid" || return 1
   sleep 0.5
-  "$HOLD_BIN" list -a | grep -Eq "Exited \(\?\).* killed$" || { "$HOLD_BIN" list -a >&2; return 1; }
+  "$HOLD_BIN" list all -a | grep -Eq "Exited \(\?\).* killed$" || { "$HOLD_BIN" list all -a >&2; return 1; }
   "$HOLD_BIN" inspect killed >"$TEST_ROOT/killed.json" || return 1
   grep -q '"state": "exited"' "$TEST_ROOT/killed.json" && grep -q '"recorded_state": "running"' "$TEST_ROOT/killed.json" ||
     { cat "$TEST_ROOT/killed.json" >&2; return 1; }
@@ -5421,18 +5431,18 @@ test_other_pid_namespace_follows_chain_of_command() {
   # Unknown - sweeps skip it, end explains, only a named purge --force removes it.
   in_new_pid_ns /bin/sh -c '"$1" -d --name nsunk -- sleep 300 >/dev/null; sleep 0.5' sh "$HOLD_REAL_BIN" || return 1
   sleep 0.3
-  "$HOLD_BIN" list -a | grep -Eq 'Exited \(\?\).* nsgone$' || { "$HOLD_BIN" list -a >&2; return 1; }
-  "$HOLD_BIN" list -a | grep -Eq 'Unknown.* nsunk$' || { "$HOLD_BIN" list -a >&2; return 1; }
+  "$HOLD_BIN" list all -a | grep -Eq 'Exited \(\?\).* nsgone$' || { "$HOLD_BIN" list all -a >&2; return 1; }
+  "$HOLD_BIN" list all -a | grep -Eq 'Unknown.* nsunk$' || { "$HOLD_BIN" list all -a >&2; return 1; }
   local start=$SECONDS
   [ "$("$HOLD_BIN" wait nsgone 2>/dev/null)" = -1 ] && [ $((SECONDS - start)) -le 5 ] || { echo "wait hung or misreported" >&2; return 1; }
   "$HOLD_BIN" purge >/dev/null 2>&1 || true
-  ! "$HOLD_BIN" list -a | grep -q ' nsgone$' || { echo "a sweep kept a call whose shell ended" >&2; return 1; }
-  "$HOLD_BIN" list -a | grep -q ' nsunk$' || { echo "a sweep removed a call it could not judge" >&2; return 1; }
+  ! "$HOLD_BIN" list all -a | grep -q ' nsgone$' || { echo "a sweep kept a call whose shell ended" >&2; return 1; }
+  "$HOLD_BIN" list all -a | grep -q ' nsunk$' || { echo "a sweep removed a call it could not judge" >&2; return 1; }
   if "$HOLD_BIN" end nsunk 2>"$TEST_ROOT/nsunk-end.err"; then echo "end claimed an unknown call" >&2; return 1; fi
   grep -q "not running in this environment" "$TEST_ROOT/nsunk-end.err" || { cat "$TEST_ROOT/nsunk-end.err" >&2; return 1; }
   if "$HOLD_BIN" purge nsunk 2>/dev/null; then echo "purge removed an unknown call without --force" >&2; return 1; fi
   "$HOLD_BIN" purge nsunk --force >/dev/null || return 1
-  ! "$HOLD_BIN" list -a | grep -q ' nsunk$' || return 1
+  ! "$HOLD_BIN" list all -a | grep -q ' nsunk$' || return 1
   # (nst and nsd had ended, so the sweep above already removed them)
 }
 
@@ -5463,7 +5473,7 @@ test_foreign_namespace_unavailable_log_is_unknown() {
     fi
     [ "$rc" -eq 0 ] && [ "$out" = ok ] || { printf '%s: %s\n' "$problem" "$out" >&2; return 1; }
   done
-  in_new_pid_ns "$HOLD_REAL_BIN" list -a | grep -Eq 'Up .* nslog$' || return 1
+  in_new_pid_ns "$HOLD_REAL_BIN" list all -a | grep -Eq 'Up .* nslog$' || return 1
   "$HOLD_BIN" end nslog >/dev/null || return 1
 }
 
@@ -5613,7 +5623,7 @@ out_has() {
 wait_call() {
   local i
   for i in $(seq 1 100); do
-    out_has " $1\$" "$HOLD_BIN" list -a && return 0
+    out_has " $1\$" "$HOLD_BIN" list all -a && return 0
     sleep 0.1
   done
   echo "the call $1 never appeared" >&2
@@ -5715,14 +5725,14 @@ test_invalid_sizes_start_nothing() {
     set -e
     [ "$rc" -eq 1 ] || { echo "--size '$bad' exited $rc" >&2; cat "$TEST_ROOT/size.err" >&2; return 1; }
     grep -q -- '--size' "$TEST_ROOT/size.err" || { echo "--size '$bad': no explanation" >&2; return 1; }
-    [ -z "$("$HOLD_BIN" list -a | sed 1d)" ] || { echo "--size '$bad' started a call" >&2; "$HOLD_BIN" list -a >&2; return 1; }
+    [ -z "$("$HOLD_BIN" list all -a | sed 1d)" ] || { echo "--size '$bad' started a call" >&2; "$HOLD_BIN" list all -a >&2; return 1; }
   done
   # --size never allocates a PTY by itself, and belongs to a launch.
   set +e
   "$HOLD_BIN" -d --size 120 40 -- /bin/sh -c 'sleep 30' </dev/null >/dev/null 2>"$TEST_ROOT/size.err"; rc=$?
   set -e
   [ "$rc" -eq 1 ] && grep -q 'add -t' "$TEST_ROOT/size.err" || { echo "--size without -t was not refused" >&2; return 1; }
-  [ -z "$("$HOLD_BIN" list -a | sed 1d)" ] || { echo "--size without -t started a call" >&2; return 1; }
+  [ -z "$("$HOLD_BIN" list all -a | sed 1d)" ] || { echo "--size without -t started a call" >&2; return 1; }
   set +e
   "$HOLD_BIN" --size 120 40 list >/dev/null 2>&1; rc=$?
   set -e
@@ -5748,7 +5758,7 @@ test_invalid_sizes_start_nothing() {
   "$HOLD_BIN" -dt --name guess -- /bin/sh -c 'sleep 30' </dev/null >/dev/null 2>"$TEST_ROOT/size.err"; rc=$?
   set -e
   [ "$rc" -eq 1 ] && grep -q 'saved detach-size' "$TEST_ROOT/size.err" || { echo "a bad saved size was not refused" >&2; cat "$TEST_ROOT/size.err" >&2; return 1; }
-  [ -z "$("$HOLD_BIN" list -a | sed 1d)" ] || { echo "a bad saved size started a call" >&2; return 1; }
+  [ -z "$("$HOLD_BIN" list all -a | sed 1d)" ] || { echo "a bad saved size started a call" >&2; return 1; }
   "$HOLD_BIN" config unset detach-size 2>/dev/null || return 1
 
   "$HOLD_BIN" -dt --size 80 24 --name live -- /bin/sh -c 'sleep 30' </dev/null >/dev/null || return 1
@@ -5762,17 +5772,36 @@ test_invalid_sizes_start_nothing() {
   out_has '"cols": 80,' "$HOLD_BIN" peek live --json || { echo "a refused resize changed the size" >&2; return 1; }
 }
 
-# ---- backmux shell: a person's shell with the chat window over it ---------------
+# ---- panes, floating windows, and chat ------------------------------------
 
-# A backmux shell draws on a terminal, so an outer TTY call plays the person's
-# terminal: `backmux peek term` is exactly what they would see, and `backmux send
-# term` types and clicks as they would. The shell itself is the call "work".
-start_shell_in_terminal() {
-  local cols="$1" rows="$2"
-  shift 2
-  "$HOLD_BIN" -dt --size "$cols" "$rows" --name term -- "$HOLD_REAL_BIN" shell --name work "$@" </dev/null >/dev/null || return 1
-  # the corner hint shows that the composited display is up
-  "$HOLD_BIN" wait term --match 'work | Ctrl-P Ctrl-T: chat' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
+# The person's terminal: an outer TTY call running backmux attach CALL, so
+# `backmux peek TERM` is exactly what they would see and `backmux send TERM`
+# types and clicks as they would. Plain attach shows the call's name in the
+# corner when it starts.
+start_term() {
+  local term="$1" call="$2" cols="${3:-100}" rows="${4:-24}"
+  "$HOLD_BIN" -dt --size "$cols" "$rows" --name "$term" -- "$HOLD_REAL_BIN" attach "$call" </dev/null >/dev/null || return 1
+  "$HOLD_BIN" wait "$term" --match "backmux: $call" --timeout 8000 >/dev/null || { "$HOLD_BIN" peek "$term" >&2; return 1; }
+}
+
+# Ctrl-P Ctrl-A, then the call whose arguments show MARK in the picker's
+# lower half, then Enter: it joins as a pane.
+pick_pane() {
+  local term="$1" mark="$2" i
+  "$HOLD_BIN" send "$term" -k C-p -k C-a || return 1
+  "$HOLD_BIN" wait "$term" --match 'attach a running call beside this one' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek "$term" >&2; return 1; }
+  for i in $(seq 1 20); do
+    if "$HOLD_BIN" peek "$term" | grep -q "args .*$mark"; then
+      "$HOLD_BIN" send "$term" -k Enter || return 1
+      "$HOLD_BIN" wait "$term" --idle 300 --timeout 3000 >/dev/null 2>&1 || true
+      return 0
+    fi
+    "$HOLD_BIN" send "$term" -k Down || return 1
+    sleep 0.1
+  done
+  echo "the picker never showed $mark" >&2
+  "$HOLD_BIN" peek "$term" >&2
+  return 1
 }
 
 # Where a piece of text sits on a TTY call's screen: "COL ROW" of its first
@@ -5825,348 +5854,259 @@ wait_gone() {
   return 1
 }
 
-# The chat window is drawn over the shell, never into it.
-shell_untouched() {
-  if out_has 'chat ->\|who to talk to\|\[ \] screen' "$HOLD_BIN" peek work; then
-    echo "the chat window is on the shell's own screen" >&2
-    "$HOLD_BIN" peek work >&2
-    return 1
-  fi
+# Nothing splits by default: plain attach until Ctrl-P Ctrl-A brings a second
+# call in. It takes the left (B), the first stays right (A); keys go to the
+# focused pane; a click moves focus; when one pane is left it is plain attach
+# again; Ctrl-P Ctrl-Q detaches and every call keeps running.
+test_panes_attach_beside_and_hand_back() {
+  local p1col p2col
+  "$HOLD_BIN" detach --name p1 -- sh -c 'stty -echo; echo P1-UP; exec cat' mark-one >/dev/null || return 1
+  "$HOLD_BIN" detach --name p2 -- sh -c 'stty -echo; echo P2-UP; exec cat' mark-two >/dev/null || return 1
+  start_term term p1 || return 1
+  if "$HOLD_BIN" peek term | grep -q '│'; then echo "a lone call was split" >&2; return 1; fi
+  pick_pane term mark-two || return 1
+  "$HOLD_BIN" wait term --match 'P2-UP' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  out_has '│' "$HOLD_BIN" peek term || { echo "no split after Ctrl-P Ctrl-A" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  p1col=$(screen_pos term P1-UP | cut -d' ' -f1); p2col=$(screen_pos term P2-UP | cut -d' ' -f1)
+  [ "$p2col" -lt "$p1col" ] || { echo "the new pane is not on the left ($p2col vs $p1col)" >&2; return 1; }
+  # keys go to the focused pane: the new one
+  "$HOLD_BIN" send term to-two --enter || return 1
+  "$HOLD_BIN" wait p2 --regex '^to-two$' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek p2 >&2; return 1; }
+  if "$HOLD_BIN" peek p1 | grep -q 'to-two'; then echo "keys reached the unfocused pane" >&2; return 1; fi
+  # a click on the right pane moves focus there; the click itself is not typed
+  wait_mouse term || return 1
+  "$HOLD_BIN" send term --mouse "click,$((p1col + 2)),5" || return 1
+  sleep 0.3
+  "$HOLD_BIN" send term to-one --enter || return 1
+  "$HOLD_BIN" wait p1 --regex '^to-one$' --timeout 5000 >/dev/null || { echo "the click did not move focus" >&2; "$HOLD_BIN" peek p1 >&2; return 1; }
+  # p2 ends: one pane is left, and that is plain attach again
+  "$HOLD_BIN" end p2 >/dev/null 2>&1 || return 1
+  wait_gone term '│' || return 1
+  "$HOLD_BIN" send term back-plain --enter || return 1
+  "$HOLD_BIN" wait p1 --regex '^back-plain$' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek p1 >&2; return 1; }
+  # detach with panes up: everything keeps running
+  "$HOLD_BIN" detach --name p3 -- sh -c 'echo P3-UP; exec cat' mark-three >/dev/null || return 1
+  pick_pane term mark-three || return 1
+  "$HOLD_BIN" send term -k C-p -k C-q || return 1
+  "$HOLD_BIN" wait term --timeout 8000 >/dev/null 2>&1 || { echo "detach did not end the attach" >&2; return 1; }
+  out_has 'Up .* p1$' "$HOLD_BIN" list || return 1
+  out_has 'Up .* p3$' "$HOLD_BIN" list || return 1
+  "$HOLD_BIN" end p1 p3 >/dev/null 2>&1 || true
 }
 
-# An agent stand-in: echoes what is typed at its prompt and answers every
-# "ping" with an ordinary backmux msg to the call "work". It knows nothing of the
-# chat window.
-write_agent() {
-  cat >"$1/agent.sh" <<EOF || return 1
-#!/bin/sh
-echo AGENT READY
-n=0
-while IFS= read -r line; do
-  printf 'GOT: %s\n' "\$line"
-  case "\$line" in *ping*) n=\$((n + 1)); "$HOLD_REAL_BIN" msg work "pong \$n" ;; esac
-done
-EOF
-  chmod 755 "$1/agent.sh"
+# Four panes to a window, filling B A / C D; the fifth opens window 2 (5-8).
+# backmux swap takes letters (the window on screen), numbers and names; a
+# window fills in order, so an out-of-order slot is refused with the reason.
+test_panes_windows_and_swap() {
+  local i muxfile
+  for i in 1 2 3 4 5; do
+    "$HOLD_BIN" detach --name "w$i" -- sh -c "echo W$i-UP; exec cat" "mark-w$i" >/dev/null || return 1
+  done
+  start_term term w1 120 30 || return 1
+  for i in 2 3 4 5; do pick_pane term "mark-w$i" || return 1; done
+  "$HOLD_BIN" wait term --match 'window 2 of 2' --timeout 5000 >/dev/null || { echo "the fifth pane did not open window 2" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  muxfile=""
+  for f in "$HOME"/.local/state/backmux/chat/mux.*; do
+    case "${f##*/}" in mux.*.*) ;; mux.*) muxfile="$f" ;; esac
+  done
+  [ -f "$muxfile" ] || { echo "the compositor does not advertise its panes" >&2; return 1; }
+  grep -Eq '^1 [0-9a-f]+ w1$' "$muxfile" && grep -Eq '^5 [0-9a-f]+ w5$' "$muxfile" || { cat "$muxfile" >&2; return 1; }
+  # back to window 1, and the names: letter, number, name
+  "$HOLD_BIN" send term -k C-p -k C-w || return 1
+  "$HOLD_BIN" send term -k C-p -k C-n || return 1
+  "$HOLD_BIN" wait term --match 'A 1 w1' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  out_has 'B 2 w2' "$HOLD_BIN" peek term || return 1
+  out_has 'C 3 w3' "$HOLD_BIN" peek term || return 1
+  out_has 'D 4 w4' "$HOLD_BIN" peek term || return 1
+  # swap by letter and number: A (w1) and 5 (w5) trade places
+  "$HOLD_BIN" swap A,5 2>/dev/null || { echo "swap A,5 failed" >&2; return 1; }
+  grep -Eq '^5 [0-9a-f]+ w1$' "$muxfile" && grep -Eq '^1 [0-9a-f]+ w5$' "$muxfile" || { cat "$muxfile" >&2; return 1; }
+  # by names, and refusals
+  "$HOLD_BIN" swap w1 w5 2>/dev/null || return 1
+  grep -Eq '^1 [0-9a-f]+ w1$' "$muxfile" || { cat "$muxfile" >&2; return 1; }
+  rc=0; "$HOLD_BIN" swap 2,7 2>"$TEST_ROOT/swap.err" || rc=$?
+  [ "$rc" -eq 1 ] && grep -q 'fills in order' "$TEST_ROOT/swap.err" || { echo "swap 2,7 rc=$rc" >&2; cat "$TEST_ROOT/swap.err" >&2; return 1; }
+  rc=0; "$HOLD_BIN" swap w1,nosuch 2>"$TEST_ROOT/swap.err" || rc=$?
+  [ "$rc" -eq 1 ] && grep -q 'no pane nosuch' "$TEST_ROOT/swap.err" || { cat "$TEST_ROOT/swap.err" >&2; return 1; }
+  # moving to the first slot of a new window: 6 is free only after 5
+  "$HOLD_BIN" swap 4,6 2>/dev/null || { echo "a move to the next slot of window 2 was refused" >&2; return 1; }
+  grep -Eq '^6 [0-9a-f]+ w4$' "$muxfile" || { cat "$muxfile" >&2; return 1; }
+  "$HOLD_BIN" send term -k C-p -k C-q || return 1
+  "$HOLD_BIN" end w1 w2 w3 w4 w5 >/dev/null 2>&1 || true
 }
 
-# backmux shell's own grammar: its options end at the shell's name, a shell is
-# never detached or headless, and --chat-key moves the shortcut.
-test_shell_launch_grammar() {
+# Chat belongs to the person, not to any call: Ctrl-P Ctrl-T over whatever is
+# on screen, under the person's chat name. To a call without the agent
+# setting a message arrives raw; with it, behind the header. A reply comes
+# back into chat. Opened in another terminal, chat moves there with its draft.
+test_chat_is_the_persons() {
+  local me rid
+  "$HOLD_BIN" detach --name rcv -- sh -c 'stty -echo; echo RCV-UP; while IFS= read -r l; do echo "typed:$l"; done' >/dev/null || return 1
+  "$HOLD_BIN" detach --name other -- sh -c 'echo OTHER-UP; exec cat' >/dev/null || return 1
+  start_term term other || return 1
+  "$HOLD_BIN" send term -k C-p -k C-t || return 1
+  "$HOLD_BIN" wait term --regex '[a-z0-9_-]+ chat -> ' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  me=$("$HOLD_BIN" peek term | grep -o '[a-z0-9_-]* chat -> ' | head -1 | cut -d' ' -f1)
+  [ -n "$me" ] || return 1
+  for i in $(seq 1 6); do "$HOLD_BIN" peek term | grep -q 'chat -> rcv' && break; "$HOLD_BIN" send term -k Tab; sleep 0.2; done
+  out_has 'chat -> rcv' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" send term 'echo raw' --enter || return 1
+  "$HOLD_BIN" wait rcv --regex '^typed:echo raw$' --timeout 5000 >/dev/null || { echo "a raw message was not typed" >&2; "$HOLD_BIN" peek rcv >&2; return 1; }
+  "$HOLD_BIN" set rcv agent 2>/dev/null || return 1
+  "$HOLD_BIN" send term 'with header' --enter || return 1
+  "$HOLD_BIN" wait rcv --regex "^typed:\\[msg from $me; reply: backmux msg $me \"\\.\\.\\.\"\\] with header\$" --timeout 5000 >/dev/null ||
+    { echo "the agent setting did not add the header" >&2; "$HOLD_BIN" peek rcv >&2; return 1; }
+  # a reply, as an agent would send it, lands in chat
+  rid=$("$HOLD_BIN" inspect rcv | sed -n 's/^  "id": "\(.*\)",$/\1/p')
+  BACKMUX_ID="$rid" "$HOLD_BIN" msg "$me" 'pong from rcv' >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" wait term --match 'pong from rcv' --timeout 5000 >/dev/null || { echo "the reply did not reach chat" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  if "$HOLD_BIN" peek other | grep -q 'chat ->\|pong'; then echo "chat was drawn into a program's screen" >&2; return 1; fi
+  # another terminal opens chat: it moves there, draft and all
+  "$HOLD_BIN" send term 'half typed' || return 1
+  sleep 0.3
+  start_term term2 rcv || return 1
+  "$HOLD_BIN" send term2 -k C-p -k C-t || return 1
+  "$HOLD_BIN" wait term2 --match '> half typed' --timeout 5000 >/dev/null || { echo "the draft did not follow" >&2; "$HOLD_BIN" peek term2 >&2; return 1; }
+  wait_gone term 'chat ->' || return 1
+  "$HOLD_BIN" send term2 -k Escape || return 1
+  wait_gone term2 'chat ->' || return 1
+  "$HOLD_BIN" end rcv other >/dev/null 2>&1 || true
+}
+
+# The lead key waits for the next key, however long: Ctrl-P Ctrl-P is one
+# Ctrl-P for the program; Ctrl-P and anything that is not a command is
+# cancelled, both keys dropped; Ctrl-P Ctrl-H floats the keys, Esc closes it
+# and the screen is plain attach again.
+test_lead_key_commands_and_cancel() {
+  "$HOLD_BIN" detach --name kp -- sh -c 'stty raw -echo; echo KP-UP; exec cat -v' >/dev/null || return 1
+  start_term term kp || return 1
+  "$HOLD_BIN" send term -k C-p || return 1
+  sleep 0.5
+  "$HOLD_BIN" send term -k C-p || return 1
+  "$HOLD_BIN" wait kp --match '^P' --timeout 5000 >/dev/null || { echo "Ctrl-P Ctrl-P did not send one Ctrl-P" >&2; "$HOLD_BIN" peek kp >&2; return 1; }
+  "$HOLD_BIN" send term -k C-p --text x || return 1
+  "$HOLD_BIN" send term --text y || return 1
+  "$HOLD_BIN" wait kp --match '^Py' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek kp >&2; return 1; }
+  if "$HOLD_BIN" peek kp | grep -q 'x'; then echo "a cancelled key reached the program" >&2; "$HOLD_BIN" peek kp >&2; return 1; fi
+  "$HOLD_BIN" send term -k C-p -k C-h || return 1
+  "$HOLD_BIN" wait term --match 'backmux keys' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  out_has 'Ctrl-P Ctrl-A' "$HOLD_BIN" peek term || return 1
+  "$HOLD_BIN" send term -k Escape || return 1
+  wait_gone term 'backmux keys' || return 1
+  "$HOLD_BIN" send term --text z || return 1
+  "$HOLD_BIN" wait kp --match '^Pyz' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek kp >&2; return 1; }
+  "$HOLD_BIN" end kp >/dev/null 2>&1 || true
+}
+
+# backmux shell is a call like any other: options end at the shell's name, it
+# carries no chat, a message reaches its prompt raw, and it is never detached
+# or headless. --chat-key is refused: chat belongs to no call.
+test_shell_is_a_call() {
+  local rc args
+  "$HOLD_BIN" -dt --size 80 24 --name term -- "$HOLD_REAL_BIN" shell --name work --size 70 20 /bin/sh -c 'echo "ARGS:$0:$1:$2"; while IFS= read -r l; do echo "typed:$l"; done' zero --name -d </dev/null >/dev/null || return 1
+  "$HOLD_BIN" wait work --match 'ARGS:zero:--name:-d' --timeout 8000 >/dev/null || { "$HOLD_BIN" peek work >&2; return 1; }
+  out_has '"shell": true' "$HOLD_BIN" inspect work || { "$HOLD_BIN" inspect work >&2; return 1; }
+  if "$HOLD_BIN" inspect work | grep -q '"chat": true'; then echo "a shell carries chat" >&2; return 1; fi
+  BACKMUX_ID= BACKMUX_NAME= "$HOLD_BIN" msg work 'echo at the prompt' >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" wait work --regex '^typed:echo at the prompt$' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek work >&2; return 1; }
+  for args in "shell -d" "shell --restart always" "shell --no-such-option" "shell --chat-key ctrl-g"; do
+    set +e
+    # shellcheck disable=SC2086
+    "$HOLD_BIN" $args </dev/null >"$TEST_ROOT/shell.out" 2>&1; rc=$?
+    set -e
+    [ "$rc" -eq 1 ] || { echo "backmux $args exited $rc" >&2; return 1; }
+  done
+  grep -q 'chat belongs to no call' "$TEST_ROOT/shell.out" || { cat "$TEST_ROOT/shell.out" >&2; return 1; }
+  set +e
+  "$HOLD_BIN" shell --name headless /bin/sh </dev/null >/dev/null 2>"$TEST_ROOT/shell.err"; rc=$?
+  set -e
+  [ "$rc" -eq 1 ] && grep -q 'needs a terminal' "$TEST_ROOT/shell.err" || { echo "backmux shell without a terminal exited $rc" >&2; return 1; }
+  ! out_has ' headless$' "$HOLD_BIN" list all -a || { echo "a headless shell left a call" >&2; return 1; }
+  "$HOLD_BIN" end work term >/dev/null 2>&1 || true
+}
+
+# A call's settings: working is the launch folder and where recall starts it
+# (unset: where recall is run); program and args change what the next recall
+# runs; name renames at once; info shows it all; program and name cannot be
+# unset. delete never stops a program; purge all ends and removes every call
+# that is not saved, and asks first.
+test_settings_recall_delete_purge_all() {
+  local rc a b
+  # physical paths: the launch folder is recorded as getcwd() sees it (on
+  # macOS /var is /private/var)
+  mkdir -p "$TEST_ROOT/dir-a" "$TEST_ROOT/dir-b"
+  a=$(cd "$TEST_ROOT/dir-a" && pwd -P); b=$(cd "$TEST_ROOT/dir-b" && pwd -P)
+  (cd "$a" && "$HOLD_BIN" server -w --name job -- sh -c 'pwd; echo "args:$*"' x one) >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" wait job --timeout 5000 >/dev/null || return 1
+  out_has "working: *$a\$" "$HOLD_BIN" info job || { "$HOLD_BIN" info job >&2; return 1; }
+  out_has 'kind: *server' "$HOLD_BIN" info job || return 1
+  "$HOLD_BIN" set job working="$b" 2>/dev/null || return 1
+  "$HOLD_BIN" set job args -- -c 'pwd; echo "args:$*"' x "two words" 2>/dev/null || return 1
+  (cd / && "$HOLD_BIN" recall job) >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" wait job --timeout 5000 >/dev/null || return 1
+  "$HOLD_BIN" logs job | tail -2 | grep -qx "$b" || { "$HOLD_BIN" logs job >&2; return 1; }
+  out_has '^args:two words$' "$HOLD_BIN" logs job || return 1
+  "$HOLD_BIN" unset job working 2>/dev/null || return 1
+  (cd "$a" && "$HOLD_BIN" recall job) >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" wait job --timeout 5000 >/dev/null || return 1
+  "$HOLD_BIN" logs job | tail -2 | grep -qx "$a" || { "$HOLD_BIN" logs job >&2; return 1; }
+  rc=0; "$HOLD_BIN" set job program=/no/such/program 2>/dev/null || rc=$?; [ "$rc" -eq 127 ] || return 1
+  rc=0; "$HOLD_BIN" unset job program 2>/dev/null || rc=$?; [ "$rc" -eq 1 ] || return 1
+  rc=0; "$HOLD_BIN" unset job name 2>/dev/null || rc=$?; [ "$rc" -eq 1 ] || return 1
+  rc=0; "$HOLD_BIN" set job name=all 2>/dev/null || rc=$?; [ "$rc" -eq 1 ] || return 1
+  rc=0; "$HOLD_BIN" set job bogus=1 2>/dev/null || rc=$?; [ "$rc" -eq 1 ] || return 1
+  "$HOLD_BIN" set job name=job2 2>/dev/null || return 1
+  out_has '^name: *job2$' "$HOLD_BIN" info job2 || return 1
+  # delete: never a running program
+  "$HOLD_BIN" server --name live1 -- sleep 60 >/dev/null 2>&1 || return 1
+  rc=0; "$HOLD_BIN" delete live1 2>"$TEST_ROOT/del.err" || rc=$?
+  [ "$rc" -eq 1 ] && grep -q 'end live1 first' "$TEST_ROOT/del.err" || { cat "$TEST_ROOT/del.err" >&2; return 1; }
+  "$HOLD_BIN" delete job2 2>/dev/null || return 1
+  ! out_has ' job2$' "$HOLD_BIN" list all || { echo "delete left the call" >&2; return 1; }
+  # purge all: refuses without a terminal to ask; --force is the answer
+  "$HOLD_BIN" server --name kept -- sleep 60 >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" save kept 2>/dev/null || return 1
+  rc=0; "$HOLD_BIN" purge all </dev/null 2>"$TEST_ROOT/pa.err" || rc=$?
+  [ "$rc" -eq 1 ] && grep -q 'live1' "$TEST_ROOT/pa.err" || { cat "$TEST_ROOT/pa.err" >&2; return 1; }
+  out_has 'Up .* live1$' "$HOLD_BIN" list || { echo "a refused purge all ended a call" >&2; return 1; }
+  "$HOLD_BIN" purge all --force </dev/null >/dev/null 2>&1 || return 1
+  ! out_has ' live1$' "$HOLD_BIN" list all || { echo "purge all left live1" >&2; return 1; }
+  out_has 'Up .* kept$' "$HOLD_BIN" list || { echo "purge all took a saved call" >&2; return 1; }
+  "$HOLD_BIN" end kept >/dev/null 2>&1 || true
+}
+
+# The verbs say how a program runs, so a session flag after one is refused;
+# server -w keeps the exit code; detach gives a background terminal; run and
+# start are Docker's spellings; all and run cannot be names.
+test_verbs_and_docker_spellings() {
   local rc
-  "$HOLD_BIN" -dt --size 80 24 --name term -- "$HOLD_REAL_BIN" shell --name work --size 70 20 /bin/sh -c 'echo "ARGS:$0:$1:$2"; sleep 30' zero --name -d </dev/null >/dev/null || return 1
-  "$HOLD_BIN" wait term --match 'ARGS:zero:--name:-d' --timeout 8000 || { echo "the terminal does not show the shell" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" wait work --match 'ARGS:zero:--name:-d' --timeout 8000 || { "$HOLD_BIN" peek work >&2; return 1; }
-  # --size was where it started; attached, it follows the terminal.
-  out_has '"cols": 80,' "$HOLD_BIN" peek work --json || { echo "the shell did not take its terminal's size" >&2; return 1; }
-  out_has '"chat": true' "$HOLD_BIN" inspect work || { echo "the call is not recorded as a shell with chat" >&2; "$HOLD_BIN" inspect work >&2; return 1; }
-  # No shell named: $SHELL.
-  "$HOLD_BIN" -dt -e SHELL=/bin/sh --name term2 -- "$HOLD_REAL_BIN" shell --name plain </dev/null >/dev/null || return 1
-  "$HOLD_BIN" wait term2 --match 'plain | Ctrl-P Ctrl-T: chat' --timeout 8000 || { "$HOLD_BIN" peek term2 >&2; return 1; }
-  out_has '"/bin/sh" .* plain$' "$HOLD_BIN" list || { echo "backmux shell did not start \$SHELL" >&2; "$HOLD_BIN" list >&2; return 1; }
-  # --chat-key: the lead key, then that key, opens chat; the default one is
-  # then just another key, and goes through with the lead key.
-  "$HOLD_BIN" -dt --name term3 -- "$HOLD_REAL_BIN" shell --name keyed --chat-key ctrl-g /bin/sh -c 'stty raw -echo; echo KEYED; exec cat -v' </dev/null >/dev/null || return 1
-  "$HOLD_BIN" wait term3 --match KEYED --timeout 8000 || { "$HOLD_BIN" peek term3 >&2; return 1; }
-  "$HOLD_BIN" send term3 -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait keyed --match '^P^T' --timeout 8000 || { echo "Ctrl-P Ctrl-T did not reach the shell under --chat-key" >&2; "$HOLD_BIN" peek keyed >&2; return 1; }
-  "$HOLD_BIN" send term3 -k C-p -k C-g || return 1
-  "$HOLD_BIN" wait term3 --match 'who to talk to' --timeout 8000 || { echo "--chat-key did not open chat" >&2; "$HOLD_BIN" peek term3 >&2; return 1; }
-  for args in "shell -d" "shell --restart always" "shell --no-such-option" "-d --chat-key ctrl-g -- /bin/sh" "shell --chat-key x" "shell --chat-key ctrl-q" "shell --chat-key ctrl-p" "shell --detach-keys ctrl-a"; do
+  for args in "call -d sh" "agent -t sh" "detach -i sh" "call -w sh" "server -t sh"; do
     set +e
     # shellcheck disable=SC2086
     "$HOLD_BIN" $args </dev/null >/dev/null 2>&1; rc=$?
     set -e
     [ "$rc" -eq 1 ] || { echo "backmux $args exited $rc" >&2; return 1; }
   done
-  # No terminal to draw on: refused, and nothing is started.
-  set +e
-  "$HOLD_BIN" shell --name headless /bin/sh </dev/null >/dev/null 2>"$TEST_ROOT/shell.err"; rc=$?
-  set -e
-  [ "$rc" -eq 1 ] && grep -q 'needs a terminal' "$TEST_ROOT/shell.err" || { echo "backmux shell without a terminal exited $rc" >&2; return 1; }
-  ! out_has ' headless$' "$HOLD_BIN" list -a || { echo "backmux shell without a terminal left a call" >&2; return 1; }
-  out_has 'Ctrl-P Ctrl-T' "$HOLD_BIN" help shell || return 1
-}
-
-# The acceptance flow: a named shell, a separate agent; a request from the
-# chat window, a reply by ordinary backmux msg. The reply is in chat and nowhere
-# in the shell. Again with the window hidden: an unread badge, no interruption.
-test_shell_chat_request_and_reply() {
-  local d
-  d="$(actor_dir)" || return 1
-  write_agent "$d" || return 1
-  start_shell_in_terminal 100 30 /bin/sh || return 1
-  "$HOLD_BIN" -dt --size 200 20 --name agent -- "$d/agent.sh" </dev/null >/dev/null || return 1
-  "$HOLD_BIN" wait agent --match 'AGENT READY' --timeout 8000 || return 1
-  # Open chat, choose the agent by name, send.
-  "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --match 'who to talk to' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" send term 'agen' -k Enter || return 1
-  "$HOLD_BIN" wait term --match 'message agent' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" send term 'ping from the chat window' -k Enter || return 1
-  # It reaches the agent's prompt as a backmux msg from the shell's call...
-  "$HOLD_BIN" wait agent --regex '^GOT: \[msg from work; reply: backmux msg work "\.\.\."\] ping from the chat window$' --timeout 10000 || { "$HOLD_BIN" peek agent >&2; return 1; }
-  # ...and the agent's plain backmux msg reply appears in chat,
-  "$HOLD_BIN" wait term --match 'pong 1' --timeout 10000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" wait term --match 'delivered' --timeout 8000 || { echo "the sent message is not marked delivered" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  # in the agent's conversation, never at the shell prompt, on its screen, or in its log.
-  out_has 'chat -> agent' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
-  if out_has 'pong' "$HOLD_BIN" peek work; then echo "the reply was typed into the shell" >&2; "$HOLD_BIN" peek work >&2; return 1; fi
-  if out_has 'pong\|chat ->\|ping from' "$HOLD_BIN" logs work; then echo "chat text reached the shell's log" >&2; return 1; fi
-  shell_untouched || return 1
-  "$HOLD_BIN" msg work --received | grep -Eq '^[0-9a-f]{6} .* agent +pong 1$' || { "$HOLD_BIN" msg work --received >&2; return 1; }
-  # Hidden: the conversation stays, the shell goes on, a new reply waits behind a badge.
-  "$HOLD_BIN" send term -k Escape || return 1
-  wait_gone term 'chat -> agent' || return 1
-  "$HOLD_BIN" wait term --match 'chat hidden | Ctrl-P Ctrl-T: bring it back' --timeout 8000 || { echo "hiding chat did not say how to bring it back" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  if out_has 'chat hidden' "$HOLD_BIN" peek work; then echo "the tip reached the shell's screen" >&2; return 1; fi
-  "$HOLD_BIN" send term 'echo typed-at-the-prompt' -k Enter || return 1
-  "$HOLD_BIN" wait work --regex '^typed-at-the-prompt$' --timeout 8000 || { echo "the shell did not get the keyboard back" >&2; "$HOLD_BIN" peek work >&2; return 1; }
-  "$HOLD_BIN" send agent 'ping again' -k Enter || return 1
-  "$HOLD_BIN" wait term --match 'chat: 1 new from agent' --timeout 10000 || { echo "no unread badge" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  if out_has 'pong 2\|chat -> agent' "$HOLD_BIN" peek term; then echo "a reply opened the hidden window" >&2; return 1; fi
-  if out_has 'pong\|chat:' "$HOLD_BIN" peek work; then echo "a hidden reply reached the shell" >&2; "$HOLD_BIN" peek work >&2; return 1; fi
-  # Opening shows it, after the first exchange.
-  "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --match 'pong 2' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  out_has 'ping from the chat window' "$HOLD_BIN" peek term || { echo "the conversation was not kept" >&2; return 1; }
-  out_has 'pong 1' "$HOLD_BIN" peek term || return 1
-  wait_gone term 'chat: 1 new' || return 1
-  # The selected recipient is kept: a follow-up needs no new choice. With
-  # "Include screen" it carries the shell's clean screen.
-  "$HOLD_BIN" send term -k C-s 'ping with my screen' -k Enter || return 1
-  "$HOLD_BIN" wait agent --match 'ping with my screen' --timeout 10000 || { "$HOLD_BIN" peek agent >&2; return 1; }
-  out_has 'screen of work: 100 columns x 30 rows' "$HOLD_BIN" peek agent || { echo "the screen did not go with the message" >&2; "$HOLD_BIN" peek agent >&2; return 1; }
-  out_has 'typed-at-the-prompt' "$HOLD_BIN" peek agent || { echo "the shared screen lacks the shell's content" >&2; return 1; }
-  if out_has 'chat -> agent\|\[x\] screen' "$HOLD_BIN" peek agent; then echo "the shared screen shows the chat window" >&2; return 1; fi
-  "$HOLD_BIN" wait term --match 'pong 3' --timeout 10000 || return 1
-  out_has '\[ \] screen' "$HOLD_BIN" peek term || { echo "Include screen stayed on after one message" >&2; return 1; }
-}
-
-# A message that cannot be delivered says so; a message joins the conversation
-# of the call that sent it, and one from outside any call gets its own, which
-# has no one to answer.
-test_shell_chat_failures_and_outside_senders() {
-  local d
-  d="$(actor_dir)" || return 1
-  write_agent "$d" || return 1
-  start_shell_in_terminal 100 30 /bin/sh || return 1
-  "$HOLD_BIN" -dt --size 200 20 --name agent -- "$d/agent.sh" </dev/null >/dev/null || return 1
-  "$HOLD_BIN" wait agent --match 'AGENT READY' --timeout 8000 || return 1
-  "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --match 'who to talk to' --timeout 8000 || return 1
-  "$HOLD_BIN" send term 'agent' -k Enter || return 1
-  "$HOLD_BIN" wait term --match 'message agent' --timeout 8000 || return 1
-  "$HOLD_BIN" kill agent >/dev/null 2>&1 || return 1
-  "$HOLD_BIN" send term 'are you there' -k Enter || return 1
-  "$HOLD_BIN" wait term --match 'NOT DELIVERED' --timeout 10000 || { echo "a failed send was not reported" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  out_has 'agent is not running' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
-  if out_has 'you .* delivered' "$HOLD_BIN" peek term; then echo "a failed send reads as delivered" >&2; return 1; fi
-  # Named by its call's name: the agent's conversation, open on screen.
-  BACKMUX_ID='' BACKMUX_NAME=agent "$HOLD_BIN" msg work 'by name' || return 1
-  "$HOLD_BIN" wait term --match 'by name' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  # From outside any call: a conversation of its own, under the name the
-  # sender was given, and a reply from the window goes to its inbox.
-  local op
-  env -u BACKMUX_ID -u BACKMUX_NAME "$HOLD_BIN" msg work 'from a plain terminal' >/dev/null 2>"$TEST_ROOT/op.err" || return 1
-  op=$(sed -n 's/^backmux: you are \([a-z0-9_-]*\), outside any call.*/\1/p' "$TEST_ROOT/op.err")
-  [ -n "$op" ] || { echo "the outside sender was not told its name" >&2; cat "$TEST_ROOT/op.err" >&2; return 1; }
-  "$HOLD_BIN" wait term --match '+1 new' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  if out_has 'from a plain terminal' "$HOLD_BIN" peek term; then echo "an outside message joined the agent's conversation" >&2; "$HOLD_BIN" peek term >&2; return 1; fi
-  "$HOLD_BIN" send term -k Tab || return 1
-  "$HOLD_BIN" wait term --match "$op  1 new" --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" send term "$op" -k Enter || return 1
-  "$HOLD_BIN" wait term --match 'from a plain terminal' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  out_has "chat -> $op" "$HOLD_BIN" peek term || return 1
-  "$HOLD_BIN" send term 'hello?' -k Enter || return 1
-  "$HOLD_BIN" wait term --match 'delivered' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  env -u BACKMUX_ID -u BACKMUX_NAME "$HOLD_BIN" inbox | grep -q 'from work\] hello?' || { echo "the reply did not reach the inbox" >&2; env -u BACKMUX_ID -u BACKMUX_NAME "$HOLD_BIN" inbox >&2; return 1; }
-  shell_untouched || return 1
-  if out_has 'by name\|plain terminal' "$HOLD_BIN" peek work; then echo "a message was typed into the shell" >&2; return 1; fi
-}
-
-# Chat over a continuously redrawing full-screen program: the shell is live
-# under the window, and moving, resizing, or closing the window uncovers what
-# the program shows now. backmux peek never contains the window.
-test_shell_overlay_over_live_program() {
-  command -v python3 >/dev/null 2>&1 || { skip_tool "python3 not installed"; return; }
-  local d x y
-  d="$(actor_dir)" || return 1
-  # every row carries the frame number across its whole width
-  cat >"$d/ticker.sh" <<'EOF' || return 1
-#!/bin/sh
-printf '\033[?1049h\033[?25l'
-i=100000
-while :; do
-  i=$((i + 1)); r=0
-  while [ $r -lt 30 ]; do
-    printf '\033[%d;1Hr%02d %s %s %s %s %s %s %s %s %s %s %s %s %s' $((r + 1)) $r $i $i $i $i $i $i $i $i $i $i $i $i $i
-    r=$((r + 1))
+  "$HOLD_BIN" server -w --name sv -- sh -c 'exit 3' >/dev/null 2>&1 || return 1
+  rc=0; "$HOLD_BIN" wait sv --timeout 5000 >"$TEST_ROOT/sv.out" 2>/dev/null || rc=$?
+  grep -qx 3 "$TEST_ROOT/sv.out" || { echo "server -w did not keep the exit code" >&2; return 1; }
+  "$HOLD_BIN" detach --name dt -- sleep 30 >/dev/null 2>&1 || return 1
+  out_has '"tty": true' "$HOLD_BIN" inspect dt || return 1
+  out_has '"detach": true' "$HOLD_BIN" inspect dt || return 1
+  out_has 'kind: *detach' "$HOLD_BIN" info dt || return 1
+  "$HOLD_BIN" run -d --name rd -- sh -c 'echo ran-by-run' >/dev/null 2>&1 || return 1
+  sleep 0.5
+  out_has 'ran-by-run' "$HOLD_BIN" logs rd || return 1
+  "$HOLD_BIN" start rd >/dev/null 2>&1 || return 1
+  sleep 0.5
+  [ "$("$HOLD_BIN" logs rd | grep -c ran-by-run)" -eq 2 ] || { echo "start did not recall rd" >&2; return 1; }
+  rc=0; "$HOLD_BIN" recall dt 2>"$TEST_ROOT/recall.err" || rc=$?
+  [ "$rc" -eq 1 ] && grep -q 'backmux attach dt' "$TEST_ROOT/recall.err" || { echo "recall of a running call rc=$rc" >&2; return 1; }
+  for name in all run call info; do
+    rc=0; "$HOLD_BIN" server --name "$name" -- true >/dev/null 2>&1 || rc=$?
+    [ "$rc" -eq 1 ] || { echo "the name $name was accepted" >&2; return 1; }
   done
-  sleep 0.05
-done
-EOF
-  chmod 755 "$d/ticker.sh" || return 1
-  # Every row shows one frame number, all across, none older than $2: nothing
-  # the program has since redrawn is left over from when the window covered it.
-  fresh() {
-    "$HOLD_BIN" peek term --json | python3 -c '
-import json, re, sys
-floor = int(sys.argv[1])
-rows = [l for l in json.load(sys.stdin)["lines"] if re.match(r"r\d\d ", l)]
-assert len(rows) >= 20, "the program is not on screen"
-newest = 0
-for line in rows:
-    nums = [int(n) for n in re.findall(r"(?<!\d)\d{6}(?!\d)", line)]
-    seen = set(nums)
-    assert seen, "a row shows nothing of the program: " + line
-    # A row the program is redrawing at this instant: the new frame as a
-    # prefix, the one just before after it (the screen was read between two
-    # pieces of one write - macOS PTYs deliver writes in small pieces).
-    if len(seen) == 2 and max(seen) == min(seen) + 1:
-        k = nums.index(min(seen))
-        mid_redraw = all(n == max(seen) for n in nums[:k]) and all(n == min(seen) for n in nums[k:])
-    else:
-        mid_redraw = False
-    assert len(seen) == 1 or mid_redraw, "a row mixes frames: " + line
-    assert min(seen) >= floor, "a stale cell (frame %d < %d): %s" % (min(seen), floor, line)
-    newest = max(newest, max(seen))
-print(newest)' "$1"
-  }
-  start_shell_in_terminal 100 30 "$d/ticker.sh" || return 1
-  "$HOLD_BIN" wait term --match 'r29 1' --timeout 10000 || { echo "the program never drew" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --match 'who to talk to' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  wait_mouse term || return 1
-  t0=$(fresh 0) || { "$HOLD_BIN" peek term >&2; return 1; }
-  sleep 0.5
-  t1=$(fresh "$t0") || { "$HOLD_BIN" peek term >&2; return 1; }
-  [ "$t1" -gt "$t0" ] || { echo "the program stopped updating under the window" >&2; return 1; }
-  shell_untouched || return 1
-  # Move it by its title bar: what it covered shows the current frame.
-  read -r x y < <(screen_pos term 'chat ->') || return 1
-  "$HOLD_BIN" send term --mouse "press,$x,$y" || return 1
-  "$HOLD_BIN" send term --mouse "drag,$((x - 20)),$((y + 5))" || return 1
-  "$HOLD_BIN" send term --mouse "drag,$((x - 40)),$((y + 10))" || return 1
-  "$HOLD_BIN" send term --mouse "release,$((x - 40)),$((y + 10))" || return 1
-  "$HOLD_BIN" wait term --regex "^r$(printf '%02d' $((y + 10))) [0-9 ]{4}.* chat -> who to talk to" --timeout 8000 || { echo "the window did not move" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  sleep 0.3
-  t2=$(fresh "$t1") || { echo "moving the window uncovered stale cells" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  # Resize it from the lower-right corner: the strip it gave up is current too.
-  read -r x y < <(screen_pos term '◢') || return 1
-  "$HOLD_BIN" send term --mouse "press,$x,$y" || return 1
-  "$HOLD_BIN" send term --mouse "drag,$((x - 12)),$((y - 5))" || return 1
-  "$HOLD_BIN" send term --mouse "release,$((x - 12)),$((y - 5))" || return 1
-  wait_pos term '◢' $((x - 12)) $((y - 5)) || { echo "the window did not resize" >&2; return 1; }
-  sleep 0.3
-  t3=$(fresh "$t2") || { echo "resizing the window uncovered stale cells" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  shell_untouched || return 1
-  # Close it with the ×: the whole screen is the program's again.
-  read -r x y < <(screen_pos term '×') || return 1
-  "$HOLD_BIN" send term --mouse "click,$x,$y" || return 1
-  wait_gone term 'who to talk to' || return 1
-  sleep 0.3
-  fresh "$t3" >/dev/null || { echo "closing the window left stale cells" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  [ "$("$HOLD_BIN" peek term | grep -c '^r[0-9][0-9] ')" -eq 30 ] || { echo "the program does not fill the screen again" >&2; return 1; }
-  shell_untouched || return 1
-  if out_has 'who to talk to' "$HOLD_BIN" logs work; then echo "the chat window reached the shell's log" >&2; return 1; fi
-}
-
-# A real window resize reaches the shell's program, chat open or closed;
-# moving or resizing only the chat window never does.
-test_shell_resize_reaches_program_overlay_does_not() {
-  command -v python3 >/dev/null 2>&1 || { skip_tool "python3 not installed"; return; }
-  local x y winches
-  start_shell_in_terminal 100 30 /bin/sh -c 'trap "echo WINCH \$(stty size)" WINCH; echo ready; while :; do sleep 0.1; done' || return 1
-  "$HOLD_BIN" wait work --match ready --timeout 8000 || return 1
-  # chat closed
-  "$HOLD_BIN" resize term 90 26 || return 1
-  "$HOLD_BIN" wait work --match 'WINCH 26 90' --timeout 8000 || { echo "no resize with chat closed" >&2; "$HOLD_BIN" peek work >&2; return 1; }
-  out_has '"cols": 90,' "$HOLD_BIN" peek work --json || return 1
-  # chat open: the program is told, and the window refits inside the new bounds
-  "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --match 'who to talk to' --timeout 8000 || return 1
-  "$HOLD_BIN" resize term 110 32 || return 1
-  "$HOLD_BIN" wait work --match 'WINCH 32 110' --timeout 8000 || { echo "no resize with chat open" >&2; "$HOLD_BIN" peek work >&2; return 1; }
-  "$HOLD_BIN" resize term 40 9 || return 1
-  "$HOLD_BIN" wait work --match 'WINCH 9 40' --timeout 8000 || return 1
-  "$HOLD_BIN" wait term --match 'chat ->' --timeout 8000 || { echo "the title bar left the shrunken terminal" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  screen_pos term '×' >/dev/null || { echo "the close control left the shrunken terminal" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" resize term 100 30 || return 1
-  "$HOLD_BIN" wait work --match 'WINCH 30 100' --timeout 8000 || return 1
-  wait_mouse term || return 1
-  winches=$("$HOLD_BIN" logs work | grep -c WINCH)
-  # only the chat window: moved, resized, hidden, shown
-  read -r x y < <(screen_pos term 'chat ->') || return 1
-  "$HOLD_BIN" send term --mouse "press,$x,$y" || return 1
-  "$HOLD_BIN" send term --mouse "drag,$((x - 30)),$((y + 6))" || return 1
-  "$HOLD_BIN" send term --mouse "release,$((x - 30)),$((y + 6))" || return 1
-  read -r x y < <(screen_pos term '◢') || return 1
-  "$HOLD_BIN" send term --mouse "press,$x,$y" || return 1
-  "$HOLD_BIN" send term --mouse "drag,$((x - 8)),$((y - 3))" || return 1
-  "$HOLD_BIN" send term --mouse "release,$((x - 8)),$((y - 3))" || return 1
-  "$HOLD_BIN" send term -k Escape || return 1
-  wait_gone term 'who to talk to' || return 1
-  "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --match 'who to talk to' --timeout 8000 || return 1
-  sleep 0.5
-  out_has '"cols": 100,' "$HOLD_BIN" peek work --json || { echo "the chat window changed the shell's size" >&2; return 1; }
-  out_has '"rows": 30,' "$HOLD_BIN" peek work --json || return 1
-  [ "$("$HOLD_BIN" logs work | grep -c WINCH)" -eq "$winches" ] || { echo "the chat window made the shell see a resize" >&2; "$HOLD_BIN" peek work >&2; return 1; }
-}
-
-# Chat has the keyboard while it is focused, and a drag that starts on the
-# window is the window's until the button is released. A program that asked
-# for the mouse still gets clicks outside the window. × and Esc keep the
-# conversation.
-test_shell_chat_input_never_reaches_program() {
-  command -v python3 >/dev/null 2>&1 || { skip_tool "python3 not installed"; return; }
-  local x y before
-  start_shell_in_terminal 100 30 /bin/sh -c 'printf "\033[?1000h\033[?1006h"; stty raw -echo; echo APP; exec cat -v' || return 1
-  "$HOLD_BIN" wait work --match APP --timeout 8000 || return 1
-  # with chat hidden the program's mouse works as ever
-  wait_mouse term || return 1
-  "$HOLD_BIN" send term --mouse click,5,10 || return 1
-  "$HOLD_BIN" wait work --match '^[[<0;6;11M^[[<0;6;11m' --timeout 8000 || { echo "no mouse with chat hidden" >&2; "$HOLD_BIN" peek work >&2; return 1; }
-  # a message waiting in chat, so there is a conversation to keep
-  env -u BACKMUX_ID -u BACKMUX_NAME "$HOLD_BIN" msg work 'kept through closing' || return 1
-  "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --match 'kept through closing' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  before=$("$HOLD_BIN" peek work)
-  # typing goes to chat
-  "$HOLD_BIN" send term 'secret words' || return 1
-  "$HOLD_BIN" wait term --match '> secret words' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  # a drag from the title bar, across the window's edge, released far outside
-  read -r x y < <(screen_pos term 'chat ->') || return 1
-  "$HOLD_BIN" send term --mouse "press,$x,$y" || return 1
-  "$HOLD_BIN" send term --mouse "drag,$((x - 20)),$((y + 4))" || return 1
-  "$HOLD_BIN" send term --mouse "drag,2,20" || return 1
-  "$HOLD_BIN" send term --mouse "release,2,20" || return 1
-  # and a click on the window itself
-  read -r x y < <(screen_pos term 'kept through closing') || return 1
-  "$HOLD_BIN" send term --mouse "click,$x,$y" || return 1
-  sleep 0.5
-  [ "$("$HOLD_BIN" peek work)" = "$before" ] || { echo "chat input reached the program" >&2; "$HOLD_BIN" peek work >&2; return 1; }
-  if out_has 'secret' "$HOLD_BIN" logs work; then echo "chat keystrokes reached the shell's log" >&2; return 1; fi
-  # a click outside the window is the program's, and so is the keyboard after it
-  read -r x y < <(screen_pos term '×') || return 1
-  "$HOLD_BIN" send term --mouse "click,$((x + 3)),$y" || return 1
-  "$HOLD_BIN" wait work --match "^[[<0;$((x + 4));$((y + 1))M^[[<0;$((x + 4));$((y + 1))m" --timeout 8000 || { echo "a click outside the window did not reach the program" >&2; "$HOLD_BIN" peek work >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" wait term --match 'Ctrl-P Ctrl-T: chat | typing in the shell' --timeout 8000 || { echo "the window did not say where typing goes" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" send term 'Q' || return 1
-  "$HOLD_BIN" wait work --regex 'mQ$' --timeout 8000 || { echo "the keyboard did not return to the shell" >&2; "$HOLD_BIN" peek work >&2; return 1; }
-  # closed by the ×, the conversation and the unsent draft are still there...
-  "$HOLD_BIN" send term --mouse "click,$x,$y" || return 1
-  wait_gone term 'kept through closing' || return 1
-  "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --match 'kept through closing' --timeout 8000 || { echo "closing with the x lost the conversation" >&2; return 1; }
-  out_has '> secret words' "$HOLD_BIN" peek term || { echo "closing lost the draft" >&2; return 1; }
-  # ...and by Esc as well
-  "$HOLD_BIN" send term -k Escape || return 1
-  wait_gone term 'kept through closing' || return 1
-  "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --match 'kept through closing' --timeout 8000 || { echo "Esc lost the conversation" >&2; return 1; }
-  shell_untouched || return 1
+  "$HOLD_BIN" end dt >/dev/null 2>&1 || true
 }
 
 # backmux -it is docker run -it: when the program ends, backmux exits as it did, and
@@ -6272,7 +6212,7 @@ logs eqname --bogus|unknown flag '--bogus'
 attach eqname --detach-keys nope|invalid --detach-keys
 help no-such-topic|unknown help topic
 EOF
-  if out_has 'bogus\|privileged' "$HOLD_BIN" list -a; then echo "a mistyped launch still placed a call" >&2; return 1; fi
+  if out_has 'bogus\|privileged' "$HOLD_BIN" list all -a; then echo "a mistyped launch still placed a call" >&2; return 1; fi
   out_has ' eqname$' "$HOLD_BIN" list -l || { echo "a refused command line still ended the call" >&2; return 1; }
   # -h is help wherever it stands among a verb's words, and acts on nothing
   for args in "end eqname -h" "kill -h eqname" "inspect eqname --help" "list -a -h"; do
@@ -6330,7 +6270,8 @@ for section in ("guides", "reference", "extra", "commands"):
         if section in ("reference", "commands"):
             assert rendered in complete, (path, "missing from the complete reference")
         if section == "guides":
-            assert ("backmux help " + path.stem).encode() in overview, (path, "undiscoverable guide")
+            # the front page is the menu as written; help all names every guide
+            assert ("backmux help " + path.stem).encode() in complete, (path, "undiscoverable guide")
 
 commands = re.findall(r'^\s+\{"([a-z][a-z0-9_-]*)", (NULL|"[a-z][a-z0-9_-]*"),', specs, re.M)
 assert commands, "no command specs found"
@@ -6360,74 +6301,6 @@ PY
   out_has 'log_path' "$HOLD_BIN" help inspect || return 1
   if out_has '--plain' "$HOLD_BIN" help inspect; then echo "help inspect still names --plain" >&2; return 1; fi
   out_has 'usage error' "$HOLD_BIN" help scripting || return 1
-}
-
-# The lead key (Ctrl-P) waits for the key after it, however long that takes,
-# and a backmux shell shows what it offers while it waits. The detach key
-# detaches, the chat key opens chat, the lead key again sends one through, and
-# anything else sends both through: nothing typed is lost.
-test_lead_key_waits_and_offers() {
-  local t
-  # in a backmux shell (its broker reads the keys), and in a plain -it call (the
-  # attach client does)
-  for t in shell plain; do
-    if [ "$t" = shell ]; then
-      "$HOLD_BIN" -dt --size 100 16 --name "term-$t" -- "$HOLD_REAL_BIN" shell --name "in-$t" /bin/sh -c 'stty raw -echo; echo KEYS; exec cat -v' </dev/null >/dev/null || return 1
-    else
-      "$HOLD_BIN" -dt --size 100 16 --name "term-$t" -- "$HOLD_REAL_BIN" -it --name "in-$t" -- /bin/sh -c 'stty raw -echo; echo KEYS; exec cat -v' </dev/null >/dev/null || return 1
-    fi
-    "$HOLD_BIN" wait "term-$t" --match KEYS --timeout 8000 || { "$HOLD_BIN" peek "term-$t" >&2; return 1; }
-    # pressed alone, it waits: nothing reaches the program, even well past
-    # the half second it used to be held for
-    "$HOLD_BIN" send "term-$t" -k C-p || return 1
-    sleep 1.2
-    if out_has '\^P' "$HOLD_BIN" peek "in-$t"; then echo "($t) the lead key did not wait for the next key" >&2; return 1; fi
-    if [ "$t" = shell ]; then
-      out_has 'Ctrl-Q: detach | Ctrl-T: chat | Ctrl-P: send Ctrl-P' "$HOLD_BIN" peek "term-$t" || { echo "the lead key's menu is not on screen" >&2; "$HOLD_BIN" peek "term-$t" >&2; return 1; }
-      if out_has 'Ctrl-Q: detach' "$HOLD_BIN" peek "in-$t"; then echo "the menu reached the shell's own screen" >&2; return 1; fi
-    fi
-    # the lead key again: one goes through
-    "$HOLD_BIN" send "term-$t" -k C-p || return 1
-    "$HOLD_BIN" wait "in-$t" --regex '^ *\^P$' --timeout 8000 || { echo "($t) the lead key twice did not send one through" >&2; "$HOLD_BIN" peek "in-$t" >&2; return 1; }
-    wait_gone "term-$t" 'Ctrl-Q: detach' || return 1
-    # any other key: both go through, in order - a letter, and a key that is an escape sequence
-    "$HOLD_BIN" send "term-$t" -k C-p || return 1
-    "$HOLD_BIN" send "term-$t" x || return 1
-    "$HOLD_BIN" wait "in-$t" --regex '^ *\^P\^Px$' --timeout 8000 || { echo "($t) the lead key and the next key did not both go through" >&2; "$HOLD_BIN" peek "in-$t" >&2; return 1; }
-    "$HOLD_BIN" send "term-$t" -k C-p -k Up || return 1
-    "$HOLD_BIN" wait "in-$t" --match '^P^Px^P^[[A' --timeout 8000 || { echo "($t) the lead key before an arrow key was lost" >&2; "$HOLD_BIN" peek "in-$t" >&2; return 1; }
-    # the detach key, after a pause no timer allows for: detached, still running
-    "$HOLD_BIN" send "term-$t" -k C-p || return 1
-    sleep 1.2
-    "$HOLD_BIN" send "term-$t" -k C-q || return 1
-    "$HOLD_BIN" wait "term-$t" --timeout 8000 >/dev/null || { echo "($t) a slow Ctrl-P ... Ctrl-Q did not detach" >&2; return 1; }
-    out_has " in-$t\$" "$HOLD_BIN" list -l || { echo "($t) detaching ended the call" >&2; return 1; }
-    out_has "backmux: detached from in-$t; it is still running" "$HOLD_BIN" peek "term-$t" || { echo "($t) no word on detaching" >&2; "$HOLD_BIN" peek "term-$t" >&2; return 1; }
-  done
-}
-
-# The draft is edited like a line of text: any script, a paste kept whole (its
-# newlines too), and none of it sent before Enter.
-test_shell_chat_draft_editing() {
-  start_shell_in_terminal 100 30 /bin/sh || return 1
-  env -u BACKMUX_ID -u BACKMUX_NAME "$HOLD_BIN" msg work 'hello' || return 1
-  "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --regex 'chat -> [a-z0-9_-]+' --timeout 8000 || return 1
-  "$HOLD_BIN" send term 'héllo wörld 日本語' || return 1
-  "$HOLD_BIN" wait term --match '> héllo wörld 日本語' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" send term -k Backspace -k Backspace -k Home 'X' -k End '!' || return 1
-  "$HOLD_BIN" wait term --match '> Xhéllo wörld 日!' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" send term -k C-u || return 1
-  wait_gone term 'Xhéllo' || return 1
-  # a paste arrives whole, as text: its newline starts a second line of the draft
-  "$HOLD_BIN" send term --paste "$(printf 'first line\nsecond line')" || return 1
-  "$HOLD_BIN" wait term --match '> first line' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" wait term --regex '^ +  second line$' --timeout 8000 || { echo "the pasted newline was lost" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" send term -k M-Enter 'third' || return 1
-  "$HOLD_BIN" wait term --regex '^ +  third$' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  # nothing typed or pasted into the draft went anywhere
-  if out_has 'first line\|llo' "$HOLD_BIN" peek work; then echo "the draft reached the shell" >&2; return 1; fi
-  shell_untouched || return 1
 }
 
 # Can a call be picked up right now? An attach on a terminal of its own shows
@@ -6531,7 +6404,7 @@ test_nested_attach_detaches_innermost_first() {
     # the keys reach the inner attach: it detaches, the outer one stays
     "$HOLD_BIN" send "term-$t" -k C-p -k C-q || return 1
     wait_gone "term-$t" INNER-UP || { echo "($t) the inner attach did not let go" >&2; return 1; }
-    out_has " term-$t\$" "$HOLD_BIN" list -l || { echo "($t) the detach keys detached the outer call instead" >&2; "$HOLD_BIN" list >&2; return 1; }
+    out_has " term-$t\$" "$HOLD_BIN" list -l || { echo "($t) the detach keys detached the outer call instead" >&2; "$HOLD_BIN" list all >&2; return 1; }
     "$HOLD_BIN" send "term-$t" 'echo BACK-HERE' -k Enter || return 1
     "$HOLD_BIN" wait "term-$t" --regex '^BACK-HERE$' --timeout 8000 || { echo "($t) not back in the outer call" >&2; "$HOLD_BIN" peek "term-$t" >&2; return 1; }
     console_free inner INNER-UP || { echo "($t) the inner call stayed attached" >&2; return 1; }
@@ -6548,35 +6421,6 @@ test_nested_attach_detaches_innermost_first() {
     console_free inner INNER-UP || { echo "($t) an attach buried in an unattended call kept the console" >&2; return 1; }
     out_has " around-$t\$" "$HOLD_BIN" list -l || { echo "($t) the outer call ended with its terminal" >&2; return 1; }
   done
-}
-
-# Detach leaves the shell and its chat running; attach picks both back up, and
-# redial brings a shell back as a shell.
-test_shell_detach_attach_and_redial() {
-  start_shell_in_terminal 100 30 /bin/sh || return 1
-  env -u BACKMUX_ID -u BACKMUX_NAME "$HOLD_BIN" msg work 'said before detaching' || return 1
-  "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --match 'said before detaching' --timeout 8000 || return 1
-  "$HOLD_BIN" send term 'a draft' || return 1
-  "$HOLD_BIN" wait term --match '> a draft' --timeout 8000 || return 1
-  "$HOLD_BIN" send term -k C-p -k C-q || return 1
-  "$HOLD_BIN" wait term --timeout 8000 >/dev/null || { echo "detaching did not end the attach" >&2; return 1; }
-  out_has ' work$' "$HOLD_BIN" list -l || { echo "detaching ended the shell" >&2; return 1; }
-  env -u BACKMUX_ID -u BACKMUX_NAME "$HOLD_BIN" msg work 'said while detached' || return 1
-  "$HOLD_BIN" -dt --size 90 28 --name term2 -- "$HOLD_REAL_BIN" attach work </dev/null >/dev/null || return 1
-  "$HOLD_BIN" wait term2 --match 'said while detached' --timeout 8000 || { "$HOLD_BIN" peek term2 >&2; return 1; }
-  out_has 'said before detaching' "$HOLD_BIN" peek term2 || { echo "reattach lost the conversation" >&2; return 1; }
-  out_has '> a draft' "$HOLD_BIN" peek term2 || { echo "reattach lost the draft" >&2; return 1; }
-  out_has '"cols": 90,' "$HOLD_BIN" peek work --json || { echo "the shell did not follow the new terminal" >&2; return 1; }
-  # The shell ends; its name redials it, as a shell with chat again.
-  "$HOLD_BIN" send term2 -k Escape || return 1
-  wait_gone term2 'said while detached' || return 1
-  "$HOLD_BIN" send term2 'exit' -k Enter || return 1
-  "$HOLD_BIN" wait work --timeout 8000 >/dev/null || { echo "the shell did not exit" >&2; return 1; }
-  "$HOLD_BIN" -dt --size 80 24 --name term3 -- "$HOLD_REAL_BIN" work </dev/null >/dev/null || return 1
-  "$HOLD_BIN" wait term3 --match 'work | Ctrl-P Ctrl-T: chat' --timeout 8000 || { echo "redial did not bring the shell back with chat" >&2; "$HOLD_BIN" peek term3 >&2; return 1; }
-  "$HOLD_BIN" send term3 -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term3 --match 'chat' --timeout 8000 || return 1
 }
 
 # peek --image writes a PNG; without ruler or footer at scale 1 it is exactly
@@ -6748,7 +6592,7 @@ run_test "console can reattach after detach" test_console_can_reattach_after_det
 run_test "console socket lives in store dir, not /tmp, for long paths" test_console_socket_lives_in_store_dir
 run_test "console target runs in caller cwd (relative-bind restores cwd)" test_console_target_runs_in_caller_cwd
 run_test "prune <id> removes exactly one run record/output" test_prune_by_id
-run_test "prune all removes prunable while preserving running" test_prune_all_keeps_running
+run_test "prune -a removes prunable while preserving running" test_prune_all_keeps_running
 run_test "save marks the record and is idempotent" test_save_marks_record_and_is_idempotent
 run_test "sweeping purge skips saved calls" test_purge_sweep_skips_saved
 run_test "targeted purge of a saved call refuses with exact wording" test_purge_targeted_refuses_saved_exact_wording
@@ -6772,7 +6616,7 @@ run_test "sudo TTY launch from home: every file stays the user's" test_sudo_home
 run_test "sudo context can stop unique invoking-user local run" test_sudo_context_can_stop_unique_user_local_run
 run_test "public root index rows are redacted in normal list" test_public_root_index_list_is_redacted
 run_test "public root index list reads projected State" test_public_root_index_list_reads_projected_state
-run_test "list is the ledger with a USER column; -l/--live narrows to running" test_list_default_is_full_ledger_live_narrows
+run_test "list shows running calls; list all is the ledger with a USER column" test_list_default_is_full_ledger_live_narrows
 run_test "list <name> filters the ledger by the call's name" test_list_name_filter_matches_call_name
 run_test "list -a renders the projected global ports" test_list_all_renders_global_ports_projection
 run_test "list -s/--system shows the redacted global view only" test_system_list_is_redacted_global_only
@@ -6795,8 +6639,8 @@ run_test "monitor streams queued and new replies and shares unread progress" tes
 run_test "inbox timeouts reject overflow and keep long waits alive" test_operator_inbox_timeout_bounds
 run_test "inbox names cannot shadow calls, and expire for reuse" test_operator_inbox_names_do_not_shadow_calls
 run_test "parallel first sends share one harness inbox" test_operator_inbox_parallel_registration
-run_test "user mode: messages go to chat, redial comes back in user mode" test_user_mode_messages_go_to_chat
-run_test "-it has no chat window; its messages are typed" test_it_launch_messages_are_typed
+run_test "a bare launch is a call: no chat, messages raw" test_bare_launch_is_a_call_with_raw_messages
+run_test "agent formats messages; unset agent takes effect at once" test_agent_verb_formats_messages_live
 run_test "-i: piped input streams in and ends; no PTY" test_pipe_input_streams_and_ends
 run_test "-i at a terminal: line editing, detach, attach, Ctrl-D, Ctrl-C" test_pipe_input_keys_detach_and_attach
 run_test "-di: attach later types into its input" test_pipe_input_detached_then_attached
@@ -6864,19 +6708,17 @@ run_test "peek --image writes a well-formed PNG" test_peek_image_png
 run_test "--size is the terminal the program first sees; redial replays it" test_size_flag_sets_first_size
 run_test "initial size: --size, saved detach-size, invoking terminal, 80x24" test_detach_size_default_and_precedence
 run_test "an invalid size starts nothing and replaces nothing" test_invalid_sizes_start_nothing
-run_test "backmux shell: options end at the shell's name; never detached or headless" test_shell_launch_grammar
-run_test "backmux shell: a chat request, a backmux msg reply, unread while hidden" test_shell_chat_request_and_reply
-run_test "backmux shell: failed sends say so; outside senders get their own conversation" test_shell_chat_failures_and_outside_senders
-run_test "backmux shell: the window over a live program uncovers current cells" test_shell_overlay_over_live_program
-run_test "backmux shell: a window resize reaches the program, the chat window's does not" test_shell_resize_reaches_program_overlay_does_not
-run_test "backmux shell: chat keystrokes and drags never reach the program" test_shell_chat_input_never_reaches_program
-run_test "the lead key waits for the next key and shows what it offers" test_lead_key_waits_and_offers
+run_test "panes: Ctrl-P Ctrl-A puts a call beside; one pane is plain attach again" test_panes_attach_beside_and_hand_back
+run_test "panes: four to a window, the fifth opens window 2; swap by letter, number, name" test_panes_windows_and_swap
+run_test "chat is the person's: raw or with a header, replies come back, it follows them" test_chat_is_the_persons
+run_test "the lead key: Ctrl-P Ctrl-P is one Ctrl-P, any other key cancels, help floats" test_lead_key_commands_and_cancel
+run_test "backmux shell is a call: no chat, messages raw, never headless" test_shell_is_a_call
+run_test "settings: working, program, args, name; recall, delete, purge all" test_settings_recall_delete_purge_all
+run_test "the verbs say how it runs; run and start are Docker's spellings" test_verbs_and_docker_spellings
 run_test "backmux -it exits as its command did and leaves its last screen" test_tty_foreground_exit_status_and_last_screen
 run_test "however an attach ends, the last screen stays and backmux says how" test_attach_endings_leave_the_last_screen
 run_test "a mistyped command line is a usage error and acts on nothing" test_cli_mistakes_are_usage_errors
 run_test "help stays concise, matches its source, and exposes the full reference" test_help_pages_fit_and_say_it
-run_test "backmux shell: the draft takes any script and whole pastes" test_shell_chat_draft_editing
-run_test "backmux shell: detach, attach and redial keep the shell a shell" test_shell_detach_attach_and_redial
 run_test "a console is free again once its attach client is gone" test_attach_again_after_client_vanishes
 run_test "nested attach: the detach keys let go of the innermost first" test_nested_attach_detaches_innermost_first
 run_test "attach says who has a call, where you stand after leaving, and uses names" test_attach_messages_say_what_happened

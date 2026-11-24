@@ -49,7 +49,7 @@ static const struct hold_cli_command_spec command_specs[] = {
     {"agent", NULL, 1, -1, 0, "usage: backmux agent [--name NAME] [options] <program> [<args>...]"},
     {"server", NULL, 1, -1, 0, "usage: backmux server [--name NAME] [-w] [options] <program> [<args>...]"},
     {"detach", NULL, 1, -1, 0, "usage: backmux detach [--name NAME] [options] <program> [<args>...]"},
-    {"list", NULL, 0, 1, SPEC_ALL | SPEC_LIVE | SPEC_SCOPE | SPEC_STRICT,
+    {"list", NULL, 0, 2, SPEC_ALL | SPEC_LIVE | SPEC_SCOPE | SPEC_STRICT,
      "usage: backmux list [all] [-s|--system] [-u|--user] [name]"},
     {"info", NULL, 1, 1, SPEC_STRICT, "usage: backmux info <name|id>"},
     {"recall", NULL, 1, 1, SPEC_STRICT, "usage: backmux recall <name|id>"},

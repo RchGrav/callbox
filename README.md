@@ -40,7 +40,7 @@ This example needs only a POSIX shell and `tr`. Start a detached terminal,
 send a command, wait for its result, and read the screen:
 
 ```sh
-backmux -dt --name demo -- sh
+backmux detach --name demo -- sh
 backmux send demo 'echo hello | tr a-z A-Z' --enter
 backmux wait demo --match HELLO
 backmux peek demo
@@ -53,6 +53,11 @@ checks its visible output. For a color image with cursor coordinates, use
 Join the program with `backmux attach demo`. Press **Ctrl-P, then Ctrl-Q**
 to detach and leave it running. An agent can still inspect the screen and
 send input while you are attached.
+
+While attached, **Ctrl-P Ctrl-A** brings another running call in beside this
+one, as a pane; **Ctrl-P Ctrl-T** opens your chat over whatever you are
+looking at; **Ctrl-P Ctrl-H** lists the rest. Nothing splits unless you ask:
+one call on one screen is exactly what it always was.
 
 When finished:
 
@@ -73,18 +78,22 @@ A call keeps its name after the program exits, until you purge its record.
 
 | You want to… | Start it with… | What you get |
 | --- | --- | --- |
-| Use a program yourself | `backmux --name app -- PROGRAM` | An attached terminal with a chat window for messages. |
-| Work with an agent in your terminal | `backmux -it --name lead -- AGENT` | An attached terminal; messages are typed into the agent's input. |
-| Let an agent drive a terminal app | `backmux -dt --name app -- PROGRAM` | A detached terminal you can inspect, control, and attach to later. |
-| Run a service or CI job | `backmux -dw --name job -- PROGRAM` | A background process with logs and a recorded exit code, without a terminal. |
+| Use a program yourself | `backmux call --name app PROGRAM` | An attached terminal; messages arrive as typed text. |
+| Work with an agent in your terminal | `backmux agent --name lead AGENT` | The same, with each message headed by who sent it and how to reply. |
+| Let an agent drive a terminal app | `backmux detach --name app PROGRAM` | A detached terminal you can inspect, control, and attach to later. |
+| Run a service or CI job | `backmux server -w --name job PROGRAM` | A background process with a log and a recorded exit code, without a terminal. |
 
-Plain `-d` runs a background process without keeping an exit-code waiter.
-Use `-dw` when a script needs to check the program's result. These processes
-have logs but no screen for `peek` or `send`.
+`server` without `-w` leaves nothing of Backmux behind; `-w` keeps a small
+waiter that records the exit code. Servers have logs but no screen for
+`peek` or `send`, and never become panes.
 
-`backmux ps` shows running calls. `backmux logs NAME` reads output, and
-`backmux end NAME` stops a program. `backmux NAME` reconnects to a running
-call with a console, or starts an ended call again from its saved command.
+`backmux list` shows running calls (`list all` adds stopped ones), `backmux
+info NAME` everything about one, and `backmux end NAME` stops it. `backmux
+recall NAME` starts an ended call again, same program, arguments and folder;
+`backmux set NAME args=...` or `working=...` changes what the next recall
+runs, and `backmux set NAME agent` switches how its messages arrive, at
+once. Docker's words (`run -d`, `ps`, `stop`, `start`, ...) still work:
+`backmux help aliases`.
 
 ## Find the next step
 

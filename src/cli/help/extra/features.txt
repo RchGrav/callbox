@@ -22,10 +22,12 @@ SEND INPUT AND CHECK THE RESULT
 
 WORK TOGETHER ON ONE SCREEN
   A person can stay attached while an agent uses peek, send, and resize.
-  Bare launches on a real terminal and backmux shell add a chat window;
-  the underlying app, its log, and peek snapshots do not include that window.
-  -it and -dt agents receive messages as typed input. Outside harnesses
-  receive replies in an inbox and can follow them with monitor.
+  While attached, Ctrl-P Ctrl-A puts another call beside it as a pane and
+  Ctrl-P Ctrl-T opens the person's chat over everything; the apps, their
+  logs, and peek snapshots never include either. Calls with the agent
+  setting receive messages with a sender header; others receive them as
+  typed text. Outside harnesses receive replies in an inbox and can follow
+  them with monitor.
 
 REUSE A CALL
   Calls retain their command, launch mode, explicit environment settings,

@@ -935,12 +935,16 @@ int hold_cli_main(int argc, char **argv) {
         rc = refuse_verb_name(cmd_argv[1]);
         if (rc == 0) rc = hold_cmd_rename_action(&inv, &user_store, &system_store, cmd_argv[0], cmd_argv[1]);
     } else if (!strcmp(canon, "list") || !strcmp(canon, "ps")) {
-        const char *name_filter = cmd_argc == 1 ? cmd_argv[0] : NULL;
         /* list shows what is running; list all adds the stopped ones. Why:
          * "what is running" is the question asked most, and ended calls
-         * pile up. (ps is Docker's and keeps -a.) */
-        bool list_all = name_filter && !strcmp(name_filter, "all");
-        if (list_all) name_filter = NULL;
+         * pile up. (ps is Docker's and keeps -a.) list all NAME filters. */
+        bool list_all = cmd_argc >= 1 && !strcmp(cmd_argv[0], "all") && !strcmp(canon, "list");
+        const char *name_filter = list_all ? (cmd_argc == 2 ? cmd_argv[1] : NULL) : (cmd_argc == 1 ? cmd_argv[0] : NULL);
+        if (!list_all && cmd_argc == 2) {
+            fprintf(stderr, "%s\n", hold_cli_command_usage(command));
+            free(cmd_argv);
+            return HOLD_EXIT_USAGE;
+        }
         if (!strcmp(canon, "list") && !list_all && !name_filter) oo.live_only = true;
         if (name_filter && !hold_valid_alias(name_filter)) {
             fprintf(stderr, "backmux: error: invalid name '%s'\n", name_filter);

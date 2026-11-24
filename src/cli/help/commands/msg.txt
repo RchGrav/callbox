@@ -2,12 +2,16 @@ usage: backmux msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]
                    [--wait-reply [--timeout MS]]
        backmux msg [<target>] --received [ID]
 
-Send text with a sender name and reply command. Input-enabled calls receive
-it in their prompt, followed by Enter; calls with a chat window receive it
-there instead. An outside sender's inbox receives stored text. Backmux
-delivers immediately; input queueing is up to the receiving harness.
+Send text to a call, or to a person or agent outside any call. A TTY call
+receives it in its prompt, followed by Enter. With the call's agent setting
+on (backmux agent, or backmux set NAME agent), a header comes first:
 
   [msg from NAME; reply: backmux msg NAME "..."] TEXT
+
+without it, the text arrives raw, as if typed - so a message can run a
+command in a shell. An outside sender's inbox, and a person's chat, receive
+stored text. Backmux delivers immediately; input queueing is up to the
+receiving harness.
 
 Inside a call, BACKMUX_ID (or BACKMUX_NAME) identifies the sender. Outside
 Backmux, the first send creates an inbox and prints its name on stderr.

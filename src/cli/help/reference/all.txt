@@ -10,4 +10,10 @@ aliases are listed at the end. Each section is also available on its own.
   backmux help system               user and root-managed stores
   backmux help scripting            output conventions and exit codes
 
-For complete workflows: backmux help tui, share, agents, messaging, service.
+Workflows, one guide each:
+  backmux help tui                  troubleshoot a terminal app
+  backmux help share                fix a TUI while a person watches and tests
+  backmux help agents               start an agent and give it work
+  backmux help messaging            exchange messages from any harness
+  backmux help service              run background services and CI jobs
+  backmux help aliases              Docker's words, and what they map to

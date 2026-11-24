@@ -8,42 +8,43 @@ OPEN YOUR AGENT AND APP
   This example assumes Codex is installed and configured, and ./my-tui is
   your built application. Use your own terminal agent and app as needed.
 
-    backmux -dt --name coder codex
+    backmux detach --name coder codex
+    backmux set coder agent
     backmux peek coder
-    backmux --name app -- ./my-tui
+    backmux call --name app ./my-tui
 
-  Check that coder is ready for a prompt before starting the app. The bare
-  app launch keeps it on your terminal and adds a separate chat window.
-  Messages to app appear in chat; they are not typed into the application.
+  Check that coder is ready for a prompt before starting the app. The app
+  runs on your terminal. Press Ctrl-P Ctrl-A and choose coder: it joins as a
+  pane beside the app, so you watch both. Click a pane to type in it.
 
 DESCRIBE AND REPRODUCE THE ISSUE
-  Press Ctrl-P Ctrl-T to open chat, then Tab to choose coder. For example:
+  Press Ctrl-P Ctrl-T to open your chat, then Tab to choose coder. For
+  example:
 
     In call app, Down skips a menu item. Reproduce it with peek and send,
     fix the navigation code, and tell me when to restart and test it.
 
-  Ctrl-S adds a snapshot of the app's screen to the message. Enter sends
-  it; Esc hides chat. The agent can now use its command tool while you watch:
+  Enter sends it; Esc hides chat. It reaches coder with your chat name and
+  the reply command, so coder answers with backmux msg <your name>, and the
+  answer lands in your chat. The agent can now use its command tool while
+  you watch:
 
     backmux peek app --image bug.png --cursor-ring
     backmux send app -k Down --wait 300
     backmux peek app --json
-    backmux msg app "I reproduced it; please quit the app for the rebuild."
+
+  (A message to app itself would be typed into the app: app is a call, not
+  an agent. Agents talk to you, by your chat name.)
 
 REBUILD AND TEST TOGETHER
-  Quit the app normally so the agent can rebuild it. The app's chat is
-  unavailable while it is stopped; check the agent's own screen instead:
+  Quit the app normally so the agent can rebuild it; its pane closes and
+  coder fills the screen. Once coder's report confirms the new build is
+  ready, start the app again from a shell:
 
-    backmux peek coder
+    backmux recall app
 
-  You can attach to coder to talk directly; Ctrl-P Ctrl-Q detaches again.
-  Once its report confirms the new build is ready, run this in your terminal:
-
-    backmux app
-
-  An ended call reuses its recorded command and launch mode, so the rebuilt
-  executable opens attached with chat again. Test the reported fix and send
-  your result to coder. This restarts the app; it does not rebuild it.
+  recall reuses the recorded command, arguments and folder, so the rebuilt
+  executable opens attached again. Test the fix and tell coder in chat.
 
   When finished, quit the app and release both names:
 
@@ -52,13 +53,12 @@ REBUILD AND TEST TOGETHER
     backmux purge coder
 
 JOIN AN APP YOUR AGENT ALREADY STARTED
-  If the agent launched a detached terminal with -dt, use this instead:
+  If the agent launched the app with backmux detach, use this instead:
 
     backmux attach app
 
-  Ctrl-P Ctrl-Q detaches and leaves it running. A -dt call keeps its
-  original message mode, so attaching does not add a chat window. Use your
-  existing conversation with the agent. Only one interactive attach is
-  allowed at a time; peek, send, and resize still work while you are attached.
+  Ctrl-P Ctrl-Q detaches and leaves it running. Only one interactive attach
+  is allowed at a time; peek, send, and resize still work while you are
+  attached.
 
-Next: backmux help tui. Details: backmux help attach, shell, launch.
+Next: backmux help tui. Details: backmux help attach, swap, set.

@@ -1,7 +1,14 @@
 backmux help launch - every flag for starting a call
 
-  backmux [options] [--] PROGRAM [ARGS...]
+  backmux call|agent|server|detach [options] PROGRAM [ARGS...]
+  backmux shell [options] [SHELL [ARGS...]]
+  backmux [options] [--] PROGRAM [ARGS...]      (Docker's form; also run ...)
   backmux [options] CALL
+
+The verbs say how it runs: call (attached terminal), agent (the same, with
+messages formatted for an agent), server (background, a log; -w keeps its
+exit code), detach (background terminal). After a verb the next word is
+always the program, and -d/-i/-t are refused: the verb already said it.
 
 Put options before PROGRAM; everything after it is passed to that program.
 -- forces a fresh program launch, even if its name is a Backmux command or
@@ -10,9 +17,8 @@ A lone CALL reconnects if running, or restarts its recorded command and mode
 if ended. A running call without a console is followed through its log.
 
 CHOOSE A MODE
-  No session flags: run attached on a terminal (PTY). On a real terminal,
-  messages go to a chat window; Ctrl-P Ctrl-T opens it. In a script, output
-  streams with terminal line endings, stderr merged, and messages typed in.
+  No session flags: run attached on a terminal (PTY), as backmux call does.
+  In a script, output streams with terminal line endings, stderr merged.
   Use -i for pipe input. A PTY is a virtual terminal for the program.
 
   -d, --detach     return immediately with the call ID on stdout
@@ -21,7 +27,7 @@ CHOOSE A MODE
   -i, --interactive
                    keep input open; without -t, relay it through a pipe
 
-  -it              attached terminal; messages are typed into the program
+  -it              attached terminal (backmux call)
   -dt              detached terminal; inspect and control it with peek/send
   -d               detached process, no terminal or recorded exit code
   -dw              detached process with a recorded exit code
@@ -57,10 +63,9 @@ CONTROL AN ATTACHED CALL
   Ctrl-D           end pipe input with -i
   --detach-keys KEYS
                    change detach keys (default ctrl-p,ctrl-q); one key such
-                   as ctrl-] detaches immediately. Chat needs two
-                   keys, with its chat key different from both.
-  --chat-key KEY   for backmux shell only: choose the key after the lead key
-                   that opens chat (default ctrl-t)
+                   as ctrl-] detaches immediately. Panes and chat need the
+                   two-key form: Ctrl-P, then a key (Ctrl-P Ctrl-H lists
+                   them).
   -f, --tail CALL  follow a call's new log output without attaching or redial;
                    Ctrl-C stops following, leaving the call running
 

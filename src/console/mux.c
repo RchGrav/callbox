@@ -785,13 +785,16 @@ static void send_done(struct mux *m, struct sending *s) {
     m->dirty = true;
 }
 
-/* Tab: the next one to talk to - the panes first, then anyone in the
- * conversation. */
+/* Tab: the next one to talk to - the panes first, then every other running
+ * call, then anyone in the conversation (an agent outside any call). Why
+ * all running calls: the one to ask is often not on screen. */
 static void chat_next_peer(struct mux *m) {
-    const char *names[MUX_MAX_PANES + MUX_CHAT_LINES];
+    const char *names[MUX_MAX_PANES + MUX_PICK_MAX + MUX_CHAT_LINES];
     int n = 0;
     for (int i = 0; i < MUX_MAX_PANES; i++)
         if (m->slot[i]) names[n++] = m->slot[i]->name;
+    load_picks(m);
+    for (int i = 0; i < m->npicks; i++) names[n++] = m->picks[i].name;
     for (int i = 0; i < m->nlines; i++) {
         bool dup = false;
         for (int k = 0; k < n && !dup; k++) dup = !strcmp(names[k], m->lines[i].peer);
@@ -802,6 +805,7 @@ static void chat_next_peer(struct mux *m) {
     for (int k = 0; k < n; k++)
         if (!strcmp(names[k], m->peer)) at = k;
     snprintf(m->peer, sizeof(m->peer), "%s", names[(at + 1) % n]);
+    if (!strcmp(m->peer, m->unread_from)) m->unread = 0;
     m->dirty = true;
 }
 
@@ -970,8 +974,14 @@ static void draw_chat(struct mux *m, int *cur_row, int *cur_col) {
     if (m->chat_x < 0) m->chat_x = 0;
     if (m->chat_y < 0) m->chat_y = 0;
     int x = m->chat_x, y = m->chat_y;
-    char title[ALIAS_MAX_LEN * 2 + 32];
-    snprintf(title, sizeof(title), "%s chat -> %s", m->me, m->peer[0] ? m->peer : "(Tab: who to)");
+    char title[ALIAS_MAX_LEN * 3 + 64];
+    /* new messages in another conversation: said in the title, so a reply
+     * from someone not on show is never missed (Tab goes there) */
+    if (m->unread > 0)
+        snprintf(title, sizeof(title), "%s chat -> %s  +%d new from %s", m->me, m->peer[0] ? m->peer : "(Tab)",
+                 m->unread, m->unread_from);
+    else
+        snprintf(title, sizeof(title), "%s chat -> %s", m->me, m->peer[0] ? m->peer : "(Tab: who to)");
     draw_box(m, y, x, h, w, title);
     comp_put(m->comp, y, x + w - 2, 0xd7, &ST_TITLE); /* × */
     /* the conversation with this peer, newest at the bottom */
@@ -1565,6 +1575,25 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
             *handed_back = true;
             break;
         }
+        /* backmux swap, from anywhere: a request file names two panes */
+        char req_path[HOLD_PATH_MAX], req[256];
+        if (hold_checked_snprintf(req_path, sizeof(req_path) - 8, "%s/chat/mux.%d.swap", store->base, (int)getpid()) == 0 &&
+            read_small(req_path, req, sizeof(req))) {
+            unlink(req_path);
+            char a[96] = "", b[96] = "", why2[160] = "bad request";
+            int ok = -1;
+            if (sscanf(req, "%95s %95s", a, b) == 2) {
+                int sa = slot_of_word(m, a), sb = slot_of_word(m, b);
+                if (sa < 0 || sb < 0) snprintf(why2, sizeof(why2), "no pane %s", sa < 0 ? a : b);
+                else ok = do_swap(m, sa, sb, why2, sizeof(why2));
+            }
+            if (ok != 0) notice(m, "swap: %s", why2);
+            /* the answer, for the backmux swap waiting on it */
+            char res_path[HOLD_PATH_MAX], res[200];
+            int rl = ok == 0 ? snprintf(res, sizeof(res), "ok\n") : snprintf(res, sizeof(res), "error %s\n", why2);
+            if (hold_checked_snprintf(res_path, sizeof(res_path) - 8, "%s/chat/mux.%d.result", store->base, (int)getpid()) == 0)
+                write_small(res_path, res, (size_t)rl);
+        }
         chat_look(m);
         render(m);
 
@@ -1622,25 +1651,6 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
             } else if (k == 0) {
                 goto detach;
             }
-        }
-        /* backmux swap, from anywhere: a request file names two panes */
-        char req_path[HOLD_PATH_MAX], req[256];
-        if (hold_checked_snprintf(req_path, sizeof(req_path) - 8, "%s/chat/mux.%d.swap", store->base, (int)getpid()) == 0 &&
-            read_small(req_path, req, sizeof(req))) {
-            unlink(req_path);
-            char a[96] = "", b[96] = "", why2[160] = "bad request";
-            int ok = -1;
-            if (sscanf(req, "%95s %95s", a, b) == 2) {
-                int sa = slot_of_word(m, a), sb = slot_of_word(m, b);
-                if (sa < 0 || sb < 0) snprintf(why2, sizeof(why2), "no pane %s", sa < 0 ? a : b);
-                else ok = do_swap(m, sa, sb, why2, sizeof(why2));
-            }
-            if (ok != 0) notice(m, "swap: %s", why2);
-            /* the answer, for the backmux swap waiting on it */
-            char res_path[HOLD_PATH_MAX], res[200];
-            int rl = ok == 0 ? snprintf(res, sizeof(res), "ok\n") : snprintf(res, sizeof(res), "error %s\n", why2);
-            if (hold_checked_snprintf(res_path, sizeof(res_path) - 8, "%s/chat/mux.%d.result", store->base, (int)getpid()) == 0)
-                write_small(res_path, res, (size_t)rl);
         }
     }
     goto out;

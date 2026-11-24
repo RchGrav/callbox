@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased - backmux
+
+Callbox is now **backmux**: the binary, messages, `BACKMUX_*` environment
+variables, and stores (`~/.local/state/backmux`, `/var/lib/backmux`). Callbox
+records are not carried over; the two never touch each other's calls.
+
+### Added
+
+- Verbs for the four things people start: `call` (attached terminal),
+  `agent` (the same, messages formatted for an agent), `server` (background,
+  a log; `-w` keeps the exit code), `detach` (background terminal). Docker's
+  spellings remain: `run`, `start`, `stop`, `ps`, ... (`backmux help
+  aliases`).
+- `recall` relaunches an ended call with the same program, arguments and
+  folder; `info` shows everything about a call; `delete` removes one, saved
+  or not, without ever stopping it; `manual` prints the whole reference.
+- `set`/`unset NAME SETTING`: `agent` (live, from the next message),
+  `working`, `program`, `args` (from the next recall), `name` (at once).
+- Panes: while attached, `Ctrl-P Ctrl-A` brings another running TTY call in
+  beside the one on screen. Four to a window (B A / C D), the fifth opens
+  window 2; `Ctrl-P Ctrl-W` moves between windows, `Ctrl-P Ctrl-N` shows
+  every pane's name, a click moves focus, `backmux swap A,B` (letters,
+  numbers, names) rearranges. With one pane left the screen is plain attach
+  again. Nothing splits unless asked.
+- Chat belongs to the person: `Ctrl-P Ctrl-T` floats it over any pane, under
+  their chat name (`config set chat-name NAME`, else generated); opening it
+  in another terminal moves it there with its draft. `Ctrl-P Ctrl-H` floats
+  the keys. One floating window at a time; Esc closes it.
+
+### Changed
+
+- `list` shows running calls; `list all` adds the stopped ones.
+- `purge all` ends and removes every call that is not saved, after listing
+  them and asking (`--force` without a terminal).
+- A message to a call without the agent setting arrives raw: the text, then
+  Enter, as if typed. `-it` (now `call`) calls included.
+- `Ctrl-P` followed by a key that is not a command cancels; both keys are
+  dropped (it used to send both through).
+- `backmux shell` is a plain shell under backmux; it no longer carries chat,
+  and `--chat-key` is refused with the reason.
+
 ## 1.0.0 - 2026-11-23
 
 ### Added

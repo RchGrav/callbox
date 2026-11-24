@@ -1192,8 +1192,21 @@ static int msg_action_impl(const struct hold_invocation *inv,
     }
     off_t reply_from = opname[0] ? hold_inbox_size(user_store, opname) : 0;
     if (hold_valid_alias(token) && hold_inbox_live(user_store, token)) {
-        /* To an operator: no broker, straight into its inbox. */
-        const char *from = self_name && *self_name ? self_name : opname[0] ? opname : "outside backmux";
+        /* To an operator: no broker, straight into its inbox. From a call,
+         * its name as the record has it now: BACKMUX_NAME in a running
+         * program is the name it started with, and a rename (backmux set
+         * NAME name=...) would leave the reply going to a name that no
+         * longer answers. */
+        char current[ALIAS_MAX_LEN + 1] = "";
+        if (self_id && hold_valid_id(self_id)) {
+            struct hold_run_record me;
+            char mp[HOLD_PATH_MAX];
+            if (hold_load_record_by_id(user_store->record_dir, self_id, &me, mp, sizeof(mp)) == 0) {
+                if (me.has_name && me.name[0]) snprintf(current, sizeof(current), "%s", me.name);
+                hold_free_run_record(&me);
+            }
+        }
+        const char *from = current[0] ? current : self_name && *self_name ? self_name : opname[0] ? opname : "outside backmux";
         if (hold_inbox_deliver(user_store, token, from, text.p, text.len) != 0) {
             fprintf(stderr, "backmux: cannot deliver to %s's inbox: %s\n", token, strerror(errno));
             goto out;

@@ -7,12 +7,14 @@ an input-enabled call; a sender outside Backmux receives replies in an inbox.
 PREPARE A RECEIVER
   This example uses an installed, configured Codex harness:
 
-    backmux -dt --name reviewer codex
+    backmux detach --name reviewer codex
+    backmux set reviewer agent
     backmux wait reviewer --idle 1000
     backmux peek reviewer
 
   Check that its prompt is ready. If it is already running as a call, use
-  that call's name instead. backmux ps lists running calls, not inboxes.
+  that call's name instead (backmux set NAME agent if it was started as a
+  plain call). backmux list shows running calls, not inboxes.
 
 SEND FROM A HARNESS OUTSIDE BACKMUX
   Run this in your existing harness's command tool:
@@ -51,10 +53,13 @@ WAIT FOR A REPLY OR FOLLOW THE CONVERSATION
   text before treating a message as the answer to a particular task.
 
 UNDERSTAND WHERE A MESSAGE GOES
-  Inside -it or -dt calls, messages are typed into the program and Enter
-  submits them. Bare launches on a real terminal and backmux shell put
-  messages in chat. Plain -d and -dw calls have no input console and refuse
-  messages. Backmux delivers input; it does not manage a harness's work queue.
+  Inside a TTY call (call, agent, detach, shell), a message is typed into
+  the program and Enter submits it: with the agent setting on, behind a
+  header naming the sender and how to reply; without it, raw, as if typed.
+  backmux set/unset NAME agent switch it from the next message. A message
+  to a person goes to their chat (Ctrl-P Ctrl-T), by their chat name.
+  server calls have no input console and refuse messages. Backmux delivers
+  input; it does not manage a harness's work queue.
 
   An outside inbox is created on first send, not by monitor. Its name
   expires after an hour without use; individual messages expire one hour

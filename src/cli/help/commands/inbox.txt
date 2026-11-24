@@ -21,7 +21,7 @@ harness may have a different name; use the name printed by the first send
 when crossing between them. Names expire after an hour without use.
 Messages expire one hour after delivery, even if the inbox stays active.
 
-Inside a call, messages arrive as program input or in chat; there is no
+Inside a call, messages arrive as program input; there is no
 automatic outside inbox to read. Use backmux msg --received for that call's
 delivery history. An explicit outside inbox NAME can still be read.
 

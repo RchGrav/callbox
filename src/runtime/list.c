@@ -150,7 +150,9 @@ static int collect_private_cb(const char *id, const char *path, struct hold_run_
     }
     if (w->name_filter && (!r->has_name || strcmp(r->name, w->name_filter) != 0)) return 0;
     enum run_state st = hold_eval_state(r, w->boot_id);
-    if (w->running_only && st != STATE_RUNNING) return 0;
+    /* Unknown stays: a call this shell cannot see (another PID namespace)
+     * may well be running, and a list of what runs must not hide it. */
+    if (w->running_only && st != STATE_RUNNING && st != STATE_UNKNOWN) return 0;
     struct list_row row;
     memset(&row, 0, sizeof(row));
     char display_id[ID_DISPLAY_HEX_LEN + 1];

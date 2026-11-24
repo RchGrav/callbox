@@ -7,17 +7,22 @@ must already be installed, configured, and able to work on your project.
 START THE TWO AGENTS
   In your terminal, start the agent you work with:
 
-    backmux -it --name lead claude
+    backmux agent --name lead claude
 
-  From lead's command tool, start a reviewer and check its prompt:
+  From lead's command tool, start a reviewer in the background, make its
+  messages arrive formatted for an agent, and check its prompt:
 
-    backmux -dt --name reviewer codex
+    backmux detach --name reviewer codex
+    backmux set reviewer agent
     backmux wait reviewer --idle 1000
     backmux peek reviewer
 
-  -it keeps lead attached; -dt gives reviewer a detached terminal. Both
-  accept messages as input. Complete any login or trust prompt before
-  assigning work; backmux attach reviewer lets you operate it yourself.
+  agent keeps lead attached; detach gives reviewer a terminal of its own.
+  The agent setting is what makes each message arrive with a header naming
+  the sender and how to reply; without it a message arrives as typed text.
+  Complete any login or trust prompt before assigning work; backmux attach
+  reviewer lets you operate it yourself, and Ctrl-P Ctrl-A there puts lead
+  beside it.
 
 ASSIGN WORK AND CHECK PROGRESS
   Once reviewer is ready, lead sends a specific task:
@@ -30,11 +35,12 @@ ASSIGN WORK AND CHECK PROGRESS
 
     backmux msg lead "Review complete: no issues found in src/main.c."
 
-  msg adds a sender name and reply command, then submits the text. Delivery
-  means the input reached the call, not that the task finished. Whether a
-  busy harness queues input depends on that harness. Judge progress from
-  its screen and completion from its report; --idle only measures quiet
-  output. wait with no condition waits for the agent process to exit.
+  To an agent, msg adds the sender's name and the reply command, then
+  submits the text. Delivery means the input reached the call, not that the
+  task finished. Whether a busy harness queues input depends on that
+  harness. Judge progress from its screen and completion from its report;
+  --idle only measures quiet output. wait with no condition waits for the
+  agent process to exit.
 
 STOP THE REVIEWER WHEN ITS WORK IS FINISHED
     backmux logs reviewer -n 50
@@ -43,12 +49,13 @@ STOP THE REVIEWER WHEN ITS WORK IS FINISHED
 
   end sends TERM, then KILL after five seconds if needed. It retains the
   record and log; purge removes them and frees the name. Keep the call
-  instead if you want to inspect it later or restart it with backmux reviewer.
+  instead if you want to inspect it later or start it again with backmux
+  recall reviewer.
 
-  Use backmux ps to find running calls. To read delivered messages without
+  backmux list shows running calls. To read delivered messages without
   disturbing a prompt, use backmux msg lead --received. Agent-specific keys
   such as Escape can be sent with backmux send; their effect belongs to
   that harness.
 
 Next: backmux help messaging for a lead outside Backmux.
-Details: backmux help msg, peek, attach, end.
+Details: backmux help msg, peek, attach, set, end.

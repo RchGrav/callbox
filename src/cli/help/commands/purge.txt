@@ -1,4 +1,5 @@
-usage: backmux purge [<target>|all] [-a|--all] [-s|--system] [-u|--user] [--force]
+usage: backmux purge [<target>|all] [-a|--all] [-s|--system] [-u|--user]
+                     [--force]
 
 Remove ended calls and their stored records, logs, and screens.
 Without a target, sweep eligible calls; with a target, remove that call.

@@ -1,21 +1,19 @@
-# backmux shell: a person's shell, with chat
+# backmux shell, panes, and chat
 
-[Docs index](index.md) | [Repository README](../README.md) | Related: [Console](console.md), [Screens](screen.md)
+[Docs index](index.md) | [Repository README](../README.md) | Related: [Console](console.md), [Screens](screen.md), [Design](backmux.md)
 
-`backmux shell` opens your shell on a PTY with a floating chat window for
-talking to the agents you run under backmux. It is user mode for a shell:
-`backmux <cmd>` (or `backmux -it <cmd>`) does the same for any program, and
-redial brings that program back - a shell's redial can only bring back the
-shell, not what you ran in it. The shell
-is an ordinary call: it has a name, a log, and a screen that `backmux peek`
-reads. What differs is how its display is produced, and where a message for
-it goes. Both are fixed by the launch command — the record carries
-`"mode": {"chat": true}` — never guessed from the program's name:
-
-| Launched with | A message (`backmux msg`) for it | Its attach client is sent |
-| --- | --- | --- |
-| `backmux -dt` or `-it` (any program, shells included) | is typed into the program's prompt at once | the PTY's raw bytes |
-| `backmux shell`, and `backmux <cmd>` (no switches) at a terminal (user mode) | goes to the chat inbox; nothing is ever typed | composed frames |
+> **The model changed in backmux.** Nothing has chat and nothing has splits.
+> `backmux shell` is your shell on a PTY under a name, like any call. Chat
+> belongs to the person: `Ctrl-P Ctrl-T` brings it up over whatever they
+> are attached to, under their chat name, and it follows them to whichever
+> terminal opens it last. Panes come only from `Ctrl-P Ctrl-A`, which puts
+> another running TTY call beside the one on screen. Both are drawn by the
+> attach client's compositor (`src/console/mux.c`), never by a call's
+> broker, so no call carries a display mode. The design, with the reason for
+> each rule, is [backmux.md](backmux.md). The sections below describe the
+> earlier broker-composited chat shell; its input router and drawing rules
+> carried over to the compositor and are kept here until the fix-up pass
+> rewrites this page.
 
 ```sh
 backmux shell                       # $SHELL, else your login shell, else /bin/sh

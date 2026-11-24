@@ -601,13 +601,15 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         fprintf(stderr, "backmux: error: --restart with --tty/-t is not supported yet\n");
         return HOLD_EXIT_USAGE;
     }
-    if (opts->chat && (!console_mode || !tail)) {
+    /* A shell is something you sit at: attached, at a terminal. Started from
+     * a script it would wait on input nobody types. */
+    if (opts->shell && (!console_mode || !tail)) {
         fprintf(stderr, "backmux: error: a backmux shell runs attached, on its PTY; -d does not apply\n");
         return HOLD_EXIT_USAGE;
     }
-    if (opts->chat && !(isatty(STDIN_FILENO) && isatty(STDOUT_FILENO))) {
-        fprintf(stderr, "backmux: error: backmux shell needs a terminal to draw on; run it from an interactive terminal "
-                        "(to drive a program from a script: backmux -dt <cmd>)\n");
+    if (opts->shell && !(isatty(STDIN_FILENO) && isatty(STDOUT_FILENO))) {
+        fprintf(stderr, "backmux: error: backmux shell needs a terminal; run it from an interactive terminal "
+                        "(to drive a program from a script: backmux detach <cmd>)\n");
         return HOLD_EXIT_USAGE;
     }
     /* --size is for a PTY call; one is never allocated just because a size
