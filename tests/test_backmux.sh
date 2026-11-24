@@ -5955,8 +5955,14 @@ test_detach_says_so_and_split_is_clean() {
   "$HOLD_BIN" wait dterm --regex ' dinl *$' --timeout 5000 >/dev/null || { echo "the right pane's name is not at its right" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
   "$HOLD_BIN" send dterm --mouse "click,2,5" || return 1
   "$HOLD_BIN" wait dterm --regex '^ dside ' --timeout 5000 >/dev/null || { echo "the left pane's name is not at its left" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
+  # Ctrl-P Ctrl-Q with panes up detaches the active pane (dside, on the
+  # left) only; dinl is plain attach again, and the next one leaves
   "$HOLD_BIN" send dterm -k C-p -k C-q || return 1
-  "$HOLD_BIN" wait dterm --regex '^backmux: detached (dinl, dside|dside, dinl)$' --timeout 5000 >/dev/null || { echo "a split detach did not name its panes" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
+  wait_gone dterm '│' || { echo "detaching a pane did not close it" >&2; return 1; }
+  out_has 'Up .* dside$' "$HOLD_BIN" list || { echo "the detached pane's process stopped" >&2; return 1; }
+  if "$HOLD_BIN" peek dterm | grep -q '^backmux: detached'; then echo "a pane's detach left the terminal" >&2; "$HOLD_BIN" peek dterm >&2; return 1; fi
+  "$HOLD_BIN" send dterm -k C-p -k C-q || return 1
+  "$HOLD_BIN" wait dterm --regex '^backmux: detached dinl$' --timeout 5000 >/dev/null || { echo "the last detach did not say so" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
   "$HOLD_BIN" end dside dinl dterm >/dev/null 2>&1 || true
 }
 
@@ -6024,9 +6030,12 @@ test_panes_attach_beside_and_hand_back() {
   wait_gone term '│' || return 1
   "$HOLD_BIN" send term back-plain --enter || return 1
   "$HOLD_BIN" wait p1 --regex '^back-plain$' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek p1 >&2; return 1; }
-  # detach with panes up: everything keeps running
+  # detach with panes up: the active pane (p3) lets go, p1 is plain attach
+  # again, the next detach ends the attach; everything keeps running
   "$HOLD_BIN" detach --name p3 -- sh -c 'echo P3-UP; exec cat' mark-three >/dev/null || return 1
   pick_pane term mark-three || return 1
+  "$HOLD_BIN" send term -k C-p -k C-q || return 1
+  wait_gone term '│' || { echo "detaching a pane did not close it" >&2; return 1; }
   "$HOLD_BIN" send term -k C-p -k C-q || return 1
   "$HOLD_BIN" wait term --timeout 8000 >/dev/null 2>&1 || { echo "detach did not end the attach" >&2; return 1; }
   out_has 'Up .* p1$' "$HOLD_BIN" list || return 1
@@ -6907,7 +6916,7 @@ run_test "an invalid size starts nothing and replaces nothing" test_invalid_size
 run_test "panes: Ctrl-P Ctrl-A puts a process beside; one pane is plain attach again" test_panes_attach_beside_and_hand_back
 run_test "kill -9 of the client: a guard gives the terminal back" test_kill_9_gives_the_terminal_back
 run_test "the attach list holds only living processes" test_attach_list_only_living
-run_test "detach says so; a split is clean; left panes name themselves at the left" test_detach_says_so_and_split_is_clean
+run_test "detach says so, one pane at a time; a split is clean; left panes named at the left" test_detach_says_so_and_split_is_clean
 run_test "a launch on a terminal is inline: the screen stays, chat is no eraser" test_inline_launch_keeps_the_screen
 run_test "panes: four to a window; Ctrl-P Ctrl-S/G/M/F/J/W; backmux swap by name" test_panes_windows_and_swap
 run_test "chat is the person's: raw or with a header, replies come back, it follows them" test_chat_is_the_persons

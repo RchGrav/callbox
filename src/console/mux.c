@@ -390,6 +390,16 @@ static void set_focus(struct mux *m, int slot) {
     m->advertise = true;
 }
 
+/* After panes left: close up the windows, lay them out again, and point chat
+ * at the pane now in focus (the one it showed may be gone). */
+static void settle(struct mux *m) {
+    compact(m);
+    relayout(m);
+    struct pane *f = focused(m);
+    if (f && m->chat) chat_set_screen(m->chat, f->scr, f->name);
+    m->dirty = true;
+}
+
 /* A new pane joins the window on screen when it has room, else the first
  * window that does. Focus goes to it. */
 static int add_pane(struct mux *m, struct pane *p) {
@@ -1121,6 +1131,18 @@ static void open_floater(struct mux *m, enum floater f) {
 static int command(struct mux *m, unsigned char key) {
     switch (key) {
     case KEY_DETACH:
+        /* Detach acts on the active pane, as every pane key does: it lets
+         * go and the rest close up (one left is plain attach again). Only
+         * the last one leaves the terminal. */
+        if (pane_total(m) > 1) {
+            struct pane *p = focused(m);
+            if (!p) return 0;
+            (void)frame(p->wfd, CONSOLE_FRAME_DETACH, NULL, 0);
+            m->slot[m->focus] = NULL;
+            pane_free(p);
+            settle(m);
+            return 0;
+        }
         return 1;
     case KEY_LEAD:
         if (!(m->chat && chat_has_keyboard(m->chat))) to_pane(m, &key, 1);
@@ -1302,10 +1324,7 @@ static void drop_ended(struct mux *m) {
             any = true;
         }
     }
-    if (any) {
-        compact(m);
-        relayout(m);
-    }
+    if (any) settle(m);
 }
 
 int hold_mux_run(const struct hold_store *store, const char *chat_name, const char *first_sock,

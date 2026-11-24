@@ -163,7 +163,7 @@ Every command is `Ctrl-P` then `Ctrl-<letter>`. Why: one shape to learn.
 
 | Key | Does |
 |---|---|
-| `Ctrl-P Ctrl-Q` | detach |
+| `Ctrl-P Ctrl-Q` | detach the active pane; the last one leaves the terminal |
 | `Ctrl-P Ctrl-T` | chat |
 | `Ctrl-P Ctrl-A` | attach a running process beside this one |
 | `Ctrl-P Ctrl-S` | swap panes: each pane shows `A: name`; two letters swap two |
