@@ -3892,9 +3892,20 @@ EOF
   chmod +x "$TEST_ROOT/docker-tty-custom-child.sh"
   set +e
   python3 - <<'PY' | pty_run "$HOLD_BIN -it --detach-keys ctrl-a $TEST_ROOT/docker-tty-custom-child.sh" >"$TEST_ROOT/docker-tty-custom.out" 2>"$TEST_ROOT/docker-tty-custom.err"
-import sys, time
+import os, subprocess, sys, time
 out = sys.stdout.buffer
-time.sleep(0.5)
+# Press the detach key once the program has printed, as a person would: the
+# launch first asks the terminal where its cursor is, and this pipe-fed pty
+# never answers, so a fixed delay races that wait on a slow machine.
+hold = os.environ["HOLD_BIN"]
+for _ in range(100):
+    rows = subprocess.run([hold, "list", "all"], capture_output=True, text=True).stdout.splitlines()
+    if len(rows) > 1:
+        log = subprocess.run([hold, "logs", rows[1].split()[0]], capture_output=True, text=True).stdout
+        if "custom-ready" in log:
+            break
+    time.sleep(0.1)
+time.sleep(0.2)
 out.write(b"\x01")
 out.flush()
 time.sleep(0.1)
@@ -5884,8 +5895,9 @@ test_inline_launch_keeps_the_screen() {
   sleep 0.5
   [ "$("$HOLD_BIN" peek term | grep -c '^inside$')" -eq 1 ] || { echo "the last screen was reprinted" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   out_has '^line-two$' "$HOLD_BIN" peek term || return 1
-  # a full-screen program, inline, then detached: the screen comes back
-  "$HOLD_BIN" send term "\"$HOLD_REAL_BIN\" call --name full -- sh -c 'printf \"\\033[?1049h\\033[H\\033[2JFULL-SCREEN\"; exec cat'" -k Enter || return 1
+  # a full-screen program, inline, then detached: the screen comes back (the
+  # marker is built at run time, so the echoed command line never shows it)
+  "$HOLD_BIN" send term "\"$HOLD_REAL_BIN\" call --name full -- sh -c 'printf \"\\033[?1049h\\033[H\\033[2JFULL-%s\" SCREEN; exec cat'" -k Enter || return 1
   "$HOLD_BIN" wait term --match FULL-SCREEN --timeout 8000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" send term -k C-p -k C-q || return 1
   wait_gone term FULL-SCREEN || return 1
@@ -6226,7 +6238,7 @@ test_settings_recall_delete_purge_all() {
 # start are Docker's spellings; all and run cannot be names.
 test_verbs_and_docker_spellings() {
   local rc
-  for args in "process -d sh" "agent -t sh" "detach -i sh" "process -w sh" "server -t sh"; do
+  for args in "call -d sh" "agent -t sh" "detach -i sh" "call -w sh" "server -t sh"; do
     set +e
     # shellcheck disable=SC2086
     "$HOLD_BIN" $args </dev/null >/dev/null 2>&1; rc=$?
@@ -6248,7 +6260,7 @@ test_verbs_and_docker_spellings() {
   [ "$("$HOLD_BIN" logs rd | grep -c ran-by-run)" -eq 2 ] || { echo "start did not recall rd" >&2; return 1; }
   rc=0; "$HOLD_BIN" recall dt 2>"$TEST_ROOT/recall.err" || rc=$?
   [ "$rc" -eq 1 ] && grep -q 'backmux attach dt' "$TEST_ROOT/recall.err" || { echo "recall of a running process rc=$rc" >&2; return 1; }
-  for name in all run process info; do
+  for name in all run call info; do
     rc=0; "$HOLD_BIN" server --name "$name" -- true >/dev/null 2>&1 || rc=$?
     [ "$rc" -eq 1 ] || { echo "the name $name was accepted" >&2; return 1; }
   done
