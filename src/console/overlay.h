@@ -47,6 +47,8 @@ void comp_size(const struct compositor *c, int *rows, int *cols);
 /* Forget what the terminal shows and how it is set: the next frame clears
  * and repaints it and sends every mode (a terminal just attached). */
 void comp_invalidate(struct compositor *c);
+/* The terminal already shows base: the next frame paints only what differs. */
+void comp_assume(struct compositor *c, const struct hold_snapshot *base);
 /* Start a frame with the shell's screen as the base layer, clipped or padded
  * to the terminal. */
 void comp_begin(struct compositor *c, const struct hold_snapshot *base);
@@ -141,6 +143,7 @@ void chat_toggle(struct chat *c);
 void chat_open_on(struct chat *c, const char *call_id, const char *label);
 void chat_put_away(struct chat *c);
 bool chat_visible(const struct chat *c);
+bool chat_on_screen(const struct chat *c, int64_t now);
 /* The person moved to a call's pane: its conversation on show, if chat is
  * up, without taking the keyboard. */
 void chat_show_call(struct chat *c, const char *call_id, const char *label);

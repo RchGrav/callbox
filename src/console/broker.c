@@ -406,9 +406,10 @@ struct attach_client {
 static bool forward_detach(struct broker *b);
 
 static int repaint_raw(struct broker *b, struct attach_client *c, const char *label);
+static int name_cells(struct broker *b, struct attach_client *c, bool draw);
 static void drop_attach(struct broker *b, struct attach_client *c) {
     /* The name still up in its corner: the screen without it goes first. */
-    if (c->fd >= 0 && c->name_until_ms) (void)repaint_raw(b, c, NULL);
+    if (c->fd >= 0 && c->name_until_ms) (void)(c->stream ? name_cells(b, c, false) : repaint_raw(b, c, NULL));
     if (c->fd >= 0) {
         if (c->output != c->fd) close(c->output);
         close(c->fd);
@@ -1520,24 +1521,60 @@ static void sniff_timeout(struct broker *b, struct control_client *c, struct att
  * saved, so leaving it put the shell's output in the wrong place.) A backmux
  * shell or user-mode call has its own tip in the chat window. */
 #define BROKER_NAME_MS 5000
+
+/* The name for an inline client (a stream with a terminal): only its own
+ * cells are touched - drawn at the right end of the top row, or given back
+ * what the screen holds there - and the cursor is put back where the
+ * program left it. Why not a repaint: inline, the rows above where the
+ * launch began are the person's own, and a repaint would wipe them. */
+static int name_cells(struct broker *b, struct attach_client *c, bool draw) {
+    struct hold_snapshot snap;
+    if (take_snapshot(b, &snap) != 0) return -1;
+    size_t ll = strlen(c->name_label);
+    int rc = 0;
+    if (snap.cells && snap.rows > 0 && snap.cols > ll) {
+        int start = (int)snap.cols - (int)ll;
+        char out[ALIAS_MAX_LEN * 4 + 160];
+        int k = snprintf(out, sizeof(out), "\033[1;%dH", start + 1);
+        if (draw) {
+            k += snprintf(out + k, sizeof(out) - (size_t)k, "\033[0;7m%s\033[0m", c->name_label);
+        } else {
+            k += snprintf(out + k, sizeof(out) - (size_t)k, "\033[0m");
+            for (size_t i = 0; i < ll && k + 8 < (int)sizeof(out); i++) {
+                const struct hold_cell *cell = &snap.cells[(size_t)start + i];
+                uint32_t cp = cell->ch[0] && cell->width ? cell->ch[0] : ' ';
+                k += (int)hold_utf8_encode(cp, out + k, sizeof(out) - (size_t)k);
+            }
+        }
+        k += snprintf(out + k, sizeof(out) - (size_t)k, "\033[%u;%uH", snap.cursor_row + 1u, snap.cursor_col + 1u);
+        rc = write_all_wait(c->output, out, (size_t)k);
+    }
+    hold_snapshot_free(&snap);
+    return rc;
+}
+
 static void show_name(struct broker *b, struct attach_client *c) {
     c->name_shown = true;
-    if (b->chat || !b->ep.pty || c->stream || c->no_terminal || !b->store) return;
+    if (b->chat || !b->ep.pty || c->no_terminal || !b->store) return;
     struct hold_run_record r;
     char path[HOLD_PATH_MAX];
     if (hold_load_record_by_id(b->store->record_dir, b->run_id, &r, path, sizeof(path)) != 0) return;
     /* The name, and the key to everything else: the name is what msg,
-     * attach and every agent take, and Ctrl-PH (hold Ctrl, P then H) is the
+     * attach and every agent take, and Ctrl-P Ctrl-H (spelled out, for clarity) is the
      * one key nobody could guess. Never the command: it is what the person just typed. */
     char label[ALIAS_MAX_LEN + 32];
-    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " %s  Ctrl-PH: help ", r.name);
+    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " %s  Ctrl-P Ctrl-H: help ", r.name);
     else {
         char display[ID_DISPLAY_HEX_LEN + 1];
         hold_run_id_display(r.id, display);
-        snprintf(label, sizeof(label), " %s  Ctrl-PH: help ", display);
+        snprintf(label, sizeof(label), " %s  Ctrl-P Ctrl-H: help ", display);
     }
     hold_free_run_record(&r);
     snprintf(c->name_label, sizeof(c->name_label), "%s", label);
+    if (c->stream) { /* inline: the name's own cells only */
+        if (name_cells(b, c, true) == 0 && c->fd >= 0) c->name_until_ms = now_ms() + BROKER_NAME_MS;
+        return;
+    }
     if (repaint_raw(b, c, label) == 0 && c->fd >= 0) {
         c->name_until_ms = now_ms() + BROKER_NAME_MS;
         c->name_frame_ms = now_ms();
@@ -1771,7 +1808,11 @@ static void broker_serve(struct broker *b) {
         }
         if (cl.fd >= 0 && cl.name_until_ms && now_ms() >= cl.name_until_ms) {
             cl.name_until_ms = 0;
-            cl.needs_repaint = true; /* the screen as the program drew it: the name is gone */
+            if (cl.stream) { /* inline: the name's cells get back what is there */
+                if (name_cells(b, &cl, false) != 0) drop_attach(b, &cl);
+            } else {
+                cl.needs_repaint = true; /* the screen as the program drew it: the name is gone */
+            }
         }
         if (cl.fd >= 0 && cl.needs_repaint && cl.decided) {
             cl.needs_repaint = false;
@@ -1787,8 +1828,60 @@ static void broker_serve(struct broker *b) {
             if (n > 0) {
                 b->output_seq += (uint64_t)n;
                 b->last_output_ms = now_ms();
-                feed_screen(b, buf, (size_t)n);
-                if (b->chat) {
+                /* While the name is up, the program's screen switches split
+                 * the feed: the screen it leaves is repainted without the
+                 * name, the switch goes through as it came, and the name is
+                 * drawn again on the screen it is now on - nothing of the
+                 * name is left behind on the other one. */
+                bool split = !b->chat && cl.fd >= 0 && cl.name_until_ms && b->ep.pty;
+                size_t fed = 0;
+                if (split && cl.stream) {
+                    /* inline: the output goes through as it came; around a
+                     * screen switch the name is lifted from the screen being
+                     * left, and after it all, drawn again on top */
+                    static const char *const sw[] = {"\033[?1049h", "\033[?1049l", "\033[?1047h",
+                                                      "\033[?1047l", "\033[?47h",    "\033[?47l"};
+                    bool ok = true;
+                    for (ssize_t i = 0; i < n && ok; i++) {
+                        if (buf[i] != '\033') continue;
+                        for (size_t k = 0; k < sizeof(sw) / sizeof(sw[0]); k++) {
+                            size_t l = strlen(sw[k]);
+                            if ((size_t)(n - i) < l || memcmp(buf + i, sw[k], l) != 0) continue;
+                            feed_screen(b, buf + fed, (size_t)i - fed);
+                            ok = write_all_wait(cl.output, buf + fed, (size_t)i - fed) == 0 && name_cells(b, &cl, false) == 0;
+                            fed = (size_t)i;
+                            break;
+                        }
+                    }
+                    feed_screen(b, buf + fed, (size_t)n - fed);
+                    if (ok) ok = write_all_wait(cl.output, buf + fed, (size_t)n - fed) == 0 && name_cells(b, &cl, true) == 0;
+                    if (!ok) drop_attach(b, &cl);
+                    fed = (size_t)n;
+                    goto forwarded;
+                }
+                if (split) {
+                    static const char *const sw[] = {"\033[?1049h", "\033[?1049l", "\033[?1047h",
+                                                      "\033[?1047l", "\033[?47h",    "\033[?47l"};
+                    for (ssize_t i = 0; i < n && cl.fd >= 0; i++) {
+                        if (buf[i] != '\033') continue;
+                        for (size_t k = 0; k < sizeof(sw) / sizeof(sw[0]); k++) {
+                            size_t l = strlen(sw[k]);
+                            if ((size_t)(n - i) < l || memcmp(buf + i, sw[k], l) != 0) continue;
+                            feed_screen(b, buf + fed, (size_t)i - fed);
+                            if (repaint_raw(b, &cl, NULL) != 0 || write_all_wait(cl.output, sw[k], l) != 0)
+                                drop_attach(b, &cl);
+                            feed_screen(b, sw[k], l);
+                            fed = (size_t)i + l;
+                            cl.name_dirty = true;
+                            break;
+                        }
+                    }
+                }
+                feed_screen(b, buf + fed, (size_t)n - fed);
+                if (0) {
+                forwarded:
+                    if (cl.fd >= 0 && !cl.no_terminal) hold_screen_discard_output(b->screen);
+                } else if (b->chat) {
                     /* A backmux shell's terminal is drawn from the screen, never
                      * from these bytes, so it cannot answer the program's
                      * queries: the screen always does. */
@@ -1932,6 +2025,15 @@ void hold_run_console_broker(int parent_pipe,
     b.screen = hold_screen_new(init_rows, init_cols);
     if (!b.screen) {
         broker_fail_errno(&b, ENOMEM);
+    }
+    if (options && options->start_row > 0) {
+        /* Inline: the model's cursor starts where the person's is, so the
+         * model and their terminal scroll together and a repaint paints
+         * exactly what is on their screen. */
+        char at[32];
+        int n = snprintf(at, sizeof(at), "\033[%u;%uH", options->start_row, options->start_col ? options->start_col : 1);
+        hold_screen_feed(b.screen, at, (size_t)n);
+        hold_screen_discard_output(b.screen);
     }
     b.listener = hold_make_console_listener(sock_path, &b.fifo_writer);
     if (b.listener < 0) {

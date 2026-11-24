@@ -1253,6 +1253,16 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
     (void)add_pane(m, first);
     first->name_until = 0;
     if (m->chat) chat_set_screen(m->chat, first->scr);
+    /* Inline, the terminal shows this pane's screen already (and the
+     * person's lines above where the launch began): start from that, so
+     * chat paints only its own window instead of wiping the screen. */
+    if (hold_console_was_inline()) {
+        struct hold_snapshot snap;
+        if (hold_screen_snapshot(first->scr, &snap) == 0) {
+            comp_assume(m->comp, &snap);
+            hold_snapshot_free(&snap);
+        }
+    }
     struct hold_term_signals sig;
     hold_term_signals_install(&sig, true);
     if (command(m, cmd) == 1) goto detach;
@@ -1276,8 +1286,12 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
         /* One pane left and nothing floating: back to plain attach, the
          * screen exactly as it is without panes. */
         if (pane_total(m) == 1 && m->fl == FL_NONE && !m->lead && m->now >= m->names_until &&
-            !(m->chat && (chat_visible(m->chat) || chat_dragging(m->chat)))) {
+            !(m->chat && chat_on_screen(m->chat, m->now))) {
             struct pane *p = m->slot[0];
+            /* the last frame, with nothing over the program: inline nothing
+             * repaints after this, so nothing of chat may be left on it */
+            m->dirty = true;
+            render(m);
             snprintf(handback, hn, "%s", p->sock);
             /* The mouse reporting this compositor asked for goes off before
              * plain attach takes over: until the program's own repaint

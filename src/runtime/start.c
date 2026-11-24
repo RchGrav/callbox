@@ -18,6 +18,41 @@ static volatile sig_atomic_t g_restart_stop = 0;
  * -d call's supervisor (waiter or restart supervisor) holds the lifetime log
  * lock - only under the fallback. The record says the same (liveness_lock). */
 static bool g_liveness_lock = false;
+
+/* Where the person's cursor is (1-based), asked of their terminal (DSR 6):
+ * 0 when it does not answer within a moment. Keys typed meanwhile are
+ * dropped with the answer - it takes a few milliseconds. */
+static void ask_cursor(unsigned short *row, unsigned short *col) {
+    *row = *col = 0;
+    struct hold_term_saved saved;
+    memset(&saved, 0, sizeof(saved));
+    if (hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_RAW, &saved) != 0 || !saved.saved) return;
+    if (hold_write_all(STDOUT_FILENO, "\033[6n", 4) == 0) {
+        char buf[64];
+        size_t n = 0;
+        int64_t waited = 0;
+        while (n < sizeof(buf) - 1 && waited < 300) {
+            struct pollfd p = {.fd = STDIN_FILENO, .events = POLLIN};
+            if (poll(&p, 1, 50) <= 0) {
+                waited += 50;
+                continue;
+            }
+            ssize_t k = read(STDIN_FILENO, buf + n, sizeof(buf) - 1 - n);
+            if (k <= 0) break;
+            n += (size_t)k;
+            buf[n] = '\0';
+            if (memchr(buf, 'R', n)) break;
+        }
+        buf[n] = '\0';
+        const char *esc = strstr(buf, "\033[");
+        unsigned r = 0, c = 0;
+        if (esc && sscanf(esc + 2, "%u;%uR", &r, &c) == 2 && r > 0 && c > 0 && r < 10000 && c < 10000) {
+            *row = (unsigned short)r;
+            *col = (unsigned short)c;
+        }
+    }
+    hold_term_input_restore(&saved);
+}
 /* Plain -d under the fallback: no supervisor, so the program's own output
  * descriptors carry the lock (lock held = it runs; gone proves nothing). */
 static bool g_output_lock = false;
@@ -670,6 +705,13 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         }
         console_options.cols = (unsigned short)cols;
         console_options.rows = (unsigned short)rows;
+        /* A fresh launch attached on the person's terminal starts where
+         * their cursor is, not on a cleared alternate screen: a TUI clears
+         * the screen itself if it wants to, and a shell goes on below. */
+        if (tail && !pipe_mode && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO)) {
+            ask_cursor(&console_options.start_row, &console_options.start_col);
+            if (console_options.start_row > console_options.rows) console_options.start_row = console_options.rows;
+        }
     }
 
     /* Launched as named (symlinks intact: a venv's python finds its venv by
@@ -1177,6 +1219,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
              * went; there is no screen to print again when it ends. */
             bool on_terminal = console_mode && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
             hold_prepare_mux(inv, store);
+            hold_console_set_inline(console_options.start_row > 0);
             tail_rc = hold_run_native_console(r.console_sock);
             if (hold_console_reader_gone()) {
                 /* `backmux foo | head`: the reader has what it wanted. foo is

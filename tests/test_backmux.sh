@@ -5635,7 +5635,9 @@ wait_call() {
 # call runs `stty size` at once, and this reads it back from the screen.
 first_size() {
   "$HOLD_BIN" wait "$1" --regex '^[0-9]+ [0-9]+$' --timeout 8000 >/dev/null || return 1
-  "$HOLD_BIN" peek "$1" | sed -n 1p
+  # the first size line, not row 1: a launch on a terminal starts inline,
+  # on the row where the cursor was
+  "$HOLD_BIN" peek "$1" | grep -m1 -E '^[0-9]+ [0-9]+$'
 }
 
 # --size COLS ROWS: the PTY and backmux's screen are that size before the program
@@ -5783,7 +5785,7 @@ start_term() {
   local term="$1" call="$2" cols="${3:-100}" rows="${4:-24}"
   "$HOLD_BIN" -dt --size "$cols" "$rows" --name "$term" -- "$HOLD_REAL_BIN" attach "$call" </dev/null >/dev/null || return 1
   # (peek trims the label's trailing blank)
-  "$HOLD_BIN" wait "$term" --regex " $call  Ctrl-PH: help *\$" --timeout 8000 >/dev/null || { "$HOLD_BIN" peek "$term" >&2; return 1; }
+  "$HOLD_BIN" wait "$term" --regex " $call  Ctrl-P Ctrl-H: help *\$" --timeout 8000 >/dev/null || { "$HOLD_BIN" peek "$term" >&2; return 1; }
 }
 
 # Ctrl-P Ctrl-A, then the call whose arguments show MARK in the picker's
@@ -5854,6 +5856,40 @@ wait_gone() {
   echo "'$2' never left $1's screen" >&2
   "$HOLD_BIN" peek "$1" >&2
   return 1
+}
+
+# A fresh launch on a terminal starts inline: no alternate screen, nothing
+# cleared - the lines already on the screen stay, the program goes on below
+# them, chat opens over them without wiping the screen and leaves nothing of
+# itself behind, and nothing is reprinted when the program ends. A program
+# that takes the whole screen (vim) gives it back on detach.
+test_inline_launch_keeps_the_screen() {
+  "$HOLD_BIN" detach --size 80 16 --name term -- /bin/sh >/dev/null || return 1
+  "$HOLD_BIN" send term 'echo line-one; echo line-two' -k Enter || return 1
+  "$HOLD_BIN" wait term --regex '^line-two$' --timeout 5000 >/dev/null || return 1
+  "$HOLD_BIN" send term "SHELL=/bin/sh \"$HOLD_REAL_BIN\" shell --name inl" -k Enter || return 1
+  "$HOLD_BIN" wait term --regex ' inl  Ctrl-P Ctrl-H: help *$' --timeout 8000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  out_has '^line-one$' "$HOLD_BIN" peek term || { echo "the launch wiped the screen" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  out_has '"alt_screen": false' "$HOLD_BIN" peek term --json || { echo "the launch took the alternate screen" >&2; return 1; }
+  "$HOLD_BIN" send term -k C-p -k C-t || return 1
+  "$HOLD_BIN" wait term --regex 'chat -> inl' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  out_has '^line-one' "$HOLD_BIN" peek term || { echo "chat wiped the screen" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" send term -k Escape || return 1
+  wait_gone term 'chat ->' || return 1
+  "$HOLD_BIN" send term 'echo inside' -k Enter || return 1
+  "$HOLD_BIN" wait term --regex '^inside$' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" send term 'exit' -k Enter || return 1
+  "$HOLD_BIN" wait inl --exit --timeout 5000 >/dev/null 2>&1 || true
+  sleep 0.5
+  [ "$("$HOLD_BIN" peek term | grep -c '^inside$')" -eq 1 ] || { echo "the last screen was reprinted" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  out_has '^line-two$' "$HOLD_BIN" peek term || return 1
+  # a full-screen program, inline, then detached: the screen comes back
+  "$HOLD_BIN" send term "\"$HOLD_REAL_BIN\" call --name full -- sh -c 'printf \"\\033[?1049h\\033[H\\033[2JFULL-SCREEN\"; exec cat'" -k Enter || return 1
+  "$HOLD_BIN" wait term --match FULL-SCREEN --timeout 8000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" send term -k C-p -k C-q || return 1
+  wait_gone term FULL-SCREEN || return 1
+  out_has '^line-one$' "$HOLD_BIN" peek term || { echo "detaching did not bring the screen back" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" end full term >/dev/null 2>&1 || true
 }
 
 # kill -9 cannot be caught, so a guard child gives the terminal back: its
@@ -6754,6 +6790,7 @@ run_test "initial size: --size, saved detach-size, invoking terminal, 80x24" tes
 run_test "an invalid size starts nothing and replaces nothing" test_invalid_sizes_start_nothing
 run_test "panes: Ctrl-P Ctrl-A puts a call beside; one pane is plain attach again" test_panes_attach_beside_and_hand_back
 run_test "kill -9 of the client: a guard gives the terminal back" test_kill_9_gives_the_terminal_back
+run_test "a launch on a terminal is inline: the screen stays, chat is no eraser" test_inline_launch_keeps_the_screen
 run_test "panes: four to a window, the fifth opens window 2; swap by letter, number, name" test_panes_windows_and_swap
 run_test "chat is the person's: raw or with a header, replies come back, it follows them" test_chat_is_the_persons
 run_test "the lead key: Ctrl-P Ctrl-P is one Ctrl-P, any other key cancels, help floats" test_lead_key_commands_and_cancel

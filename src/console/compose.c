@@ -51,6 +51,19 @@ void comp_invalidate(struct compositor *c) {
     c->term_known = false;
 }
 
+/* The terminal already shows base (an inline session: the program's own
+ * output is on it, from where the launch began, and above that the
+ * person's lines): take that as what is shown, so the next frame paints
+ * only what differs - a chat window's cells, not the whole screen. The
+ * terminal's modes are still sent. */
+void comp_assume(struct compositor *c, const struct hold_snapshot *base) {
+    if (!c->frame) return;
+    comp_begin(c, base);
+    memcpy(c->shown, c->frame, (size_t)c->rows * (size_t)c->cols * sizeof(*c->shown));
+    c->shown_valid = true;
+    c->term_known = false;
+}
+
 int comp_set_size(struct compositor *c, int rows, int cols) {
     if (rows < 1) rows = 1;
     if (cols < 1) cols = 1;

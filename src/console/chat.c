@@ -1917,3 +1917,10 @@ void chat_show_call(struct chat *c, const char *call_id, const char *label) {
     struct chat_thread *t = get_thread(c, TH_CALL, call_id, label ? label : call_id);
     if (t && t != c->current) show_thread(c, t);
 }
+
+/* Whether chat has anything drawn: the window, a drag of it, or its corner
+ * hint. The compositor keeps the screen until it has nothing, so nothing of
+ * chat is left behind when it hands the terminal back. */
+bool chat_on_screen(const struct chat *c, int64_t now) {
+    return c->visible || c->grab != GRAB_NONE || hint_showing(c, now) || total_unread(c, NULL) > 0;
+}

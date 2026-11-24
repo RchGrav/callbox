@@ -25,6 +25,9 @@ int hold_console_set_detach_keys(const unsigned char *keys, size_t len);
 #define HOLD_CHAT_KEY_DEFAULT 0x14   /* Ctrl-T */
 struct hold_console_options {
     unsigned short rows, cols;
+    /* A fresh launch on the person's terminal starts inline: the screen
+     * model's cursor starts where theirs is (1-based; 0 = top, as before). */
+    unsigned short start_row, start_col;
     bool chat;
     /* The program on pipes, not a PTY (backmux -i): its input is relayed by
      * the broker, so it can be cut and reconnected and the program never
@@ -52,6 +55,11 @@ void hold_console_set_line_mode(bool on);
 void hold_console_set_stream(bool on);
 /* A launch's own attach: SIGTERM to backmux is passed on to the program. */
 void hold_console_set_forward_term(bool on);
+/* A fresh launch attaching where the person's cursor is: no alternate
+ * screen (the screen is painted from the model, which starts on the
+ * cursor's row), nothing reprinted when it ends - it is all there already. */
+void hold_console_set_inline(bool on);
+bool hold_console_was_inline(void);
 /* Whether the last attach stopped because its stdout reader went away. */
 bool hold_console_reader_gone(void);
 /* target_pid_fd: -1 = do not report; otherwise the broker writes its forked

@@ -4,6 +4,7 @@
 #include "backmux/core.h"
 #include "backmux/term.h"
 #include "backmux/console_internal.h"
+#include "backmux/screen.h"
 
 #define CONSOLE_ATTACH_CTRL_P 0x10
 #define CONSOLE_ATTACH_CTRL_Q 0x11
@@ -102,6 +103,35 @@ void hold_console_term_release(void) {
     }
     memset(t, 0, sizeof(*t));
     t->guard_fd = -1;
+}
+
+static bool g_inline, g_was_inline;
+/* Inline: whether the program has switched the person's terminal to its own
+ * alternate screen (vim, htop do), so letting go can switch it back - else
+ * their prompt would land inside the program's screen. */
+static bool g_prog_alt;
+
+void hold_console_set_inline(bool on) {
+    g_inline = on;
+}
+
+bool hold_console_was_inline(void) {
+    return g_was_inline;
+}
+
+/* The program's own alternate-screen switches, seen in its output. */
+static void track_alt(const char *buf, size_t n) {
+    static const struct { const char *seq; bool on; } sw[] = {
+        {"\033[?1049h", true}, {"\033[?1049l", false}, {"\033[?1047h", true},
+        {"\033[?1047l", false}, {"\033[?47h", true},    {"\033[?47l", false},
+    };
+    for (size_t i = 0; i + 5 <= n; i++) {
+        if (buf[i] != '\033') continue;
+        for (size_t k = 0; k < sizeof(sw) / sizeof(sw[0]); k++) {
+            size_t l = strlen(sw[k].seq);
+            if (i + l <= n && !memcmp(buf + i, sw[k].seq, l)) g_prog_alt = sw[k].on;
+        }
+    }
 }
 
 static const struct hold_store *g_mux_store;
@@ -398,6 +428,7 @@ static int stdout_failed(void) {
 static int attach_on_output(void *ctx, const char *buf, size_t n) {
     struct attach_state *a = ctx;
     a->heard = true;
+    if (g_was_inline) track_alt(buf, n);
     const char *out = buf;
     size_t out_len = n;
     if (a->holding) {
@@ -477,10 +508,26 @@ static int attach_once(const char *sock_path) {
          * (no alternate screen); keys are read one by one so the detach keys
          * and Ctrl-C can be seen, and the line editor does the rest. */
         if (interactive) (void)hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_KEYS, &saved);
+    } else if (term->owned && g_was_inline) {
+        /* handed back by the compositor, inline: what is on the screen is
+         * the program's screen already - nothing is cleared or repainted */
     } else if (term->owned) {
         /* handed back by the compositor: raw, on the alternate screen; the
          * broker's repaint redraws it all */
         (void)hold_write_all(STDOUT_FILENO, "\033[0m\033[H\033[2J", 10);
+    } else if (interactive && g_inline && hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_RAW, &saved) == 0 &&
+               saved.saved) {
+        /* A fresh launch, inline: no alternate screen and nothing cleared.
+         * The program's output arrives as it was written (the broker replays
+         * it from the start, then streams it), from where the cursor is;
+         * the broker's model started on this row, so the screen below it is
+         * exactly the model, and what is above stays as the person left it. */
+        term->owned = true;
+        term->saved = saved;
+        term->alt_screen = false;
+        g_was_inline = true;
+        g_prog_alt = false;
+        start_guard(term);
     } else if (interactive && hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_RAW, &saved) == 0 && saved.saved &&
                hold_write_all(STDOUT_FILENO, "\033[?1049h\033[H\033[2J", 15) == 0) {
         alt_screen = true;
@@ -511,7 +558,7 @@ static int attach_once(const char *sock_path) {
     if (hold_write_all(writer, CONSOLE_ATTACH_MAGIC, CONSOLE_ATTACH_MAGIC_LEN) != 0) {
         if (errno == EPIPE || errno == ECONNRESET) g_gone = true; /* ended as we arrived */
         rc = 3;
-    } else if (g_stream && !interactive && write_frame(writer, CONSOLE_FRAME_STREAM, NULL, 0) != 0) {
+    } else if (((g_stream && !interactive) || g_was_inline) && write_frame(writer, CONSOLE_FRAME_STREAM, NULL, 0) != 0) {
         /* Not a terminal: ask for the output as a stream, not a screen. */
         if (errno == EPIPE || errno == ECONNRESET) g_gone = true;
         rc = 3;
@@ -556,6 +603,15 @@ static int attach_once(const char *sock_path) {
 
     /* The connection closing just after the detach keys is the detach. */
     if (a.detach_sent_ms && attach_now_ms() - a.detach_sent_ms < 2000) rc = 0;
+    /* Inline and letting go: the program's own full screen (vim) is switched
+     * back, or, if there is none, the prompt that follows starts on a line
+     * of its own instead of after the program's. A program that ended has
+     * already left its cursor on a fresh line. */
+    if (g_was_inline && !g_mux_cmd && term->owned) {
+        if (g_prog_alt) (void)hold_write_all(STDOUT_FILENO, "\033[?1049l", 8);
+        else if (a.detach_sent_ms) (void)hold_write_all(STDOUT_FILENO, "\r\n", 2);
+        g_prog_alt = false;
+    }
     if (g_gone && !a.heard && a.holding) {
         /* Only a refusal is taken from what is read after the break. A broker
          * whose program ended as we arrived may have left a screen repaint

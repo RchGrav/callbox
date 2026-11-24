@@ -114,7 +114,8 @@ static enum run_state after_attach(const struct hold_invocation *inv, const stru
     }
     if (program_ended(state)) await_exit_record(store, r->id);
     if (closed) {
-        if (on_terminal) (void)hold_print_final_screen(store, r->id, stdout);
+        /* Inline, the last screen is on the person's terminal already. */
+        if (on_terminal && !hold_console_was_inline()) (void)hold_print_final_screen(store, r->id, stdout);
         else if (unseen) (void)hold_print_run_log(r);
     }
     if (state == STATE_RUNNING && closed)
