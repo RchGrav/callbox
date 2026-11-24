@@ -894,7 +894,7 @@ static void draw_pick(struct mux *m) {
         snprintf(line, sizeof(line), "started  %s", p->started[0] ? p->started : "-");
         put(m, iy + 4, x + 2, w - 4, line, &ST_BOX);
     }
-    put(m, y + h - 1, x + 2, w - 4, "Up/Down choose  Enter attach  s swap panes  Esc close", &ST_BOX_DIM);
+    put(m, y + h - 1, x + 2, w - 4, "Up/Down choose  Enter attach  s swap panes", &ST_BOX_DIM);
 }
 
 static void draw_swap(struct mux *m) {
@@ -907,14 +907,14 @@ static void draw_swap(struct mux *m) {
         put(m, p->row, p->col, 6, text, &ST_LETTER);
     }
     char hint[160];
-    snprintf(hint, sizeof(hint), " swap: %s  (A-D, or a number: %d is window %d's first)  Esc cancels ",
+    snprintf(hint, sizeof(hint), " swap: %s  (A-D, or a number: %d is window %d's first) ",
              m->swap_first < 0 ? "press two letters" : "now the second", m->nwin * 4 + 1, m->nwin + 1);
     put(m, m->trows - 1, 0, m->tcols, hint, &ST_LETTER);
 }
 
 static const char *const help_lines[] = {
     "Ctrl-P Ctrl-Q   detach; everything keeps running",
-    "Ctrl-P Ctrl-T   chat (yours, over any pane; Esc hides it)",
+    "Ctrl-P Ctrl-T   chat (yours, over any pane)",
     "Ctrl-P Ctrl-A   attach another running call beside this one",
     "                (in that window: s swaps two panes)",
     "Ctrl-P Ctrl-N   show every pane's name",
@@ -925,8 +925,6 @@ static const char *const help_lines[] = {
     "",
     "Click a pane to move to it. Panes fill B A / C D, in order.",
     "backmux swap A,B  (A-D on this window, or numbers) from anywhere.",
-    "",
-    "Esc closes this.",
 };
 
 static void draw_help(struct mux *m) {

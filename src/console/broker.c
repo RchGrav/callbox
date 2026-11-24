@@ -396,7 +396,7 @@ struct attach_client {
      * the name over it, not as raw bytes: a program that redraws its whole
      * screen on attach (vim does, after the resize) would wipe the name
      * the moment it appeared. */
-    char name_label[ALIAS_MAX_LEN + 8];
+    char name_label[ALIAS_MAX_LEN + 32];
     bool name_dirty;
     int64_t name_frame_ms;
     unsigned char pending[16384];
@@ -1537,14 +1537,15 @@ static void show_name(struct broker *b, struct attach_client *c) {
     struct hold_run_record r;
     char path[HOLD_PATH_MAX];
     if (hold_load_record_by_id(b->store->record_dir, b->run_id, &r, path, sizeof(path)) != 0) return;
-    /* The name alone: it is what msg, attach and every agent take; the
-     * command is what the person just typed. */
-    char label[ALIAS_MAX_LEN + 8];
-    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " %s ", r.name);
+    /* The name, and the key to everything else: the name is what msg,
+     * attach and every agent take, and Ctrl-PH (hold Ctrl, P then H) is the
+     * one key nobody could guess. Never the command: it is what the person just typed. */
+    char label[ALIAS_MAX_LEN + 32];
+    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " %s  Ctrl-PH: help ", r.name);
     else {
         char display[ID_DISPLAY_HEX_LEN + 1];
         hold_run_id_display(r.id, display);
-        snprintf(label, sizeof(label), " %s ", display);
+        snprintf(label, sizeof(label), " %s  Ctrl-PH: help ", display);
     }
     hold_free_run_record(&r);
     snprintf(c->name_label, sizeof(c->name_label), "%s", label);
