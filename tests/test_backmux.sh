@@ -6031,6 +6031,17 @@ test_lead_key_commands_and_cancel() {
   out_has 'Ctrl-P Ctrl-A' "$HOLD_BIN" peek term || return 1
   "$HOLD_BIN" send term -k Escape || return 1
   wait_gone term 'backmux keys' || return 1
+  # back to plain attach: the compositor's mouse reporting is off again, so
+  # no movement is typed into the program
+  for i in $(seq 1 30); do out_has '"mouse": "none"' "$HOLD_BIN" peek term --json && break; sleep 0.1; done
+  out_has '"mouse": "none"' "$HOLD_BIN" peek term --json || { echo "mouse reporting left on after help closed" >&2; return 1; }
+  # help closes on a click too
+  "$HOLD_BIN" send term -k C-p -k C-h || return 1
+  "$HOLD_BIN" wait term --match 'backmux keys' --timeout 5000 >/dev/null || return 1
+  "$HOLD_BIN" send term --mouse click,5,5 || return 1
+  wait_gone term 'backmux keys' || return 1
+  for i in $(seq 1 30); do out_has '"mouse": "none"' "$HOLD_BIN" peek term --json && break; sleep 0.1; done
+  out_has '"mouse": "none"' "$HOLD_BIN" peek term --json || { echo "mouse reporting left on after a click closed help" >&2; return 1; }
   "$HOLD_BIN" send term --text z || return 1
   "$HOLD_BIN" wait kp --match '^Pyz' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek kp >&2; return 1; }
   "$HOLD_BIN" end kp >/dev/null 2>&1 || true

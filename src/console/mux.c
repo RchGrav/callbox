@@ -1279,6 +1279,10 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
             !(m->chat && (chat_visible(m->chat) || chat_dragging(m->chat)))) {
             struct pane *p = m->slot[0];
             snprintf(handback, hn, "%s", p->sock);
+            /* The mouse reporting this compositor asked for goes off before
+             * plain attach takes over: until the program's own repaint
+             * arrives, every movement would be typed into it. */
+            (void)hold_write_all(STDOUT_FILENO, "\033[?1000l\033[?1002l\033[?1003l\033[?1006l", 32);
             (void)frame(p->wfd, CONSOLE_FRAME_DETACH, NULL, 0);
             *handed_back = true;
             break;

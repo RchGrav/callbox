@@ -714,6 +714,11 @@ int hold_snapshot_repaint(const struct hold_snapshot *snap, char **buf, size_t *
                    m->app_cursor_keys ? 'h' : 'l', m->app_keypad ? '=' : '>',
                    m->bracketed_paste ? 'h' : 'l', m->focus_report ? 'h' : 'l') != 0)
         return -1;
+    /* The program's mouse mode, stated either way: off too. Why: whatever
+     * drew this terminal before (the compositor reports every movement)
+     * may have left reporting on, and a repaint must leave the terminal as
+     * the program has it - else each movement is typed into a shell. */
+    if (buf_printf(buf, len, cap, "\033[?1000l\033[?1002l\033[?1003l\033[?1006l") != 0) return -1;
     if (m->mouse != HOLD_MOUSE_NONE &&
         buf_printf(buf, len, cap, "\033[?%dh%s",
                    m->mouse == HOLD_MOUSE_MOVE ? 1003 : m->mouse == HOLD_MOUSE_DRAG ? 1002 : 1000,
