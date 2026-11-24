@@ -156,10 +156,12 @@ screen.
 
 Some sandboxes refuse Unix-domain sockets: `socket`, `bind`, or `listen`
 fails with `EPERM`, `EACCES`, or `EAFNOSUPPORT`. There the broker serves
-the same console over FIFOs instead, automatically;
-`CALLBOX_CONSOLE_TRANSPORT=fifo` forces it
-anywhere (useful for tests). Nothing is given up: peek, send, wait, resize,
-msg, and attach with detach and reattach all work.
+the same console over FIFOs instead, automatically.
+`CALLBOX_CONSOLE_TRANSPORT=fifo` forces that transport for tests. FIFO is a
+supported way to operate a call when sockets are unavailable: peek, send,
+wait, resize, msg, and attach with detach and reattach retain their usual
+behavior. A successful test with sockets available does not exercise the
+automatic fallback; the socket-denied tests below cover that condition.
 
 The endpoint is a FIFO (0600) at the usual `<id>.sock` path, and clients pick
 the transport by its file type. It only ever carries fixed-size 17-byte
@@ -175,11 +177,12 @@ control slot is taken; for an attach refused because the console is held,
 Access follows the socket rules. The client accepts an endpoint it owns (root
 accepts the call owner's, and hands its channel to that owner); the broker
 admits root, the call's owner, or the sudo-named user, judged by who owns the
-channel's FIFOs, which must be private. A message sender's claimed pid is
-believed only if that process holds the channel's `in` FIFO open (Linux
-`/proc/<pid>/fd`, macOS libproc) — the identity the socket gets from peer
-credentials. Channels left half-made by a client that died are removed by the
-broker when it exits and by `callbox purge`.
+channel's FIFOs, which must be private. A client's claimed pid is accepted
+only if that process holds the channel's `in` FIFO open (Linux
+`/proc/<pid>/fd`, macOS libproc). If the pid cannot be observed, it remains
+unknown; this does not reject an otherwise authorized control request.
+Channels left half-made by a client that died are removed by the broker
+when it exits and by `callbox purge`.
 
 On macOS, `poll()` never reports end-of-file on a FIFO (Linux does), so on
 quiet passes the attach client and the broker probe their FIFOs with
@@ -199,33 +202,37 @@ answers immediately with that screen and says whether the program still runs.
 ## Across PID namespaces
 
 Some sandboxes give each shell its own PID namespace over a shared
-filesystem, so a call's pid means nothing to a shell other than the one that
-launched it: `/proc` and `kill()` only reach the viewer's own namespace. callbox
-records the launching namespace (`pid_ns`, the inode of `/proc/self/ns/pid`)
-and, from any other, never consults the pid. It follows the chain of command
-instead:
+filesystem. A process ID from another namespace may be invisible here, or
+may identify an unrelated process. Callbox records the launching namespace
+(`pid_ns`, the inode of `/proc/self/ns/pid`) and, from a different namespace,
+uses the shared store and the call's broker instead of consulting that pid:
 
 - **Alive?** Under the fallback (Unix sockets denied, or
   `CALLBOX_CONSOLE_TRANSPORT=fifo`), a shared lock on the call's log, held for
-  its life, says it runs. A supervisor holds it — the broker of a TTY call
-  whose endpoint came up as a FIFO, or the waiter that a `-w`, `--rm`,
-  `--restart`, or foreground launch leaves behind — so when that lock goes
-  away, the call has ended:
-  `Exited (N)` if the exit was recorded, `Exited (?)` if it died with its
-  shell. A plain `-d` call has no supervisor: its own output descriptors carry
-  the lock, which shows it running, but a program may close its output, so
-  the lock going away proves nothing.
+  its life, says it runs. A supervisor holds it — the broker of a `-t` or
+  `-i` call whose endpoint came up as a FIFO, or the waiter that a `-w`,
+  `--rm`, `--restart`, or foreground launch leaves behind. A recorded exit
+  gives `Exited (N)`. Successfully checking that the lifetime lock is no
+  longer held gives `Exited (?)` if no exit was recorded. A missing or
+  unreadable log, or an error checking its lock, gives `Unknown`: failure to
+  inspect a lock is not evidence that it was released. A plain `-d` call has
+  no supervisor; its output descriptors carry the lock, but its program may
+  close them, so even a successfully observed unlocked log proves no exit.
 - **Drive it.** `peek`, `send`, `wait`, `resize`, and `msg` talk to the broker
-  through the console endpoint, a path both shells reach.
-- **Stop it.** For a `-dt` call, `end`/`kill` ask the broker (a `signal
-  sig=N` console request) to signal its program, which it can see. A non-TTY
-  call has no broker, so from another shell `end` says it is not running in
-  this environment and must be ended from the shell that started it.
+  through the console endpoint, a path both shells reach. `attach` uses the
+  same endpoint. They can try that connection even when status is `Unknown`:
+  a broker can still answer when this shell cannot inspect the call's pid or
+  log lock. The connection uses the same access checks as usual.
+- **Stop it.** For a `-dt` or `-di` call, `end`/`kill` ask the broker (a
+  `signal sig=N` console request) to signal its program, which it can see.
+  This can work when status is `Unknown` too. A plain `-d` or `-dw` call has
+  no broker; end it from the environment that started it. An unreachable
+  broker alone does not establish that the program exited.
 - **Can't tell.** No exit recorded and nothing vouching for the call — a
-  plain `-d` call whose lock is gone, or any call placed without the fallback
-  — reads `Unknown`, the spec's state for a call that cannot be evaluated.
-  Signals refuse it, purge sweeps leave it alone, a targeted
-  `callbox purge NAME --force` removes it, and `end` explains.
+  plain `-d` call whose lock is gone, a call with an unavailable lock probe,
+  or a call placed without the fallback — reads `Unknown`. Purge sweeps
+  leave it alone; a targeted `callbox purge NAME --force` removes its record.
+  Control goes through an available broker, never a foreign pid.
 
 Without the fallback, nothing is added: no lock is taken, and calls run
 exactly as they do anywhere else. A plain `-d` call never opens a socket, so
@@ -233,3 +240,25 @@ the launcher checks for the fallback explicitly: is FIFO forced, or is
 `socket` refused — and, on Linux, `bind` or `listen` on a throwaway abstract
 address? In the launching namespace, and on
 macOS (no PID namespaces), local evidence decides.
+
+### Regression coverage
+
+The `fifo-console` CI job runs the suite with FIFO explicitly selected and
+again with Unix sockets denied by `tests/socket_ban_shim.c`. The second run
+exercises automatic fallback. In `tests/test_callbox.sh`:
+
+- `test_fifo_console_full_capability` exercises the FIFO console itself.
+- `test_other_pid_namespace_follows_chain_of_command` checks live calls,
+  broker control, and exit evidence across PID namespaces.
+- `test_foreign_namespace_unavailable_log_is_unknown` checks missing and
+  unreadable logs, including protection from an ordinary purge.
+- `test_foreign_namespace_unknown_console_remains_usable` checks screen
+  inspection, input, resizing, messaging, and waiting through a reachable
+  FIFO broker while liveness evidence is unavailable.
+- `test_foreign_namespace_unknown_exit_wait_times_out` checks that an
+  unobservable call without a broker does not acquire an invented exit.
+- `test_foreign_namespace_unreachable_console_is_not_ended` checks that a
+  connection failure is reported without claiming that the call exited.
+
+These cases preserve the distinction between socket availability, process
+visibility, and evidence that a call has actually ended.

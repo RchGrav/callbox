@@ -104,9 +104,11 @@ to the call's end (`-f`).
   is gone, the group is matched by its recorded pgid+sid within the same
   boot — a deliberate best effort, since no atomic verify-and-signal exists
   for a process group. A recycled PID is never knowingly signaled.
-- A TTY call running in another PID namespace is signaled through its
-  broker, which can see its program. A plain `-d` call there has no broker
-  to ask and is refused (exit 3).
+- A call with a console (`-t` or `-i`) in another PID namespace is signaled
+  through its broker, which can see its program. This also works when local
+  status is `Unknown`; an unavailable PID or log-lock probe does not prove
+  exit. A plain `-d` or `-dw` call there has no broker to ask and is refused
+  (exit 3). An unreachable broker is reported as an error, not a stopped call.
 - `end` sends TERM, waits 5 seconds, revalidates, then sends KILL.
 - Records are trusted only after validation. `callbox list` reports a
   corrupt record; a purge sweep deletes it. It is never obeyed.

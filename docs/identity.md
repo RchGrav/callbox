@@ -2,9 +2,9 @@
 
 [Docs index](index.md) | [Previous: Store](store.md) | Related: [Launcher](launcher.md), [callbox identity](callbox-identity.md)
 
-Callbox records process identity at launch and checks it again before any risky action. That is why `callbox end <call>` is safer than `kill $PID`: a call ID or name selects a record, and the record must still match the live process table before Callbox sends a signal.
+Callbox records process identity at launch and checks it before signaling a local process. A call ID or name selects a record, which must match the live process before Callbox sends a signal. From another PID namespace, Callbox asks the call's broker to signal its own program instead.
 
-If the evidence is stale or inconclusive, Callbox refuses. The refusal protects you; it is not a failure being hidden.
+An unavailable process or lock probe does not mean that a call has exited. When status is `Unknown`, its console may still be reachable through the authenticated broker connection.
 
 ## Recorded identity
 
@@ -25,7 +25,7 @@ A probe can fail: the process may already be gone, permission may be denied, or 
 
 ## State evaluation
 
-`hold_eval_state` computes a call's state from its record and the live process table each time a command asks. Nothing stores the result. The record's `state` field holds only what the launcher (`running`) or an exit stamp (`exited`) wrote.
+`hold_eval_state` computes a call's state from its record and available liveness evidence each time a command asks: the local process table, or the log lock across PID namespaces. Nothing stores the result. The record's `state` field holds only what the launcher (`running`) or an exit stamp (`exited`) wrote.
 
 ```mermaid
 flowchart TD
@@ -43,7 +43,7 @@ flowchart TD
     Scan1 -->|empty or zombies| SE["exited"]
     Scan1 -->|scan error| SU
     Zombie -->|no| Present["Leader present?"]
-    Present -->|yes| Ident["Starttime differs?<br/>(if none recorded: exe dev/ino differs?)"]
+    Present -->|yes| Ident["Recorded process identity differs?"]
     Ident -->|yes| SS
     Ident -->|no, or nothing to compare| SR
     Present -->|no| Scan2["Scan group: same pgid and sid"]
@@ -59,9 +59,10 @@ flowchart TD
     NBoot -->|yes| SS
     NBoot -->|no| NExit["Exit code recorded?"]
     NExit -->|yes| SE
-    NExit -->|no| Lock["Log lock held?"]
-    Lock -->|yes| SR
-    Lock -->|no| LL["liveness_lock recorded?"]
+    NExit -->|no| Lock["Inspect log lock"]
+    Lock -->|held| SR
+    Lock -->|unavailable or error| SU
+    Lock -->|successfully checked: unlocked| LL["liveness_lock recorded?"]
     LL -->|yes| SE
     LL -->|no| SU
 
@@ -78,14 +79,19 @@ Notes on the diagram:
 - **Boot check:** applies only when the record has a boot ID and the current boot ID can be read.
 - **Marked failed:** means `state: failed` or a `launch_error` in the record. Callbox does not write either; the evaluator still honors them.
 - **Leader present:** the leader's stat is readable and it is not a zombie, or `kill(pid, 0)` succeeds or fails with `EPERM`.
+- **Process identity:** compare the recorded starttime, or the executable device and inode when no starttime was recorded and the executable can be inspected.
 
 **Zombie leader.** A zombie leader is not automatically done. The process-group leader can exit while useful descendants remain, which is common with launchers and shell wrappers. If live members of the same group and session remain, the call is running; if the group is empty or holds only zombies, it has exited.
 
 **Another PID namespace.** Some sandboxes give each shell its own PID namespace. There the recorded pid means nothing, and may even name an unrelated process, so it is never consulted. The filesystem is shared, and `flock` locks are held in the kernel, so a lock on the log can still show that the call is alive.
 
-These processes hold the lifetime lock: the waiter or restart supervisor of a call started under the console fallback (Unix sockets denied, or `CALLBOX_CONSOLE_TRANSPORT=fifo`), and a TTY broker whose endpoint is a FIFO. These calls record `liveness_lock: true`, so a lock that is gone proves the call ended.
+These processes hold the lifetime lock: the waiter or restart supervisor of a call started under the console fallback (Unix sockets denied, or `CALLBOX_CONSOLE_TRANSPORT=fifo`), and a broker whose endpoint is a FIFO. This includes both TTY calls (`-t`) and calls with input on a pipe (`-i`). These calls record `liveness_lock: true`.
+
+The probe has three outcomes: held, successfully checked and unlocked, or unavailable. A held lock shows the call is running. An unlocked lifetime lock gives `Exited (?)` when no exit was recorded. A missing or unreadable log, or an error from the lock operation, gives `Unknown`; it does not establish that a live supervisor released its lock.
 
 A plain `-d` call under the fallback has no supervisor. Its program's output descriptors hold a shared lock instead. A held lock shows the call runs; a missing lock proves nothing, because a program may close its output.
+
+The normal socket path takes no lifetime lock. A foreign call started that way can therefore have status `Unknown` while its broker is still reachable. Console commands can try the connection in that state, using the same access checks as for a known running call. Status evidence and the ability to communicate with the broker are separate. See [Console](console.md#where-unix-sockets-are-denied) for the supported FIFO path and its regression coverage.
 
 ## What each state allows
 
@@ -96,15 +102,16 @@ Purge uses these states. Signaling checks the live process itself (below); the s
 | running | yes, after validation | only with `--force`, which ends it first |
 | exited, failed | nothing to signal: reported as already exited | yes |
 | stale | refused | yes |
-| unknown | refused | only with `--force` |
+| unknown | through a reachable broker in another PID namespace; otherwise refused | only with `--force` |
 
 ## Signal safety
 
 `signal_one` (src/runtime/signal.c) loads the record. If the call runs in another PID namespace:
 
-- A TTY call is signaled through its broker, which can see its program.
-- A `-d` call has no broker to ask, so it is refused (exit 3).
+- A `-t` or `-i` call is signaled through its broker, which can see its program. This can work even when this shell reports `Unknown` because it cannot inspect the log lock.
+- A plain `-d` or `-dw` call has no broker to ask, so it is refused (exit 3).
 - `--print` is refused (exit 3), because the pid means nothing in this shell.
+- A failed broker connection is reported as a failure to reach the call, not as proof that it exited.
 
 Otherwise `validate_signal_target` checks the live process before any signal:
 
@@ -140,7 +147,7 @@ PID reuse is the core hazard. Callbox has no daemon to keep live state, so it re
 
 ## Implementation map
 
-`hold_eval_state`, `eval_local_state`, `supervisor_holds_log`, `hold_call_elsewhere`, `hold_report_session_escapees`, `hold_wait_target_group_gone` (src/runtime/state.c); `hold_read_proc_stat_tokens`, `hold_read_proc_exe`, `hold_leader_present`, `hold_group_exists`, `hold_group_session_liveness`, `hold_count_session_escapees`, `hold_current_pid_ns` (src/platform/process.c); `hold_current_boot_id`, `hold_boot_id_or_null` (src/platform/boot.c); `validate_signal_target`, `signal_through_broker`, `signal_one`, `hold_cmd_signal_action` (src/runtime/signal.c).
+`hold_eval_state`, `eval_local_state`, `probe_log_lock`, `hold_call_elsewhere`, `hold_report_session_escapees`, `hold_wait_target_group_gone` (src/runtime/state.c); `hold_read_proc_stat_tokens`, `hold_read_proc_exe`, `hold_leader_present`, `hold_group_exists`, `hold_group_session_liveness`, `hold_count_session_escapees`, `hold_current_pid_ns` (src/platform/process.c); `hold_current_boot_id`, `hold_boot_id_or_null` (src/platform/boot.c); `validate_signal_target`, `signal_through_broker`, `signal_one`, `hold_cmd_signal_action` (src/runtime/signal.c).
 
 ## Continue
 

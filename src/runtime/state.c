@@ -74,19 +74,27 @@ static enum run_state eval_local_state(const struct hold_run_record *r, const ch
     return STATE_UNKNOWN;
 }
 
-/* A call's supervisor (its broker, or the reaper of a -d call) holds a shared
+/* Under the socket-denied fallback, a call's broker or waiter holds a shared
  * lock on the call's log for as long as it lives. A process in another PID
  * namespace (some sandboxes give each shell its own) cannot see the call's
  * pid, but it shares the filesystem, and the lock is in the kernel: held
- * means the call is alive somewhere. */
-static bool supervisor_holds_log(const struct hold_run_record *r) {
-    if (!r->has_log || !r->log_path[0]) return false;
+ * means the call is alive somewhere. A failed observation is not a released
+ * lock: the log may be missing or unreadable while the supervisor runs. */
+enum log_lock_state { LOG_LOCK_UNKNOWN, LOG_LOCK_HELD, LOG_LOCK_RELEASED };
+
+static enum log_lock_state probe_log_lock(const struct hold_run_record *r) {
+    if (!r->has_log || !r->log_path[0]) return LOG_LOCK_UNKNOWN;
     int fd = open(r->log_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (fd < 0) return false;
-    bool held = flock(fd, LOCK_EX | LOCK_NB) != 0 && errno == EWOULDBLOCK;
-    if (!held) (void)flock(fd, LOCK_UN);
+    if (fd < 0) return LOG_LOCK_UNKNOWN;
+    enum log_lock_state state = LOG_LOCK_UNKNOWN;
+    if (flock(fd, LOCK_EX | LOCK_NB) == 0) {
+        state = LOG_LOCK_RELEASED;
+        (void)flock(fd, LOCK_UN);
+    } else if (errno == EWOULDBLOCK) {
+        state = LOG_LOCK_HELD;
+    }
     close(fd);
-    return held;
+    return state;
 }
 
 /* What this process can tell about a call. Launched in another PID namespace,
@@ -105,15 +113,15 @@ static enum run_state eval_state(const struct hold_run_record *r, const char *cu
         return STATE_FAILED;
     if (r->has_boot && current_boot && strcmp(r->boot_id, current_boot) != 0) return STATE_STALE;
     if (r->has_exit_code) return STATE_EXITED;
-    if (supervisor_holds_log(r)) {
+    enum log_lock_state lock = probe_log_lock(r);
+    if (lock == LOG_LOCK_HELD) {
         if (elsewhere) *elsewhere = true;
         return STATE_RUNNING;
     }
-    /* Its supervisor held a lock for the call's life and no longer does: it
-     * ended (with the shell that started it) before recording an exit. Only a
-     * call that never carried the lock - started without the fallback - is
-     * beyond what this shell can know. */
-    return r->liveness_lock ? STATE_EXITED : STATE_UNKNOWN;
+    /* Only a successfully observed release of a lifetime lock proves exit.
+     * An unavailable probe, or a plain -d call closing its own output, tells
+     * this namespace nothing about whether the program is still running. */
+    return lock == LOG_LOCK_RELEASED && r->liveness_lock ? STATE_EXITED : STATE_UNKNOWN;
 }
 
 enum run_state hold_eval_state(const struct hold_run_record *r, const char *current_boot) {

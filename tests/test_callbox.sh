@@ -5308,43 +5308,6 @@ test_inspect_reports_observed_state() {
   "$HOLD_BIN" purge killed >/dev/null 2>&1 || true
 }
 
-# The cross-shell machinery rides only on the fallback (Unix sockets denied,
-# or CALLBOX_CONSOLE_TRANSPORT=fifo). On a normal host a plain -d call is the
-# original: no control FIFO, no lifetime lock on its log, and a waiter blocked
-# in waitpid until the child exits. Under the fallback it carries both.
-test_plain_d_waiter_is_original_unless_fallback() {
-  local id pid waiter log ctl fallback=0
-  [ "${CALLBOX_CONSOLE_TRANSPORT:-}" = fifo ] || [ -n "${HOLD_TEST_SOCKETS_DENIED:-}" ] && fallback=1
-  "$HOLD_BIN" -d --name plainwait -- sleep 6000 >/dev/null || return 1
-  sleep 0.3
-  id=$("$HOLD_BIN" inspect plainwait | sed -n 's/^  "id": "\(.*\)",$/\1/p')
-  pid=$("$HOLD_BIN" inspect plainwait | sed -n 's/^  "pid": \([0-9]*\),$/\1/p')
-  waiter=$(ps -o ppid= -p "$pid" | tr -d ' ')
-  log=$(log_path "$id") || return 1
-  ctl="$(dirname "$log")/console/$id.ctl"
-  local locked
-  locked=$(python3 -c 'import fcntl,sys
-f = open(sys.argv[1])
-try:
-    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB); print("free")
-except OSError:
-    print("held")' "$log") || return 1
-  if [ "$fallback" -eq 1 ]; then
-    [ -p "$ctl" ] || { echo "fallback: no control FIFO" >&2; return 1; }
-    [ "$locked" = held ] || { echo "fallback: log not locked" >&2; return 1; }
-  else
-    [ ! -e "$ctl" ] || { echo "normal host: a control FIFO appeared" >&2; return 1; }
-    [ "$locked" = free ] || { echo "normal host: the log is locked" >&2; return 1; }
-    if [ "$(uname -s)" = Linux ] && [ -r "/proc/$waiter/wchan" ]; then
-      [ "$(cat "/proc/$waiter/wchan")" = do_wait ] || { echo "normal host: waiter not blocked in waitpid ($(cat "/proc/$waiter/wchan"))" >&2; return 1; }
-    fi
-  fi
-  "$HOLD_BIN" end plainwait >/dev/null || return 1
-  [ "$("$HOLD_BIN" wait plainwait)" = 143 ] || return 1
-  [ ! -e "$ctl" ] || { echo "control FIFO left behind" >&2; return 1; }
-  "$HOLD_BIN" purge plainwait >/dev/null 2>&1 || true
-}
-
 # Plain -d leaves nothing behind: one fork, setsid, output straight into the
 # log, exec - the program's parent is not callbox. -dw keeps a waiter blocked in
 # waitpid that records the exit code. On a normal host neither holds a lock on
@@ -5398,11 +5361,29 @@ test_plain_d_leaves_nothing_behind_dw_waits() {
   "$HOLD_BIN" purge plainwait waited >/dev/null 2>&1 || true
 }
 
-# Another PID namespace (some sandboxes give each shell its own): pids from
-# the launching shell mean nothing there, so callbox follows the chain of command -
-# a supervisor lock says the call is alive, and end/kill/send go through its
-# broker or waiter. Run as the test user inside `unshare --pid`.
+# Another PID namespace with its own /proc: the launching shell's PIDs must
+# not be used to decide whether the call runs. Prefer the existing root path;
+# a user namespace also lets an unprivileged sandbox exercise this behavior.
+PID_NS_MODE=""
+require_pid_namespace() {
+  [ "$(uname -s)" = Linux ] || { skip "PID namespaces are Linux"; return; }
+  command -v unshare >/dev/null 2>&1 || { skip "unshare unavailable"; return; }
+  if [ "$ROOT_ACTOR_AVAILABLE" -eq 1 ] && [ -n "$SUDO_BIN" ] &&
+     as_root unshare --pid --fork --mount-proc true 2>/dev/null; then
+    PID_NS_MODE=root
+  elif as_user unshare --user --map-current-user --pid --net --fork --mount-proc true 2>/dev/null; then
+    PID_NS_MODE=user
+  else
+    skip "cannot create a PID namespace with its own /proc"
+    return
+  fi
+}
+
 in_new_pid_ns() {
+  if [ "$PID_NS_MODE" = user ]; then
+    as_user unshare --user --map-current-user --pid --net --fork --mount-proc "$@"
+    return
+  fi
   local env_args=("HOME=$ACTOR_HOME" "HOLD_TEST_SYSTEM_STATE_DIR=$HOLD_TEST_SYSTEM_STATE_DIR"
     "HOLD_TEST_INVOKING_HOME=$ACTOR_HOME" "PATH=$PATH")
   local name
@@ -5413,9 +5394,7 @@ in_new_pid_ns() {
 }
 
 test_other_pid_namespace_follows_chain_of_command() {
-  [ "$(uname -s)" = Linux ] || skip "PID namespaces are Linux"
-  [ "$ROOT_ACTOR_AVAILABLE" -eq 1 ] && [ -n "$SUDO_BIN" ] || skip "needs root to make a PID namespace"
-  as_root unshare --pid --fork --mount-proc true 2>/dev/null || skip "unshare --pid unavailable"
+  require_pid_namespace || return $?
   local out
   # Launched here, driven and stopped from another namespace.
   # Only calls launched under the fallback carry the cross-shell lock: force it.
@@ -5455,6 +5434,154 @@ test_other_pid_namespace_follows_chain_of_command() {
   "$HOLD_BIN" purge nsunk --force >/dev/null || return 1
   ! "$HOLD_BIN" list -a | grep -q ' nsunk$' || return 1
   # (nst and nsd had ended, so the sweep above already removed them)
+}
+
+# Losing access to the supervisor's log is missing evidence, not evidence
+# that the supervisor exited. Check both denied access and a missing path.
+test_foreign_namespace_unavailable_log_is_unknown() {
+  require_pid_namespace || return $?
+  local id log problem out rc
+  CALLBOX_CONSOLE_TRANSPORT=fifo "$HOLD_BIN" -dw --name nslog -- sleep 300 >/dev/null || return 1
+  id=$("$HOLD_BIN" inspect nslog | sed -n 's/^  "id": "\(.*\)",$/\1/p')
+  log=$(log_path "$id") || return 1
+  for problem in unreadable missing; do
+    if [ "$problem" = unreadable ]; then
+      as_user chmod 000 "$log" || return 1
+    else
+      as_user mv "$log" "$log.hidden" || return 1
+    fi
+    rc=0
+    out=$(in_new_pid_ns /bin/sh -c '
+      "$1" inspect nslog | grep -q '\''"state": "unknown"'\'' || { "$1" inspect nslog; exit 1; }
+      "$1" list -a | grep -Eq "Unknown.* nslog$" || { "$1" list -a; exit 1; }
+      if "$1" purge nslog >/dev/null 2>&1; then echo "purged a call whose state is unknown"; exit 1; fi
+      echo ok' sh "$HOLD_REAL_BIN" 2>&1) || rc=$?
+    if [ "$problem" = unreadable ]; then
+      as_user chmod 600 "$log" || return 1
+    else
+      as_user mv "$log.hidden" "$log" || return 1
+    fi
+    [ "$rc" -eq 0 ] && [ "$out" = ok ] || { printf '%s: %s\n' "$problem" "$out" >&2; return 1; }
+  done
+  in_new_pid_ns "$HOLD_REAL_BIN" list -a | grep -Eq 'Up .* nslog$' || return 1
+  "$HOLD_BIN" end nslog >/dev/null || return 1
+}
+
+# Even when status is unknown, a reachable FIFO broker can inspect and drive
+# the terminal. Status observation must not disable the transport it describes.
+test_foreign_namespace_unknown_console_remains_usable() {
+  require_pid_namespace || return $?
+  local id log out rc=0
+  CALLBOX_CONSOLE_TRANSPORT=fifo "$HOLD_BIN" -dt --name nsconsole -- /bin/sh -c '
+    stty -echo; echo ready
+    while IFS= read -r line; do
+      [ "$line" != quit ] || exit 23
+      printf "GOT %s\n" "$line"
+    done' >/dev/null || return 1
+  "$HOLD_BIN" wait nsconsole --match ready --timeout 5000 || return 1
+  id=$("$HOLD_BIN" inspect nsconsole | sed -n 's/^  "id": "\(.*\)",$/\1/p')
+  log=$(log_path "$id") || return 1
+  as_user mv "$log" "$log.hidden" || return 1
+  out=$(in_new_pid_ns /bin/sh -c '
+    "$1" inspect nsconsole | grep -q '\''"state": "unknown"'\'' || { "$1" inspect nsconsole; exit 1; }
+    "$1" peek nsconsole | grep -qx ready || exit 1
+    "$1" send nsconsole from-namespace --enter --wait 100 >/dev/null || exit 1
+    "$1" wait nsconsole --match "GOT from-namespace" --timeout 3000 || exit 1
+    "$1" -dt --name nsviewer -- "$1" attach nsconsole >/dev/null || exit 1
+    "$1" wait nsviewer --match "GOT from-namespace" --timeout 5000 || exit 1
+    "$1" send nsviewer via-attach --enter >/dev/null || exit 1
+    "$1" wait nsconsole --match "GOT via-attach" --timeout 3000 || exit 1
+    "$1" send nsviewer -k C-p -k C-q >/dev/null || exit 1
+    [ "$("$1" wait nsviewer --exit --timeout 5000)" = 0 ] || exit 1
+    "$1" logs nsviewer | grep -q "detached from nsconsole; its process state is unknown" || exit 1
+    "$1" resize nsconsole 100 30 || exit 1
+    screen=$("$1" peek nsconsole --json) || exit 1
+    printf "%s\n" "$screen" | grep -q '\''"rows": 30'\'' || { echo "$screen"; exit 1; }
+    printf "%s\n" "$screen" | grep -q '\''"cols": 100'\'' || { echo "$screen"; exit 1; }
+    CALLBOX_NAME=nsobserver "$1" msg nsconsole message-through-unknown >/dev/null || exit 1
+    "$1" wait nsconsole --match message-through-unknown --timeout 3000 || exit 1
+    "$1" send nsconsole quit --enter >/dev/null || exit 1
+    [ "$("$1" wait nsconsole --exit --timeout 5000)" = 23 ] || exit 1
+    echo ok' sh "$HOLD_REAL_BIN" 2>&1) || rc=$?
+  as_user mv "$log.hidden" "$log" || return 1
+  [ "$rc" -eq 0 ] && [ "$(printf '%s\n' "$out" | tail -n 1)" = ok ] || { printf '%s\n' "$out" >&2; return 1; }
+}
+
+# A broker can stop its own process group when the caller cannot observe
+# that group. Neither end nor kill may fall back to foreign numeric PIDs.
+test_foreign_namespace_unknown_console_can_stop() {
+  require_pid_namespace || return $?
+  local action expected id log out rc
+  for action in end kill; do
+    expected=7
+    [ "$action" != kill ] || expected=137
+    CALLBOX_CONSOLE_TRANSPORT=fifo "$HOLD_BIN" -dt --name nssignal -- /bin/sh -c '
+      trap "exit 7" TERM; echo ready; while :; do sleep 0.1; done' >/dev/null || return 1
+    "$HOLD_BIN" wait nssignal --match ready --timeout 5000 || return 1
+    id=$("$HOLD_BIN" inspect nssignal | sed -n 's/^  "id": "\(.*\)",$/\1/p')
+    log=$(log_path "$id") || return 1
+    as_user mv "$log" "$log.hidden" || return 1
+    rc=0
+    out=$(in_new_pid_ns /bin/sh -c '
+      "$1" "$2" nssignal >/dev/null || exit 1
+      [ "$("$1" wait nssignal --exit --timeout 5000)" = "$3" ] || exit 1
+      echo ok' sh "$HOLD_REAL_BIN" "$action" "$expected" 2>&1) || rc=$?
+    as_user mv "$log.hidden" "$log" || return 1
+    [ "$rc" -eq 0 ] && [ "$(printf '%s\n' "$out" | tail -n 1)" = ok ] || { printf '%s: %s\n' "$action" "$out" >&2; return 1; }
+    "$HOLD_BIN" purge nssignal >/dev/null || return 1
+  done
+}
+
+# No observable supervisor and no exit stamp: wait must honor its timeout,
+# rather than inventing an exit after the grace period for an ended process.
+test_foreign_namespace_unknown_exit_wait_times_out() {
+  require_pid_namespace || return $?
+  local id log out rc=0
+  CALLBOX_CONSOLE_TRANSPORT=fifo "$HOLD_BIN" -dw --name nswait -- sleep 300 >/dev/null || return 1
+  id=$("$HOLD_BIN" inspect nswait | sed -n 's/^  "id": "\(.*\)",$/\1/p')
+  log=$(log_path "$id") || return 1
+  as_user mv "$log" "$log.hidden" || return 1
+  out=$(in_new_pid_ns /bin/sh -c '
+    result=$("$1" wait nswait --exit --timeout 3000 2>&1); rc=$?
+    [ "$rc" -eq 7 ] || { printf "wait rc=%s: %s\n" "$rc" "$result"; exit 1; }
+    case "$result" in *"wait timed out"*) ;; *) echo "$result"; exit 1 ;; esac
+    case "$result" in *ended*|*"never recorded"*) echo "$result"; exit 1 ;; esac
+    echo ok' sh "$HOLD_REAL_BIN" 2>&1) || rc=$?
+  as_user mv "$log.hidden" "$log" || return 1
+  [ "$rc" -eq 0 ] && [ "$out" = ok ] || { printf '%s\n' "$out" >&2; return 1; }
+  "$HOLD_BIN" end nswait >/dev/null || return 1
+}
+
+# An unreachable endpoint does not turn unknown process state into an exit.
+test_foreign_namespace_unreachable_console_is_not_ended() {
+  require_pid_namespace || return $?
+  local id log ep out rc=0
+  CALLBOX_CONSOLE_TRANSPORT=fifo "$HOLD_BIN" -dt --name nsmissing -- /bin/sh -c 'echo ready; sleep 300' >/dev/null || return 1
+  "$HOLD_BIN" wait nsmissing --match ready --timeout 5000 || return 1
+  id=$("$HOLD_BIN" inspect nsmissing | sed -n 's/^  "id": "\(.*\)",$/\1/p')
+  log=$(log_path "$id") || return 1
+  ep=$("$HOLD_BIN" inspect nsmissing | sed -n 's/.*"console_sock": "\(.*\)",/\1/p')
+  as_user mv "$log" "$log.hidden" || return 1
+  as_user mv "$ep" "$ep.hidden" || { as_user mv "$log.hidden" "$log"; return 1; }
+  out=$(in_new_pid_ns /bin/sh -c '
+    expect_unreachable() {
+      result=$("$@" 2>&1); rc=$?
+      [ "$rc" -eq 3 ] || { printf "rc=%s: %s\n" "$rc" "$result"; return 1; }
+      case "$result" in *"cannot reach"*) ;; *) echo "$result"; return 1 ;; esac
+      case "$result" in *ended*) echo "$result"; return 1 ;; esac
+    }
+    expect_unreachable "$1" peek nsmissing || exit 1
+    expect_unreachable "$1" send nsmissing hello || exit 1
+    expect_unreachable "$1" resize nsmissing 100 30 || exit 1
+    expect_unreachable "$1" wait nsmissing --match ready --timeout 500 || exit 1
+    expect_unreachable "$1" attach nsmissing </dev/null || exit 1
+    expect_unreachable "$1" end nsmissing || exit 1
+    expect_unreachable "$1" kill nsmissing || exit 1
+    echo ok' sh "$HOLD_REAL_BIN" 2>&1) || rc=$?
+  as_user mv "$ep.hidden" "$ep" || return 1
+  as_user mv "$log.hidden" "$log" || return 1
+  [ "$rc" -eq 0 ] && [ "$out" = ok ] || { printf '%s\n' "$out" >&2; return 1; }
+  "$HOLD_BIN" end nsmissing >/dev/null || return 1
 }
 
 # resize: the program gets SIGWINCH and the screen reports the new size.
@@ -6777,6 +6904,11 @@ run_test "peek --image wraps the footer on narrow screens" test_peek_image_foote
 run_test "inspect reports the observed state, keeping the recorded one" test_inspect_reports_observed_state
 run_test "plain -d leaves nothing behind; -dw keeps a waiter" test_plain_d_leaves_nothing_behind_dw_waits
 run_test "another PID namespace: status and control go through the supervisor" test_other_pid_namespace_follows_chain_of_command
+run_test "another PID namespace: unavailable log evidence leaves status unknown" test_foreign_namespace_unavailable_log_is_unknown
+run_test "another PID namespace: unknown status still permits console control" test_foreign_namespace_unknown_console_remains_usable
+run_test "another PID namespace: unknown status still permits stopping through the broker" test_foreign_namespace_unknown_console_can_stop
+run_test "another PID namespace: unknown exit waits time out without inventing an exit" test_foreign_namespace_unknown_exit_wait_times_out
+run_test "another PID namespace: unreachable console is not reported as ended" test_foreign_namespace_unreachable_console_is_not_ended
 run_test "the FIFO console keeps full capability" test_fifo_console_full_capability
 run_test "a closed terminal is reported at once, in both console modes" test_console_closed_terminal_is_reported
 run_test "FIFO console: root drives a user's call; others get nothing" test_fifo_console_access

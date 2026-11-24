@@ -82,42 +82,58 @@ static void await_exit_record(const struct hold_store *store, const char *id) {
  * stamped call has ended even when something it started lives on in its
  * process group (a background child on pipes keeps the group alive, and no
  * SIGHUP clears it). */
-static bool exit_recorded(const struct hold_store *store, const char *id) {
+static enum run_state program_state(const struct hold_store *store, const char *id) {
     struct hold_run_record r;
-    char path[HOLD_PATH_MAX];
-    if (hold_load_record_by_id(store->record_dir, id, &r, path, sizeof(path)) != 0) return false;
-    bool stamped = r.has_exit_code;
+    char path[HOLD_PATH_MAX], boot[128];
+    if (hold_load_record_by_id(store->record_dir, id, &r, path, sizeof(path)) != 0) {
+        int code;
+        return hold_auto_removed_exit(store, id, &code) ? STATE_EXITED : STATE_UNKNOWN;
+    }
+    enum run_state st = r.has_exit_code ? STATE_EXITED : hold_eval_state(&r, hold_boot_id_or_null(boot));
     hold_free_run_record(&r);
-    return stamped;
+    return st;
 }
 
-static bool program_running(const struct hold_store *store, const char *id) {
-    return hold_call_still_running(store, id) && !exit_recorded(store, id);
+static bool program_ended(enum run_state st) {
+    return st == STATE_EXITED || st == STATE_STALE || st == STATE_FAILED;
 }
 
-bool hold_after_attach(const struct hold_invocation *inv, const struct hold_store *store,
-                       const struct hold_run_record *r, const char *label, bool on_terminal, bool unseen) {
+static enum run_state after_attach(const struct hold_invocation *inv, const struct hold_store *store,
+                                  const struct hold_run_record *r, const char *label, bool on_terminal, bool unseen,
+                                  bool *console_closed) {
     struct stat st;
-    bool running = program_running(store, r->id);
+    enum run_state state = program_state(store, r->id);
     /* The broker removes the console's endpoint as soon as no more output
      * can come: the program ended, or closed its terminal and runs on. */
-    bool closed = unseen || !running || (lstat(r->console_sock, &st) != 0 && errno == ENOENT);
+    bool closed = unseen || program_ended(state) || (lstat(r->console_sock, &st) != 0 && errno == ENOENT);
     /* A console that closed under a running program is most often a program
      * on its way out: give it a moment to be gone before saying it runs on. */
-    for (int i = 0; running && closed && i < 10; i++) {
+    for (int i = 0; !program_ended(state) && closed && i < 10; i++) {
         nap_ms(100);
-        running = program_running(store, r->id);
+        state = program_state(store, r->id);
     }
-    if (!running) await_exit_record(store, r->id);
+    if (program_ended(state)) await_exit_record(store, r->id);
     if (closed) {
         if (on_terminal) (void)hold_print_final_screen(store, r->id, stdout);
         else if (unseen) (void)hold_print_run_log(r);
     }
-    if (running && closed)
+    if (state == STATE_RUNNING && closed)
         hold_sig_note(inv, "callbox: %s has closed its terminal and runs on; there is nothing to attach - see 'callbox logs %s'\n",
                       label, label);
-    else if (running) hold_note_detached(inv, label);
-    return !running;
+    else if (state == STATE_RUNNING) hold_note_detached(inv, label);
+    else if (state == STATE_UNKNOWN && closed)
+        hold_sig_note(inv, "callbox: cannot reach %s's console; its process state is unknown - see 'callbox logs %s'\n",
+                      label, label);
+    else if (state == STATE_UNKNOWN)
+        hold_sig_note(inv, "callbox: detached from %s; its process state is unknown here. Reconnect: callbox attach %s\n",
+                      label, label);
+    if (console_closed) *console_closed = closed;
+    return state;
+}
+
+bool hold_after_attach(const struct hold_invocation *inv, const struct hold_store *store,
+                       const struct hold_run_record *r, const char *label, bool on_terminal, bool unseen) {
+    return program_ended(after_attach(inv, store, r, label, on_terminal, unseen, NULL));
 }
 
 void hold_note_detached(const struct hold_invocation *inv, const char *label) {
@@ -133,11 +149,11 @@ static int attach_console_record(const struct hold_invocation *inv,
     char label[ALIAS_MAX_LEN + 1];
     call_label(r, label, sizeof(label));
     /* How an attach ended, as its exit code - so a script that attached can
-     * tell what it came back to: 0 detached, the call still runs; 8 the call
+     * tell what it came back to: 0 detached without a confirmed exit; 8 the call
      * has ended (before or while attached; the same "ended" as wait's 8);
-     * 3 refused (attached elsewhere, or this is that call); 10 the call has
+     * 3 unreachable or refused (attached elsewhere, or this is that call); 10 the call has
      * no console to attach to (the same "wrong kind of call" as peek's). */
-    if (st != STATE_RUNNING) {
+    if (program_ended(st)) {
         hold_sig_note(inv, "callbox: %s has ended - see 'callbox logs %s'\n", label, label);
         return 8;
     }
@@ -168,11 +184,14 @@ static int attach_console_record(const struct hold_invocation *inv,
         rc = 3;
     } else if (hold_console_was_gone()) {
         /* Its console closed between the look at its record and the attach. */
-        bool ended = hold_after_attach(inv, store, r, label, on_terminal, true);
+        enum run_state state = after_attach(inv, store, r, label, on_terminal, true, NULL);
+        bool ended = program_ended(state);
         if (ended) hold_sig_note(inv, "callbox: %s has ended - see 'callbox logs %s'\n", label, label);
-        rc = ended ? 8 : 0;
+        rc = ended ? 8 : state == STATE_UNKNOWN ? 3 : 0;
     } else if (rc == 0) {
-        rc = hold_after_attach(inv, store, r, label, on_terminal, false) ? 8 : 0;
+        bool closed = false;
+        enum run_state state = after_attach(inv, store, r, label, on_terminal, false, &closed);
+        rc = program_ended(state) ? 8 : state == STATE_UNKNOWN && closed ? 3 : 0;
     }
     return rc;
 }

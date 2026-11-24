@@ -44,8 +44,13 @@ static int resolve_system_public_id(const struct hold_store *store, const char *
 }
 
 bool hold_record_matches_alias_intent(const char *command, const struct hold_run_record *r, enum run_state st) {
-    if (!strcmp(command, "start") || !strcmp(command, "stop") || !strcmp(command, "kill")) {
+    if (!strcmp(command, "start")) {
         return st == STATE_RUNNING;
+    }
+    if (!strcmp(command, "stop") || !strcmp(command, "kill")) {
+        /* A console can answer even when this namespace cannot observe its
+         * process or log lock. signal_one routes foreign calls to the broker. */
+        return st == STATE_RUNNING || (st == STATE_UNKNOWN && r->has_console);
     }
     /* tail of an ended call prints its whole log (callbox help tail), so it
      * finds any call with a log, as logs does - and --tail of an ended call

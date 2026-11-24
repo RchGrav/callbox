@@ -58,6 +58,12 @@ static int no_screen(const struct screen_target *t) {
     return HOLD_EXIT_NO_SCREEN;
 }
 
+/* Unknown means the process cannot be observed here. Its broker may still
+ * answer, especially across PID namespaces sharing a filesystem. */
+static bool state_ended(enum run_state st) {
+    return st == STATE_EXITED || st == STATE_STALE || st == STATE_FAILED;
+}
+
 /* One control request, retried while the broker answers "error busy" (it
  * serves a bounded number of clients and turns the rest away without acting,
  * so retrying is safe) or a running call's socket refuses the connection
@@ -88,23 +94,31 @@ static int control_quiet(const struct screen_target *t, const char *req, size_t 
     }
 }
 
-/* Send one control request; *reply is the malloc'd reply. rc 0 when the
- * broker answered, else a nonzero exit status (message printed). */
 /* The call's state now (t->st is from when the command started). */
-static bool still_running(const struct screen_target *t) {
+static enum run_state current_state(const struct screen_target *t) {
     struct hold_run_record cur;
     char path[HOLD_PATH_MAX], boot[128];
-    if (hold_load_record_by_id(t->target.store.record_dir, t->r.id, &cur, path, sizeof(path)) != 0) return false;
-    bool running = hold_eval_state(&cur, hold_boot_id_or_null(boot)) == STATE_RUNNING;
+    if (hold_load_record_by_id(t->target.store.record_dir, t->r.id, &cur, path, sizeof(path)) != 0) {
+        int code;
+        return hold_auto_removed_exit(&t->target.store, t->r.id, &code) ? STATE_EXITED : STATE_UNKNOWN;
+    }
+    enum run_state st = hold_eval_state(&cur, hold_boot_id_or_null(boot));
     hold_free_run_record(&cur);
-    return running;
+    return st;
 }
 
+/* Send one control request; *reply is the malloc'd reply. rc 0 when the
+ * broker answered, else a nonzero exit status (message printed). */
 static int control(const struct screen_target *t, const char *req, size_t len, unsigned char **reply, size_t *reply_len) {
     if (control_quiet(t, req, len, reply, reply_len) != 0) {
         if (errno == ENOENT) {
             /* The broker stops listening once no more output can come. */
-            if (still_running(t))
+            enum run_state st = current_state(t);
+            if (st == STATE_UNKNOWN) {
+                fprintf(stderr, "callbox: cannot reach %s's console; its process state is unknown\n", t->label);
+                return 3;
+            }
+            if (st == STATE_RUNNING)
                 fprintf(stderr, "callbox: %s closed its terminal, so its console takes no more requests "
                                 "(the program is still running; callbox peek shows its last screen)\n", t->label);
             else
@@ -177,7 +191,7 @@ int hold_print_final_screen(const struct hold_store *store, const char *id, FILE
  * the last full-screen (alternate) frame the program left instead. */
 static int load_snapshot(const struct screen_target *t, struct hold_snapshot *snap, bool last_alt) {
     if (!t->r.has_console) return no_screen(t);
-    if (t->st == STATE_RUNNING) {
+    if (!state_ended(t->st)) {
         unsigned char *reply = NULL;
         size_t len = 0;
         const char *req = last_alt ? "peek alt=1" : "peek";
@@ -202,9 +216,15 @@ static int load_snapshot(const struct screen_target *t, struct hold_snapshot *sn
         if (err != ENOENT)
             fprintf(stderr, "callbox: cannot reach %s's console (%s); showing its last saved screen\n", t->label,
                     strerror(err));
-        else if (still_running(t))
-            fprintf(stderr, "callbox: note: %s closed its terminal; this is its last screen (the program is still running)\n",
-                    t->label);
+        else {
+            enum run_state st = current_state(t);
+            if (st == STATE_RUNNING)
+                fprintf(stderr, "callbox: note: %s closed its terminal; this is its last screen (the program is still running)\n",
+                        t->label);
+            else if (st == STATE_UNKNOWN)
+                fprintf(stderr, "callbox: cannot reach %s's console; its process state is unknown; showing its last saved screen\n",
+                        t->label);
+        }
     }
     if (last_alt) {
         if (read_saved_frame(t, ".altscreen", snap) == 0) return 0;
@@ -220,12 +240,13 @@ static int load_snapshot(const struct screen_target *t, struct hold_snapshot *sn
         }
         return 0;
     }
-    if (still_running(t))
+    enum run_state st = current_state(t);
+    if (!state_ended(st))
         fprintf(stderr, "callbox: %s's console is not answering and left no saved screen - see 'callbox logs %s'\n", t->label,
                 t->label);
     else
         fprintf(stderr, "callbox: %s has ended and left no saved screen - see 'callbox logs %s'\n", t->label, t->label);
-    return 5;
+    return st == STATE_UNKNOWN ? 3 : 5;
 }
 
 /* "300", "300ms", "2s", "1.5s", "1m" -> milliseconds; -1 on garbage. */
@@ -609,7 +630,7 @@ static int send_action_impl(const struct hold_invocation *inv,
     if (rc != 0) goto out;
     if (!t.r.has_console) {
         rc = no_screen(&t);
-    } else if (t.st != STATE_RUNNING) {
+    } else if (state_ended(t.st)) {
         fprintf(stderr, "callbox: %s has ended - see 'callbox peek %s'\n", t.label, t.label);
         rc = WAIT_EXIT_ENDED;
     } else {
@@ -633,9 +654,16 @@ static int send_action_impl(const struct hold_invocation *inv,
                 snprintf(args, sizeof(args), "wait idle=%ld since=%llu timeout=%ld", wait_ms ? wait_ms : 1, sv, timeout_ms);
                 rc = run_wait(&t, args, false, true);
                 if (rc == WAIT_CONSOLE_CLOSED) {
-                    fprintf(stderr, "callbox: input sent; %s then %s\n", t.label,
-                            still_running(&t) ? "closed its terminal" : "ended");
-                    rc = WAIT_EXIT_ENDED;
+                    enum run_state st = current_state(&t);
+                    if (st == STATE_UNKNOWN) {
+                        fprintf(stderr, "callbox: input sent; cannot reach %s's console now; its process state is unknown\n",
+                                t.label);
+                        rc = 3;
+                    } else {
+                        fprintf(stderr, "callbox: input sent; %s then %s\n", t.label,
+                                st == STATE_RUNNING ? "closed its terminal" : "ended");
+                        rc = WAIT_EXIT_ENDED;
+                    }
                 }
             }
             /* An undelivered mouse event is a failed step for a script. */
@@ -741,11 +769,9 @@ static int wait_record_exit(const struct screen_target *t, long timeout_ms) {
             printf("-1\n");
             return 0;
         }
-        /* Not running, nothing recorded, and no supervisor holds the call (it
-         * would answer even from another PID namespace): it was killed with
-         * its reaper, and nobody will record an exit. Allow the usual moment
-         * between an exit and its stamp, then say so instead of waiting on. */
-        if (st != STATE_RUNNING && !has) {
+        /* A confirmed exit can precede its stamp. An unknown state supplies
+         * no such evidence: keep waiting for an exit or the requested timeout. */
+        if (st == STATE_EXITED && !has) {
             struct timespec now;
             clock_gettime(CLOCK_MONOTONIC, &now);
             if (unstamped_since.tv_sec == 0) unstamped_since = now;
@@ -756,6 +782,8 @@ static int wait_record_exit(const struct screen_target *t, long timeout_ms) {
                 printf("-1\n");
                 return 0;
             }
+        } else {
+            unstamped_since = (struct timespec){0, 0};
         }
         struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
@@ -871,7 +899,7 @@ static int wait_action_impl(const struct hold_invocation *inv,
     int rc = open_screen_target(inv, user_store, system_store, "wait", token, &t);
     if (rc != 0) return rc;
     if (!screen_cond) {
-        rc = (t.r.has_console && t.st == STATE_RUNNING) ? -1 : wait_record_exit(&t, timeout);
+        rc = (t.r.has_console && !state_ended(t.st)) ? -1 : wait_record_exit(&t, timeout);
         if (rc != -1) {
             /* --rm: removed before we return, so the name is free again. */
             if (rc == 0) hold_auto_remove_settle(&t.target.store, t.r.id, 2000);
@@ -883,7 +911,7 @@ static int wait_action_impl(const struct hold_invocation *inv,
         close_screen_target(&t);
         return rc;
     }
-    if (t.st != STATE_RUNNING) {
+    if (state_ended(t.st)) {
         /* Ended: a match may still hold on the final frame. */
         rc = match && saved_screen_matches(&t, match, regex) ? 0 : WAIT_EXIT_ENDED;
         if (rc != 0) fprintf(stderr, "callbox: %s has already ended\n", t.label);
@@ -914,12 +942,16 @@ static int wait_action_impl(const struct hold_invocation *inv,
         } else if (match && saved_screen_matches(&t, match, regex)) {
             rc = 0; /* the last screen is final, and it shows the text */
         } else {
-            if (still_running(&t))
+            enum run_state st = current_state(&t);
+            if (st == STATE_RUNNING)
                 fprintf(stderr, "callbox: %s closed its terminal before the condition held (the program is still running)\n",
+                        t.label);
+            else if (st == STATE_UNKNOWN)
+                fprintf(stderr, "callbox: cannot reach %s's console before the condition held; its process state is unknown\n",
                         t.label);
             else
                 fprintf(stderr, "callbox: %s ended before the condition held\n", t.label);
-            rc = WAIT_EXIT_ENDED;
+            rc = st == STATE_UNKNOWN ? 3 : WAIT_EXIT_ENDED;
         }
     } else if (!screen_cond && rc == 3) {
         /* The broker can vanish with its call before answering (an --rm
@@ -960,7 +992,7 @@ int hold_cmd_resize_action(const struct hold_invocation *inv,
     if (rc != 0) return rc;
     if (!t.r.has_console) {
         rc = no_screen(&t);
-    } else if (t.st != STATE_RUNNING) {
+    } else if (state_ended(t.st)) {
         fprintf(stderr, "callbox: %s has ended\n", t.label);
         rc = WAIT_EXIT_ENDED;
     } else {
@@ -1176,7 +1208,7 @@ static int msg_action_impl(const struct hold_invocation *inv,
     if (rc != 0) goto out;
     if (!t.r.has_console) {
         rc = no_screen(&t);
-    } else if (t.st != STATE_RUNNING) {
+    } else if (state_ended(t.st)) {
         fprintf(stderr, "callbox: %s has ended\n", t.label);
         rc = WAIT_EXIT_ENDED;
     } else {

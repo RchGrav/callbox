@@ -89,7 +89,7 @@ static int validate_signal_target(const char *id,
 
 /* ---- end/stop/kill ---------------------------------------------------- */
 
-/* A TTY call running where this shell cannot see its pid (another PID
+/* A console call running where this shell cannot see its pid (another PID
  * namespace): follow the chain of command and ask its broker - which can see
  * its program - to signal it. 0 when asked, -1 when no broker answers. */
 static int signal_through_broker(const struct hold_run_record *r, int sig) {
@@ -124,10 +124,14 @@ static bool call_ended_within(const struct hold_store *store, const char *id, in
     for (int waited = 0;; waited += 50) {
         struct hold_run_record cur;
         char path[HOLD_PATH_MAX], boot[128];
-        if (hold_load_record_by_id(store->record_dir, id, &cur, path, sizeof(path)) != 0) return true;
-        bool running = hold_eval_state(&cur, hold_boot_id_or_null(boot)) == STATE_RUNNING;
-        hold_free_run_record(&cur);
-        if (!running) return true;
+        if (hold_load_record_by_id(store->record_dir, id, &cur, path, sizeof(path)) != 0) {
+            int code;
+            if (hold_auto_removed_exit(store, id, &code)) return true;
+        } else {
+            enum run_state st = hold_eval_state(&cur, hold_boot_id_or_null(boot));
+            hold_free_run_record(&cur);
+            if (st == STATE_EXITED || st == STATE_FAILED || st == STATE_STALE) return true;
+        }
         if (waited >= ms) return false;
         struct timespec sl = {.tv_sec = 0, .tv_nsec = 50 * 1000000L};
         nanosleep(&sl, NULL);
@@ -149,21 +153,46 @@ static int signal_one(const struct hold_store *store,
     if (hold_load_record_by_id(store->record_dir, id, &r, path, sizeof(path)) != 0) return 5;
     char boot[128];
     int rc = 0;
-    if (hold_call_elsewhere(&r, hold_boot_id_or_null(boot))) {
+    uint64_t here = hold_current_pid_ns();
+    bool foreign = r.pid_ns != 0 && here != 0 && r.pid_ns != here;
+    if (foreign) {
+        enum run_state st = hold_eval_state(&r, hold_boot_id_or_null(boot));
+        if (st == STATE_STALE) {
+            rc = refuse_signal(id, "is stale and cannot be signaled");
+            goto out;
+        }
+        if (st == STATE_EXITED || st == STATE_FAILED) {
+            if (print_cmd) rc = refuse_signal(id, "is not running and cannot be printed as a signal command");
+            else *already_done = true;
+            goto out;
+        }
         if (!r.has_console || print_cmd) {
             /* A -d call has no broker to ask (it stays the minimal mode), and
              * there is no kill command to print for a pid that means nothing
              * here. */
-            not_running_here(&r, true);
+            not_running_here(&r, st == STATE_RUNNING);
             rc = 3;
             goto out;
         }
         if (signal_through_broker(&r, sig) != 0) {
-            *already_done = true; /* no broker answered: it has ended */
+            if (call_ended_within(store, id, 0)) *already_done = true;
+            else {
+                fprintf(stderr, "callbox: cannot reach %s's console to signal it; its exit is not confirmed\n",
+                        r.has_name ? r.name : r.id);
+                rc = 3;
+            }
             goto out;
         }
         if (!graceful || call_ended_within(store, id, STOP_TIMEOUT_MS)) goto out;
-        if (signal_through_broker(&r, SIGKILL) != 0 || call_ended_within(store, id, 1000)) goto out;
+        if (signal_through_broker(&r, SIGKILL) != 0) {
+            if (!call_ended_within(store, id, 0)) {
+                fprintf(stderr, "callbox: cannot reach %s's console to finish stopping it; its exit is not confirmed\n",
+                        r.has_name ? r.name : r.id);
+                rc = 3;
+            }
+            goto out;
+        }
+        if (call_ended_within(store, id, 1000)) goto out;
         rc = 4;
         goto out;
     }
