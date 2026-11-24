@@ -39,7 +39,7 @@
 
 #define MUX_MAX_WINDOWS 10 /* one per number key: 1-9, then 0 */
 #define MUX_MAX_PANES (MUX_MAX_WINDOWS * 4)
-#define MUX_NAME_MS 2000     /* a name shown on arrival, focus or hover */
+#define MUX_NAME_MS 2000     /* a name shown on arrival or focus */
 #define MUX_FRAME_MS 16      /* output is drawn at most this often */
 #define MUX_LOOK_MS 250      /* how often chat looks at the inbox and its owner */
 /* How often a FIFO pane is read without poll saying so. Why: macOS's poll
@@ -62,7 +62,6 @@
 #define KEY_HOLD 0x80   /* Ctrl-Space held (handed over by plain attach): the keys and names */
 #define MUX_TAP_MS 700    /* a second Ctrl-Space within this is a hold (key repeat starts at 250-660 ms) */
 #define MUX_LET_GO_MS 150 /* no repeat for this long: let go (repeats come every 30-92 ms) */
-#define MUX_HOLD_MS 3000  /* held this long: the keys and the names show */
 
 struct pane {
     char id[ID_STR_LEN];
@@ -99,6 +98,7 @@ struct mux {
     bool nul_pending, holding;
     int64_t nul_first, nul_last;
     int64_t fifo_probe_at; /* the next read of FIFO panes poll said nothing of */
+    bool assumed;          /* the frame on the terminal was assumed (inline) */
     int view;  /* the window on screen */
     int focus; /* a slot on the window on screen */
     struct compositor *comp;
@@ -108,7 +108,6 @@ struct mux {
     bool lead;
     int64_t window_note_until;
     int64_t names_until;
-    int hover; /* slot under the pointer, -1 none */
     bool advertise; /* the panes changed: rewrite chat/mux.<pid> for backmux swap */
     /* the attach picker's list, as last drawn (a click picks a row) */
     int pick_x, pick_w, pick_top, pick_first, pick_rows;
@@ -334,6 +333,13 @@ static void relayout(struct mux *m) {
                 pane_resize(p, h, wd);
             }
         }
+    }
+    /* An inline terminal still shows the person's lines above the launch,
+     * which no pane holds: once a second pane splits the screen it is all
+     * ours, so the next frame paints all of it instead of assuming. */
+    if (m->assumed && pane_total(m) > 1) {
+        comp_invalidate(m->comp);
+        m->assumed = false;
     }
     m->dirty = true;
     m->advertise = true;
@@ -838,7 +844,9 @@ static void render(struct mux *m) {
     struct pane *f = focused(m);
     int n = win_count(m, m->view);
     bool full = m->full && m->full == f;
-    bool show_keys = m->holding && m->now - m->nul_first >= MUX_HOLD_MS;
+    /* From the first repeat: holding Ctrl-Space is never an accident, so
+     * there is nothing to wait out (3 s was for holding Ctrl alone). */
+    bool show_keys = m->holding;
     for (int k = 0; k < n; k++) {
         struct pane *p = m->slot[m->view * 4 + k];
         if (full && p != m->full) continue;
@@ -849,14 +857,18 @@ static void render(struct mux *m) {
         }
     }
     if (!full) draw_separators(m);
-    /* names: on arrival, focus, hover, or Ctrl-Space held */
+    /* names: on arrival, focus, or Ctrl-Space held */
     for (int k = 0; k < n; k++) {
         struct pane *p = m->slot[m->view * 4 + k];
         if (full && p != m->full) continue;
         if (m->now < p->name_until || show_keys) {
             char text[ALIAS_MAX_LEN + 8];
             snprintf(text, sizeof(text), " %s ", p->name);
-            draw_badge(m, p->row, p->col + p->cols, text, &ST_NAME);
+            /* A pane in the left column has its name at its left corner, the
+             * rest at their right: names sit at the screen's outer edges,
+             * clear of help and the other floating windows in the middle. */
+            if (p->col == 0 && p->cols < m->tcols) put(m, p->row, 0, (int)strlen(text), text, &ST_NAME);
+            else draw_badge(m, p->row, p->col + p->cols, text, &ST_NAME);
         }
     }
     /* More than one window in this terminal: the key to the next, and where
@@ -873,9 +885,10 @@ static void render(struct mux *m) {
     want.app_cursor_keys = modes.app_cursor_keys;
     want.app_keypad = modes.app_keypad;
     want.bracketed_paste = modes.bracketed_paste;
-    /* every pointer event comes here: click to move between panes, a name
-     * on hover; the focused program gets what it asked for */
-    want.mouse = HOLD_MOUSE_MOVE;
+    /* clicks and drags come here (click to move between panes, chat's
+     * window dragged); plain movement only when the focused program asked
+     * for it, which it then gets */
+    want.mouse = modes.mouse == HOLD_MOUSE_MOVE ? HOLD_MOUSE_MOVE : HOLD_MOUSE_DRAG;
     want.cursor_visible = false;
     if (f) {
         struct hold_snapshot snap;
@@ -960,11 +973,10 @@ static void handle_mouse(struct mux *m, int b, int x, int y, bool release) {
     } else if (m->fl != FL_NONE) {
         return;
     }
+    /* No name on hover: moving the mouse across panes flashed names that
+     * nobody asked for; they show on arrival, on focus, and while
+     * Ctrl-Space is held. */
     int s = slot_at(m, row, col);
-    if (motion && s != m->hover) {
-        m->hover = s;
-        if (s >= 0) show_name(m, m->slot[s]); /* a name on hover, for two seconds */
-    }
     if (!motion && !release && !wheel && s >= 0 && s != m->focus) {
         set_focus(m, s);
         return; /* the click that moves focus is not the program's */
@@ -1140,7 +1152,7 @@ static int command(struct mux *m, unsigned char key) {
         return 0;
     case KEY_HOLD: /* handed over by plain attach: Ctrl-Space is being held */
         m->holding = true;
-        m->nul_first = m->now - MUX_TAP_MS;
+        m->nul_first = m->now;
         m->nul_last = m->now;
         m->dirty = true;
         return 0;
@@ -1182,7 +1194,6 @@ static void nul_tick(struct mux *m) {
         m->holding = false;
         m->dirty = true;
     }
-    if (m->holding && m->now - m->nul_first >= MUX_HOLD_MS) m->dirty = true;
 }
 
 /* Length of the escape sequence at s (n bytes there), 0 if not whole yet.
@@ -1305,7 +1316,6 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
     m->store = store;
     snprintf(m->me, sizeof(m->me), "%s", chat_name ? chat_name : "");
     m->comp = comp_new();
-    m->hover = -1;
     m->swap_first = -1;
     m->now = mono_ms();
     struct winsize ws;
@@ -1377,6 +1387,11 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
         if (hold_screen_snapshot(first->scr, &snap) == 0) {
             comp_assume(m->comp, &snap);
             hold_snapshot_free(&snap);
+            /* The top row also holds the broker's corner label ("name  hold
+             * Ctrl-Space: help"), which is not in the program's screen:
+             * assumed blank, it was never erased and stayed over the panes. */
+            comp_forget_row(m->comp, 0);
+            m->assumed = true;
         }
     }
     struct hold_term_signals sig;
@@ -1509,9 +1524,14 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
     }
     goto out;
 detach:
-    /* Detach: every pane lets go; every call keeps running. */
+    /* Detach: every pane lets go; every process keeps running. Which ones
+     * is said once the terminal is the person's again. */
+    hold_console_note_detached(NULL);
     for (int i = 0; i < MUX_MAX_PANES; i++)
-        if (m->slot[i]) (void)frame(m->slot[i]->wfd, CONSOLE_FRAME_DETACH, NULL, 0);
+        if (m->slot[i]) {
+            (void)frame(m->slot[i]->wfd, CONSOLE_FRAME_DETACH, NULL, 0);
+            hold_console_note_detached(m->slot[i]->name);
+        }
     rc = 0;
 out:
     hold_term_signals_restore(&sig);

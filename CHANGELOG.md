@@ -38,8 +38,9 @@ records are not carried over; the two never touch each other's calls.
   window (you stay), `Ctrl-P Ctrl-F` toggle full screen, `Ctrl-P Ctrl-J`
   jump by name, `Ctrl-P Ctrl-W` next window (shown bottom right when there is
   more than one). Ten windows per terminal, on the number keys.
-- Help is holding `Ctrl-Space`: after 3 seconds the keys and every pane's
-  name show, until let go. A tap still reaches the program. `Ctrl-P Ctrl-H`
+- Help is holding `Ctrl-Space`: from its first repeat the keys and every
+  pane's name show, until let go. Left-column panes show their names at
+  their top left, clear of help. A tap still reaches the program. `Ctrl-P Ctrl-H`
   and `Ctrl-P Ctrl-N` are gone, and so is the hint bar under `Ctrl-P`.
 - `backmux swap` takes names or ids only.
 - A launch on a terminal is inline: no alternate screen, nothing cleared;

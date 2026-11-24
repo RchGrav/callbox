@@ -121,10 +121,13 @@ static enum run_state after_attach(const struct hold_invocation *inv, const stru
     if (state == STATE_RUNNING && closed)
         hold_sig_note(inv, "backmux: %s has closed its terminal and runs on; there is nothing to attach - see 'backmux logs %s'\n",
                       label, label);
-    /* A plain detach says nothing: the corner showed the name on attach,
-     * backmux list shows what runs, and a line on every detach only
-     * repeats what the person knows. */
-    else if (state == STATE_UNKNOWN && closed)
+    /* A detach says so, in one line: inline, the screen stays as it was,
+     * and without the line nothing shows that anything happened. */
+    else if (state == STATE_RUNNING && !closed && hold_console_was_detached(NULL)) {
+        const char *names = "";
+        (void)hold_console_was_detached(&names);
+        hold_sig_note(inv, "backmux: detached %s\n", names[0] ? names : label);
+    } else if (state == STATE_UNKNOWN && closed)
         hold_sig_note(inv, "backmux: cannot reach %s's console; its process state is unknown - see 'backmux logs %s'\n",
                       label, label);
     else if (state == STATE_UNKNOWN)

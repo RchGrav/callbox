@@ -155,6 +155,27 @@ bool hold_console_was_gone(void) {
     return g_gone;
 }
 
+/* The person detached (the detach keys, or Ctrl-P Ctrl-Q with panes up):
+ * the names let go, comma separated; "" when it was this process alone. A
+ * newer attach taking the process sets nothing - that is not a detach. */
+static bool g_detached;
+static char g_detached_names[512];
+
+void hold_console_note_detached(const char *name) {
+    if (!name) {
+        g_detached = true;
+        g_detached_names[0] = '\0';
+        return;
+    }
+    size_t used = strlen(g_detached_names);
+    snprintf(g_detached_names + used, sizeof(g_detached_names) - used, "%s%s", used ? ", " : "", name);
+}
+
+bool hold_console_was_detached(const char **names) {
+    if (names) *names = g_detached_names;
+    return g_detached;
+}
+
 static bool g_heard, g_reader_gone;
 
 bool hold_console_reader_gone(void) {
@@ -518,6 +539,8 @@ static int attach_once(const char *sock_path) {
     int writer = -1;
     g_mux_cmd = 0;
     g_refused = g_gone = g_heard = g_reader_gone = false;
+    g_detached = false;
+    g_detached_names[0] = '\0';
     g_refused_by = 0;
     int sock = hold_open_channel(sock_path, 'A', &writer);
     if (sock < 0) {
@@ -655,6 +678,7 @@ static int attach_once(const char *sock_path) {
 
     /* The connection closing just after the detach keys is the detach. */
     if (a.detach_sent_ms && attach_now_ms() - a.detach_sent_ms < 2000) rc = 0;
+    if (a.detach_sent_ms && !g_mux_cmd) hold_console_note_detached(NULL);
     /* Inline and letting go: the program's own full screen (vim) is switched
      * back, or, if there is none, the prompt that follows starts on a line
      * of its own instead of after the program's. A program that ended has

@@ -172,11 +172,12 @@ Every command is `Ctrl-P` then `Ctrl-<letter>`. Why: one shape to learn.
 | `Ctrl-P Ctrl-F` | toggle the active pane full screen |
 | `Ctrl-P Ctrl-J` | jump by name: the panes of this terminal, with their windows |
 | `Ctrl-P Ctrl-W` | the next window with panes (shown bottom right when there is more than one) |
-| hold `Ctrl-Space` 3 s | the keys and every pane's name, until let go |
+| hold `Ctrl-Space` | the keys and every pane's name, until let go |
 
-- **Help is not a key: hold `Ctrl-Space`.** After 3 seconds the keys and
-  the names show; letting go takes them away. Why: they are wanted for a
-  glance, not as a window to close. Terminals report no key release, so
+- **Help is not a key: hold `Ctrl-Space`.** From the key's first repeat
+  the keys and the names show; letting go takes them away. Why: they are
+  wanted for a glance, not as a window to close, and holding `Ctrl-Space`
+  is never an accident, so there is nothing to wait out. Terminals report no key release, so
   "let go" is the key's auto-repeat stopping (repeats come every 30-92 ms;
   150 ms without one is let go). A tap is the program's: a second
   `Ctrl-Space` within 700 ms (key repeat starts at 250-660 ms) makes it a
@@ -257,6 +258,9 @@ Every command is `Ctrl-P` then `Ctrl-<letter>`. Why: one shape to learn.
 - **Moving the mouse into a pane shows its name for 2 seconds.** Why: with
   four panes, which one is which is the question every time.
 - **Holding `Ctrl-Space` shows every pane's name** with the keys.
+- **A pane in the left column has its name at its top left; the others at
+  their top right.** Why: names sit at the screen's outer edges, clear of
+  help and the other floating windows, which open in the middle.
 
 ## Underneath
 

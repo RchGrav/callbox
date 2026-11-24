@@ -5926,6 +5926,40 @@ test_attach_list_only_living() {
   "$HOLD_BIN" end alive host term >/dev/null 2>&1 || true
 }
 
+# Detaching says so in one line, naming what was let go: inline the screen
+# stays as it was, so without it nothing shows anything happened. A newer
+# attach taking the process is not a detach and says nothing. After a split
+# the screen is the compositor's: the corner label of the single-pane attach
+# and the person's lines above the launch do not show through, and a pane in
+# the left column has its name at its left.
+test_detach_says_so_and_split_is_clean() {
+  local i
+  "$HOLD_BIN" detach --name dside -- sh -c 'echo DSIDE-UP; exec cat' mark-dside >/dev/null || return 1
+  "$HOLD_BIN" detach --size 100 20 --name dterm -- /bin/sh >/dev/null || return 1
+  "$HOLD_BIN" send dterm "echo PERSON-LINE" -k Enter || return 1
+  "$HOLD_BIN" send dterm "SHELL=/bin/sh \"$HOLD_REAL_BIN\" shell --name dinl" -k Enter || return 1
+  "$HOLD_BIN" wait dterm --match 'dinl  hold Ctrl-Space: help' --timeout 8000 >/dev/null || { "$HOLD_BIN" peek dterm >&2; return 1; }
+  "$HOLD_BIN" send dterm -k C-p -k C-q || return 1
+  "$HOLD_BIN" wait dterm --regex '^backmux: detached dinl$' --timeout 5000 >/dev/null || { echo "detach said nothing" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
+  # attach again (the label is up), split: nothing stale shows through
+  "$HOLD_BIN" send dterm "\"$HOLD_REAL_BIN\" attach dinl" -k Enter || return 1
+  "$HOLD_BIN" wait dterm --match 'dinl  hold Ctrl-Space: help' --timeout 8000 >/dev/null || return 1
+  pick_pane dterm mark-dside || return 1
+  "$HOLD_BIN" wait dterm --match 'DSIDE-UP' --timeout 5000 >/dev/null || return 1
+  sleep 2.5 # the names shown on arrival are gone
+  if "$HOLD_BIN" peek dterm | grep -q 'hold Ctrl-Space\|PERSON-LINE'; then echo "stale text over the panes" >&2; "$HOLD_BIN" peek dterm >&2; return 1; fi
+  # names: left column at its left, right column at its right
+  # (focus moving shows a pane's name: to the right pane, then back left)
+  wait_mouse dterm || return 1
+  "$HOLD_BIN" send dterm --mouse "click,70,5" || return 1
+  "$HOLD_BIN" wait dterm --regex ' dinl *$' --timeout 5000 >/dev/null || { echo "the right pane's name is not at its right" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
+  "$HOLD_BIN" send dterm --mouse "click,2,5" || return 1
+  "$HOLD_BIN" wait dterm --regex '^ dside ' --timeout 5000 >/dev/null || { echo "the left pane's name is not at its left" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
+  "$HOLD_BIN" send dterm -k C-p -k C-q || return 1
+  "$HOLD_BIN" wait dterm --regex '^backmux: detached (dinl, dside|dside, dinl)$' --timeout 5000 >/dev/null || { echo "a split detach did not name its panes" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
+  "$HOLD_BIN" end dside dinl dterm >/dev/null 2>&1 || true
+}
+
 # kill -9 cannot be caught, so a guard child gives the terminal back: its
 # settings, mouse reporting off, off the alternate screen - a terminal left
 # reporting every mouse movement into the shell is unusable. The processes run on.
@@ -5937,7 +5971,7 @@ test_kill_9_gives_the_terminal_back() {
   "$HOLD_BIN" wait term --match APP-UP --timeout 8000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" send term -k C-p -k C-t || return 1
   "$HOLD_BIN" wait term --regex 'chat -> ' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
-  out_has '"mouse": "move"' "$HOLD_BIN" peek term --json || { echo "the compositor did not ask for the mouse" >&2; return 1; }
+  out_has '"mouse": "drag"' "$HOLD_BIN" peek term --json || { echo "the compositor did not ask for the mouse" >&2; return 1; }
   cpid=""
   for i in $(seq 1 20); do
     cpid=$(pgrep -f "$HOLD_REAL_BIN attach app" | head -1)
@@ -6873,6 +6907,7 @@ run_test "an invalid size starts nothing and replaces nothing" test_invalid_size
 run_test "panes: Ctrl-P Ctrl-A puts a process beside; one pane is plain attach again" test_panes_attach_beside_and_hand_back
 run_test "kill -9 of the client: a guard gives the terminal back" test_kill_9_gives_the_terminal_back
 run_test "the attach list holds only living processes" test_attach_list_only_living
+run_test "detach says so; a split is clean; left panes name themselves at the left" test_detach_says_so_and_split_is_clean
 run_test "a launch on a terminal is inline: the screen stays, chat is no eraser" test_inline_launch_keeps_the_screen
 run_test "panes: four to a window; Ctrl-P Ctrl-S/G/M/F/J/W; backmux swap by name" test_panes_windows_and_swap
 run_test "chat is the person's: raw or with a header, replies come back, it follows them" test_chat_is_the_persons
