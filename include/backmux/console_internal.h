@@ -91,6 +91,22 @@ int hold_make_console_listener(const char *sock_path, int *fifo_writer);
 int hold_make_fifo_listener(const char *path, int *writer);
 int hold_open_channel(const char *path, char kind, int *output);
 
+/* Whether a recorded process is alive, as far as this shell can see: its
+ * program and its broker both exist. Why: a record and a console file can
+ * outlive the process (a broker killed hard, an older backmux), and a list
+ * of what can be attached must hold only what works. One launched in
+ * another PID namespace cannot be seen from here: its console is all there
+ * is to go by. */
+#include "backmux/platform.h"
+#include <signal.h>
+static inline bool hold_console_record_alive(const struct hold_run_record *r) {
+    uint64_t here = hold_current_pid_ns();
+    if (r->pid_ns && here && r->pid_ns != here) return true;
+    if (r->pid <= 1 || (kill(r->pid, 0) != 0 && errno != EPERM)) return false;
+    if (r->has_broker && r->broker_pid > 1 && kill(r->broker_pid, 0) != 0 && errno != EPERM) return false;
+    return true;
+}
+
 /* The person's terminal across a hand-off between plain attach and the
  * compositor (attach.c): who has it raw and on the alternate screen, and how
  * to give it back. */

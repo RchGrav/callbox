@@ -7,17 +7,17 @@ cannot state one does not go in.
 
 **The model: nothing has chat and nothing has splits.** Chat is free
 floating: `Ctrl-P Ctrl-T` brings it up over whatever you are attached to, and
-it belongs to you, not to any call. Splits exist only because `Ctrl-P Ctrl-A`
-attached a second call beside the first. No launch verb, `shell` included,
+it belongs to you, not to any process. Splits exist only because `Ctrl-P Ctrl-A`
+attached a second process beside the first. No launch verb, `shell` included,
 carries either. Why: chat and splits are things a person does, not
-properties of a program; tying them to a kind of call (as callbox's chat
+properties of a program; tying them to a kind of process (as callbox's chat
 shell did) made people pick a mode up front to get them.
 
-**Muxing is optional, and nothing muxes by default.** Every call works
+**Muxing is optional, and nothing muxes by default.** Every process works
 exactly as it does now: one program, the whole terminal, attach and detach as
 today, and programs are started from the command line as now. Panes appear
 only when someone asks for a second one: `Ctrl-P Ctrl-A` brings another
-running call in beside the one they are attached to. Closing back to one pane
+running process in beside the one they are attached to. Closing back to one pane
 is the old screen again. Why: the tool earns its name by making splits simple
 and powerful for those who want them, without making anyone who does not
 want them learn, see, or pay for any of it.
@@ -34,7 +34,7 @@ backmux 1.0.0-dedbeef
  backmux shell                          backmux shell mode in a tty
  backmux agent --name <name> <program>  override generated name on first run
 
- backmux attach <name|id>               attach a running call to your terminal
+ backmux attach <name|id>               attach running process to your terminal
  backmux tail <name|id>                 tail a server console app
  backmux end <name|id>                  end any process gracefully
  backmux kill <name|id>                 big hammer ends any process forcefully
@@ -73,9 +73,9 @@ backmux 1.0.0-dedbeef
   arrives raw: exactly the text, then Enter, as if typed. Why: an agent
   needs to know who wrote and how to answer; anything else (a shell, a CLI,
   a REPL) wants just the line, so a message can run a command in it.
-- **`backmux set` / `unset` change a call's settings,** running or saved;
-  the profile window does the same. Why: what a call runs and how its
-  messages arrive belong to the call, not to how it happened to be started,
+- **`backmux set` / `unset` change a process's settings,** running or saved;
+  the profile window does the same. Why: what a process runs and how its
+  messages arrive belong to the process, not to how it happened to be started,
   and changing one setting is simpler than relaunching by hand.
 - **The settings:**
 
@@ -83,19 +83,19 @@ backmux 1.0.0-dedbeef
   |---|---|---|
   | `agent` | messages arrive in chat formatting | messages arrive raw |
   | `working=<path>` | the folder it starts in | starts where you stand when it is launched |
-  | `program=<program>` | the program it runs | refused: a call without a program is nothing |
+  | `program=<program>` | the program it runs | refused: a process without a program is nothing |
   | `args=<args>` | the program's arguments | runs with none |
-  | `name=<name>` | the call's name (a rename) | refused: every command and agent addresses a call by name |
+  | `name=<name>` | the process's name (a rename) | refused: every command and agent addresses a process by name |
 
   Why these: they are what a launch is (what runs, with what, where), what
-  the call is called, and the one mode a call has. `program`, not
-  `target`: "target" already means the call a command addresses
+  the process is called, and the one mode a process has. `program`, not
+  `target`: "target" already means the process a command addresses
   (`send <target>`).
 - **`name` takes effect at once,** running or not, and the old name stops
   working at the same moment: no alias is kept. Why: it is only the
   address, nothing in the program depends on it, and an old name that still
-  answered could later be claimed by another call and reach the wrong one.
-- **The id never changes.** It is the call's permanent identifier (a
+  answered could later be claimed by another process and reach the wrong one.
+- **The id never changes.** It is the process's permanent identifier (a
   generated hex id, unique like a GUID), so `<name|id>` targets keep
   working through any rename. Why: scripts and agents that must not lose a
   call hold its id; names are for people.
@@ -105,32 +105,32 @@ backmux 1.0.0-dedbeef
   running program's folder, program and arguments cannot change under it;
   how a message is delivered can.
 - **`--name` applies to every launch verb.** Why: the name is what every
-  other command and every agent takes; whoever starts a call may want to
+  other command and every agent takes; whoever starts a process may want to
   choose it.
 - **`end` stops gracefully, `kill` forcefully; both are native.** Why: a
   call you never attached to (a `server`) needs a way to stop that does not
   also delete records, and a program that ignores the polite signal needs
   the big hammer.
 - **`shell` is a shell under backmux in a TTY, nothing more.** Why: chat
-  and splits are not modes of a call (above).
-- **`recall` means only relaunching an ended call.** Why: one word, one
+  and splits are not modes of a process (above).
+- **`recall` means only relaunching an ended process.** Why: one word, one
   meaning; the chat key says "bring back".
 - **`info <name>` works for any name, running or ended,** and shows the
   working folder, arguments, environment, launch kind, state, times and
-  paths. Why: everything needed to understand or reproduce a call, in one
+  paths. Why: everything needed to understand or reproduce a process, in one
   place.
-- **`swap A,B` takes call names** (also `swap A B`). Why: an agent knows
+- **`swap A,B` takes process names** (also `swap A B`). Why: an agent knows
   names, not where panes sit on someone's screen. The comma is safe: names
   allow only letters, digits, `_` and `-`.
 - **`list all` and `purge all` are positional; `all` is a reserved name.**
-  Why: positional reads like the rest of the native surface, and a call
+  Why: positional reads like the rest of the native surface, and a process
   named `all` would be ambiguous.
-- **`purge all` names the calls it ends.** Why: it is the only command that
-  both stops live calls and deletes them; saying which keeps it from going
-  unnoticed. Saving a call is how one is kept.
-- **`purge` alone touches only stopped calls not saved.** Why: cleaning up
+- **`purge all` names the processes it ends.** Why: it is the only command that
+  both stops live processes and deletes them; saying which keeps it from going
+  unnoticed. Saving a process is how one is kept.
+- **`purge` alone touches only stopped processes not saved.** Why: cleaning up
   must never end anything running.
-- **Wrong-kind targets (open):** `tail` on a `detach` call reads its log;
+- **Wrong-kind targets (open):** `tail` on a `detach` process reads its log;
   `attach` on a `server` says to use `tail`. To be decided.
 
 ## Docker aliases (`help aliases` only)
@@ -165,71 +165,60 @@ Every command is `Ctrl-P` then `Ctrl-<letter>`. Why: one shape to learn.
 |---|---|
 | `Ctrl-P Ctrl-Q` | detach |
 | `Ctrl-P Ctrl-T` | chat |
-| `Ctrl-P Ctrl-H` | help |
-| `Ctrl-P Ctrl-A` | attach another running call: this is how muxing starts |
-| `Ctrl-P Ctrl-E` | edit profiles |
-| `Ctrl-P Ctrl-N` | identify: every pane's name |
-| `Ctrl-P Ctrl-P` | a literal `Ctrl-P` to the program |
+| `Ctrl-P Ctrl-A` | attach a running process beside this one |
+| `Ctrl-P Ctrl-S` | swap panes: each pane shows `A: name`; two letters swap two |
+| `Ctrl-P Ctrl-G` | go to window: press its number |
+| `Ctrl-P Ctrl-M` | move the active pane to another window: press a number; you stay |
+| `Ctrl-P Ctrl-F` | toggle the active pane full screen |
+| `Ctrl-P Ctrl-J` | jump by name: the panes of this terminal, with their windows |
+| `Ctrl-P Ctrl-W` | the next window with panes (shown bottom right when there is more than one) |
+| hold `Ctrl-Space` 3 s | the keys and every pane's name, until let go |
 
+- **Help is not a key: hold `Ctrl-Space`.** After 3 seconds the keys and
+  the names show; letting go takes them away. Why: they are wanted for a
+  glance, not as a window to close. Terminals report no key release, so
+  "let go" is the key's auto-repeat stopping (repeats come every 30-92 ms;
+  150 ms without one is let go). A tap is the program's: a second
+  `Ctrl-Space` within 700 ms (key repeat starts at 250-660 ms) makes it a
+  hold and every one is swallowed; otherwise the tap goes through once that
+  is clear. `Ctrl-Space` was chosen because nothing holds it: Emacs and
+  readline only tap it, to set a mark.
+- **Help lists the keys and nothing else.** Why: a mode says what it wants
+  when it is entered ("Move to window: press a number"), and what is on
+  screen already (the window indicator) need not be repeated.
 - **`Ctrl-P` waits for the second key, with no time limit.** Why: not
-  everyone types fast.
+  everyone types fast. `Ctrl-P Ctrl-P` sends one `Ctrl-P` to the program.
 - **`Ctrl-P` then any key that is not a command cancels; both keys are
-  dropped.** Why: with six commands (plus `Ctrl-P` itself), a wrong second key is almost
-  always a mistyped command, and passing it on would hit the program with a stray
-  `Ctrl-P` (previous command in a shell, completion in vim) plus a random
-  key. This replaces the Docker-style rule of sending both through.
+  dropped.** Why: a wrong second key is almost always a mistyped command,
+  and passing it on would hit the program with a stray `Ctrl-P` (previous
+  command in a shell, completion in vim) plus a random key.
 - **A mouse event is not the second key;** it is handled and the lead key
   goes on waiting. Why: moving the mouse should never answer a key prompt.
-- **Letters that cannot be used:** `Ctrl-M` (the same byte as Enter),
-  `Ctrl-I` (Tab), `Ctrl-[` (Esc). Why: the terminal sends identical bytes,
-  so backmux cannot tell them apart. `Ctrl-H` is safe on nearly every
-  terminal (Backspace sends DEL); where Backspace sends `Ctrl-H`, the worst
-  case is opening help.
+- **`Ctrl-M` is Enter's byte,** so `Ctrl-P Enter` also moves a pane.
+  Nothing else uses `Ctrl-P Enter`. `Ctrl-I` (Tab) and `Ctrl-[` (Esc) stay
+  unused: the terminal sends the same bytes as those keys.
 
 ## Floating windows
 
-- **One floating window at a time; Esc always closes it.** Why: one rule to
+- **One floating window at a time; Esc closes it.** Why: one rule to
   remember, and nothing piles up over the work.
 - **Floating windows are pinned to nothing.** They sit over the whole
-  screen and move freely across split lines; no pane, call or window owns
-  them. Why: chat and help are the person's, not any program's, so they go
-  where the person puts them.
-- **There is only one, wherever you are.** Call it up from another backmux
-  terminal and it comes to you there, with its state. Why: one person, one
+  screen and move freely across split lines; no pane or window owns them.
+  Why: chat is the person's, not any program's, so it goes where the
+  person puts it.
+- **There is only one chat, wherever you are.** Opened in another backmux
+  terminal, it moves there, with its conversations. Why: one person, one
   chat; two copies would split one conversation.
-- **Only backmux TTYs get them** (a `call`, `agent`, `detach` or `shell`
-  you are attached to). A `server` console never does. Why: a server is raw
-  backgrounding (with or without a waiter, as it was launched): plain output
-  to a log, read with `tail`. It is not a TTY, so there is no screen to draw
-  on.
-- **Chat (`Ctrl-P Ctrl-T`) comes up wherever you are and follows you:**
-  move to another terminal and it is drawn there; the draft, the open
-  conversation and the window's position travel with you. "Where you are" is
-  the terminal you last pressed a key in. Why: chat belongs to the person,
-  not to one shell.
-- **Your chat name** is one you pick, or a generated one. Why: either works;
-  what matters is that it is shown (below).
-- **Help (`Ctrl-P Ctrl-H`)** is fixed and centered. Why: it is read, not
-  worked in.
-- **No launcher window.** Programs start from the command line, as now
-  (from a shell pane, `backmux call ...` opens it beside). Why: the floating
-  window brings running calls into view; starting things already has a
-  surface, and a second one would be two ways to learn.
-- **Attach (`Ctrl-P Ctrl-A`):** the top half lists the running TTY calls by
-  name, one highlighted; the bottom half shows the highlighted call's info:
-  program, arguments, working folder (what `backmux info` shows). Arrows
-  move, Enter brings it in as a new pane, placed like any other. Why: being
-  attached to one call and wanting to see a second is the moment someone
-  wants a mux, and attaching is the word they already know; a name alone
-  does not say which call is which, its program and folder do. Pressed while
-  attached to a single call, this is what turns the screen into panes.
-- **Swap (open where it lives):** proposed as `s` in the Attach window: big
-  letters A–D appear in the panes' corners and two letters swap two panes.
-  Why: two key presses, no layout language, and no extra key to learn.
-- **Profiles (`Ctrl-P Ctrl-E`):** edit or launch any saved profile.
-- **Open:** opening a second floating window while one is up: does Esc on
-  the second bring the first back where it was? Proposed yes, so a glance at
-  help never loses a conversation.
+- **Chat is the chat backmux shell always had** (picker with type to narrow,
+  screen snapshots, resizing, delivery receipts), under the person's chat
+  name, opening on the pane they are in. Its screen snapshot names the
+  pane's process.
+- **Only TTY processes get them** (`call`, `agent`, `detach`, `shell`). A
+  `server` never does. Why: a server is raw backgrounding (with or without
+  a waiter): plain output to a log, read with `tail`, no screen to draw on.
+- **Attach lists only processes that work:** alive, with a live console.
+  Why: a record and a console file can outlive a process, and hunting
+  through dead entries is the annoyance.
 
 ## Panes
 
@@ -243,33 +232,31 @@ Every command is `Ctrl-P` then `Ctrl-<letter>`. Why: one shape to learn.
 ```
 
 - **One pane is the default and is today's screen exactly.** Why: muxing
-  is opt-in (above).
+  is opt-in.
 - **Placement is automatic:** the second pane takes the left, the third the
   bottom of the left column, the fourth the bottom of the right column.
-  Focus goes to the new pane. Why: screens are widescreen and a cell is about
-  twice as tall as wide, so a terminal has three to four times more columns
-  than rows; rows are the scarce resource, and splitting left/right first
-  keeps the full height for as long as possible. No layouts to choose.
-- **Only TTY calls can be panes.** `Ctrl-P Ctrl-A` lists only them; a
-  `server` cannot be tiled. Why: a pane shows a screen, and a server has
-  none: its output is a log.
-- **At most four panes on a page; a fifth starts a new page.** Why: past
-  four, panes get too small to use, and four is easy to address (A–D).
-- **Swaps are the only rearranging:** `backmux swap A,B`, or the two-letter
-  swap from the keyboard.
-  Why: no layout system, nothing to learn beyond "these two trade places".
+  Why: a terminal has three to four times more columns than rows; rows are
+  the scarce resource, and left/right first keeps the full height longest.
+- **Four panes to a window, ten windows to a terminal,** on the number keys
+  1-9 and 0. A window may be empty; `Ctrl-P Ctrl-W` skips empty ones. A new
+  pane joins the window on screen when it has room, else the first that
+  does. Why: past four, panes are too small to use; ten is what the number
+  keys reach.
+- **Letters are for the screen, names for everyone else.** `Ctrl-P Ctrl-S`
+  puts `A: name` on each pane on screen; `backmux swap` takes names or ids
+  only. Why: a shell or an agent cannot see which screen a letter would
+  mean, and a terminal running several windows cannot guess.
 - **Click a pane to move to it.** Why: the mouse is already there.
 
 ## Names
 
-- **Every launch and attach, of any kind, shows the call's name in the upper corner;
-  never the command.** Why: the name is what `msg`, `attach` and every agent
-  take, and the only thing the person cannot otherwise find out; the command
-  is what they just typed.
+- **Every launch and attach shows the process's name in the upper corner,
+  with `hold Ctrl-Space: help`;** never the command. Why: the name is what
+  `msg`, `attach` and every agent take, and the only thing the person cannot
+  otherwise find out; the command is what they just typed.
 - **Moving the mouse into a pane shows its name for 2 seconds.** Why: with
   four panes, which one is which is the question every time.
-- **`Ctrl-P Ctrl-N` shows every pane's name on demand.** Why: the keyboard
-  way to the same answer.
+- **Holding `Ctrl-Space` shows every pane's name** with the keys.
 
 ## Underneath
 
@@ -277,12 +264,12 @@ Every command is `Ctrl-P` then `Ctrl-<letter>`. Why: one shape to learn.
   people who never split pay nothing for splits, in behavior or in moving
   parts.
 - **Once a second pane exists, one process owns the person's terminal** and
-  draws the panes and the floating window over them; each pane is a call's screen, fed by its
+  draws the panes and the floating window over them; each pane is a process's screen, fed by its
   broker. Why: splits and an overlay that is not confined to one program
   need one place that composes the whole screen; the brokers keep doing one
   job (keep the program, hold its screen, answer peek/send/wait/msg).
-- **Agents address calls by name, as now.** Why: panes are only how a person
-  looks at calls; nothing an agent uses depends on the layout.
+- **Agents address processes by name, as now.** Why: panes are only how a person
+  looks at processes; nothing an agent uses depends on the layout.
 - **Layout survival (open):** re-attaching should bring back the same pages
   and panes. Whether a saved profile can hold a whole page (four agents in a
   2x2) is to be decided.

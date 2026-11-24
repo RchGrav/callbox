@@ -1,6 +1,6 @@
 usage: backmux help [TOPIC]
 
-Show a help page without starting or changing a call. With no topic, show
+Show a help page without starting or changing a process. With no topic, show
 the overview. backmux -h and backmux --help show the same overview.
 
   tui              troubleshoot a terminal app

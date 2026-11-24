@@ -54,10 +54,10 @@ Join the program with `backmux attach demo`. Press **Ctrl-P, then Ctrl-Q**
 to detach and leave it running. An agent can still inspect the screen and
 send input while you are attached.
 
-While attached, **Ctrl-P Ctrl-A** brings another running call in beside this
+While attached, **Ctrl-P Ctrl-A** brings another running process in beside this
 one, as a pane; **Ctrl-P Ctrl-T** opens your chat over whatever you are
-looking at; **Ctrl-P Ctrl-H** lists the rest. Nothing splits unless you ask:
-one call on one screen is exactly what it always was.
+looking at; holding **Ctrl-Space** lists the rest. Nothing splits unless you ask:
+one process on one screen is exactly what it always was.
 
 When finished:
 
@@ -73,8 +73,8 @@ input, resizing, and verification.
 
 ## Choose how a program runs
 
-A **call** is a program managed by Backmux, with a name, an ID, and a log.
-A call keeps its name after the program exits, until you purge its record.
+A **process** is a program managed by Backmux, with a name, an ID, and a log.
+A process keeps its name after the program exits, until you purge its record.
 
 | You want to… | Start it with… | What you get |
 | --- | --- | --- |
@@ -87,9 +87,9 @@ A call keeps its name after the program exits, until you purge its record.
 waiter that records the exit code. Servers have logs but no screen for
 `peek` or `send`, and never become panes.
 
-`backmux list` shows running calls (`list all` adds stopped ones), `backmux
+`backmux list` shows running processes (`list all` adds stopped ones), `backmux
 info NAME` everything about one, and `backmux end NAME` stops it. `backmux
-recall NAME` starts an ended call again, same program, arguments and folder;
+recall NAME` starts an ended process again, same program, arguments and folder;
 `backmux set NAME args=...` or `working=...` changes what the next recall
 runs, and `backmux set NAME agent` switches how its messages arrive, at
 once. Docker's words (`run -d`, `ps`, `stop`, `start`, ...) still work:
@@ -111,7 +111,7 @@ is available in the terminal and as a plain-text page in this repository.
 **Every command and flag:** `backmux help all`. For one command, use
 `backmux COMMAND --help`. `backmux help launch` covers launch options;
 `backmux help targets`, `scripting`, and `system` explain targeting,
-exit codes, and root-managed calls.
+exit codes, and root-managed processes.
 
 [In-depth guide](docs/guide.md) · [Documentation index](docs/index.md) ·
 [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)

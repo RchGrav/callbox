@@ -6,11 +6,11 @@ settings: detach-size COLS ROWS, chat-name NAME
 Your saved defaults, kept in ~/.config/backmux/config (one "name value" line
 each).
 
-  detach-size COLS ROWS   the terminal size of a detached TTY call (backmux -dt,
+  detach-size COLS ROWS   the terminal size of a detached TTY process (detach,
                           -dwt) placed without --size. Order: --size, then
                           this, then the invoking terminal's size, then 80 24.
                           Foreground launches never use it, and changing it
-                          never resizes a running call (backmux resize does).
+                          never resizes a running process (backmux resize does).
   chat-name NAME          what you are called in chat and to the agents that
                           reply to you (backmux msg NAME). Unset: a generated
                           name, the same in every terminal.

@@ -79,7 +79,7 @@ static void print_stats_frame(const char *id, const char *name,
          * the flicker of a full erase-scrollback. */
         fputs("\033[H\033[J", stdout);
     }
-    printf("%-14s  %-20s  %-8s  %-12s  %s\n", "CALL ID", "NAME", "CPU %", "MEM (RSS)", "PIDS");
+    printf("%-14s  %-20s  %-8s  %-12s  %s\n", "PROCESS ID", "NAME", "CPU %", "MEM (RSS)", "PIDS");
     printf("%-14s  %-20s  %-8s  %-12s  %zu\n", id, name, cpu, mem, pids);
     fflush(stdout);
 }

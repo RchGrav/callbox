@@ -21,7 +21,7 @@ DESCRIBE AND REPRODUCE THE ISSUE
   Press Ctrl-P Ctrl-T to open your chat, then Tab to choose coder. For
   example:
 
-    In call app, Down skips a menu item. Reproduce it with peek and send,
+    In process app, Down skips a menu item. Reproduce it with peek and send,
     fix the navigation code, and tell me when to restart and test it.
 
   Enter sends it; Esc hides chat. It reaches coder with your chat name and
@@ -33,7 +33,7 @@ DESCRIBE AND REPRODUCE THE ISSUE
     backmux send app -k Down --wait 300
     backmux peek app --json
 
-  (A message to app itself would be typed into the app: app is a call, not
+  (A message to app itself would be typed into the app: app is a process, not
   an agent. Agents talk to you, by your chat name.)
 
 REBUILD AND TEST TOGETHER

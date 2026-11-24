@@ -1,22 +1,22 @@
 usage: backmux purge [<target>|all] [-a|--all] [-s|--system] [-u|--user]
                      [--force]
 
-Remove ended calls and their stored records, logs, and screens.
-Without a target, sweep eligible calls; with a target, remove that call.
+Remove ended processes and their stored records, logs, and screens.
+Without a target, sweep eligible processes; with a target, remove that process.
 
-  -a, --all        include stale calls (widens state, not store scope)
-  -u, --user       sweep personal calls (the default)
-  -s, --system     sweep root-managed calls; invokes sudo if needed
+  -a, --all        include stale processes (widens state, not store scope)
+  -u, --user       sweep personal processes (the default)
+  -s, --system     sweep root-managed processes; invokes sudo if needed
   --force          with a target: remove it even if saved or running
-                   without a target: include stale calls, as -a does
+                   without a target: include stale processes, as -a does
 
-With a target, --force stops a running call before removing it. A sweep
-never removes saved or running calls, even with --force.
+With a target, --force stops a running process before removing it. A sweep
+never removes saved or running processes, even with --force.
 
-purge all ends every running call that is not saved and removes them all,
-with the ended ones, and names the calls it ended. Saved calls are kept:
-backmux save is how a call is kept.
+purge all ends every running process that is not saved and removes them all,
+with the ended ones, and names the processes it ended. Saved processes are kept:
+backmux save is how a process is kept.
 
-Ordinary purge leaves saved calls alone. --name at launch does not save
-a call; save and rename do. Removing a record frees its name.
-Aliases: rm, prune, drop. To stop a call and retain its record, use end.
+Ordinary purge leaves saved processes alone. --name at launch does not save
+a process; save and rename do. Removing a record frees its name.
+Aliases: rm, prune, drop. To stop a process and retain its record, use end.

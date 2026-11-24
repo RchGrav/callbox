@@ -3,7 +3,7 @@ backmux help tui - troubleshoot a terminal app
 Use this when your command tool can launch a full-screen app but cannot
 operate its terminal. Give the app a detached terminal, look at its screen,
 send input, and check the result. You can inspect colors and the cursor as
-well as text; a person can attach to the same call to try it themselves.
+well as text; a person can attach to the same process to try it themselves.
 
 START AND INSPECT
   This example requires a Vim-compatible vi. It opens an empty buffer with
@@ -46,7 +46,7 @@ FINISH OR HAND OVER
 
   wait without a condition waits for exit and prints the program's code.
   --last-alt shows the saved full-screen frame after an app switches back.
-  purge removes the ended call and frees its name.
+  purge removes the ended process and frees its name.
 
   For your app, replace vi and its inputs with your reproduction steps.
   If it already runs in Backmux, use its name. A person can join a running

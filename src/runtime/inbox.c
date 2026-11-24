@@ -115,12 +115,12 @@ out:
 
 void hold_operator_first_note(const char *name) {
     fprintf(stderr,
-            "backmux: you are %s, outside any call. Replies to you wait in your inbox\n"
+            "backmux: you are %s, outside any process. Replies to you wait in your inbox\n"
             "for 60 minutes:\n"
             "  backmux inbox                    read them\n"
             "  backmux inbox --wait             wait for the next one\n"
             "  backmux monitor                  print each one as it arrives, until stopped\n"
-            "  backmux msg <call> TEXT --wait-reply   wait for the next new message\n",
+            "  backmux msg <process> TEXT --wait-reply   wait for the next new message\n",
             name);
 }
 
@@ -232,14 +232,14 @@ static int inbox_action_impl(const struct hold_store *user_store, int argc, char
     } else {
         const char *in_call = getenv("BACKMUX_ID");
         if (in_call && *in_call) {
-            fprintf(stderr, "backmux: you run inside a call: messages arrive as program input or chat,\n"
+            fprintf(stderr, "backmux: you run inside a process: messages arrive as program input or chat,\n"
                             "not in an outside inbox\n");
             return HOLD_EXIT_USAGE;
         }
         int rc = hold_operator_name(user_store, false, name, sizeof(name), NULL);
         if (rc != 0) {
             fprintf(stderr, "backmux: you have no inbox yet: one is made the first time you send with backmux msg "
-                            "from outside a call\n");
+                            "from outside a process\n");
             return HOLD_EXIT_NO_TARGET;
         }
     }

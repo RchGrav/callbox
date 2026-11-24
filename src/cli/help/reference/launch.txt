@@ -1,4 +1,4 @@
-backmux help launch - every flag for starting a call
+backmux help launch - every flag for starting a process
 
   backmux call|agent|server|detach [options] PROGRAM [ARGS...]
   backmux shell [options] [SHELL [ARGS...]]
@@ -12,16 +12,16 @@ always the program, and -d/-i/-t are refused: the verb already said it.
 
 Put options before PROGRAM; everything after it is passed to that program.
 -- forces a fresh program launch, even if its name is a Backmux command or
-an existing call. Shell expressions need an explicit shell: sh -c '...'.
+an existing process. Shell expressions need an explicit shell: sh -c '...'.
 A lone CALL reconnects if running, or restarts its recorded command and mode
-if ended. A running call without a console is followed through its log.
+if ended. A running process without a console is followed through its log.
 
 CHOOSE A MODE
   No session flags: run attached on a terminal (PTY), as backmux call does.
   In a script, output streams with terminal line endings, stderr merged.
   Use -i for pipe input. A PTY is a virtual terminal for the program.
 
-  -d, --detach     return immediately with the call ID on stdout
+  -d, --detach     return immediately with the process ID on stdout
   -w, --wait       keep an exit-code waiter; with -d, launch still returns now
   -t, --tty        give the program a terminal screen
   -i, --interactive
@@ -33,10 +33,10 @@ CHOOSE A MODE
   -dw              detached process with a recorded exit code
   -di              detached pipe input; attach can feed it later
 
-  Pipe-input calls also support peek, send, and msg. Their screen models
+  Pipe-input processes also support peek, send, and msg. Their screen models
   the captured output, but the program itself does not have a terminal.
 
-  Terminal and pipe-input calls record exit codes. --rm and active restart
+  Terminal and pipe-input processes record exit codes. --rm and active restart
   policies also retain a waiter. Plain -d alone leaves no Backmux helper.
 
 SET UP THE PROGRAM
@@ -49,7 +49,7 @@ SET UP THE PROGRAM
   -e, --env KEY=VALUE
                    set an environment variable; repeat for more variables
   --env-file FILE  read KEY=VALUE lines from a file
-  --rm             remove the record, log, and screens when the call ends
+  --rm             remove the record, log, and screens when the process ends
   --restart POLICY no (default), always, unless-stopped, on-failure[:N]
                    Active policies run without a PTY; they cannot use -t.
   --restart-delay SECONDS
@@ -59,15 +59,15 @@ SET UP THE PROGRAM
 
 CONTROL AN ATTACHED CALL
   Ctrl-C           send the interrupt to the program
-  Ctrl-P Ctrl-Q    detach; the call keeps running
+  Ctrl-P Ctrl-Q    detach; the process keeps running
   Ctrl-D           end pipe input with -i
   --detach-keys KEYS
                    change detach keys (default ctrl-p,ctrl-q); one key such
                    as ctrl-] detaches immediately. Panes and chat need the
-                   two-key form: Ctrl-P, then a key (Ctrl-P Ctrl-H lists
+                   two-key form: Ctrl-P, then a key (hold Ctrl-Space lists
                    them).
-  -f, --tail CALL  follow a call's new log output without attaching or redial;
-                   Ctrl-C stops following, leaving the call running
+  -f, --tail NAME  follow a process's new log output, without attaching or
+                   redial; Ctrl-C stops following, leaving it running
 
 COMMON OPTIONS
   --quiet          suppress status notes on stderr, keeping data on stdout
@@ -75,9 +75,9 @@ COMMON OPTIONS
   -h, --help       show help (also backmux COMMAND --help)
   -V, --version    print the version
 
-Value options accept --flag=value. Every PTY call gets TERM=xterm-256color,
+Value options accept --flag=value. Every PTY process gets TERM=xterm-256color,
 whatever your own TERM is; -e TERM=... sets another. The detach-size
-setting applies only to new detached terminal calls; see backmux config -h.
+setting applies only to new detached terminal processes; see backmux config -h.
 
 COMPATIBILITY
   --console        start a detached terminal (the older spelling of -dt)

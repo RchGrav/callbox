@@ -1,5 +1,5 @@
 usage: backmux end [--print] <target>...
 
-End calls politely: TERM, then KILL if they have not gone within 5 seconds.
+End processes politely: TERM, then KILL if they have not gone within 5 seconds.
 Several targets may be named. --print ends nothing: it prints the kill command
 that would, for a script to run or inspect. (stop is an alias.)

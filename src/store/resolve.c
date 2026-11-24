@@ -6,7 +6,7 @@
 /* THE resolver: the store's one id/prefix resolution, exported so no layer
  * grows its own directory scan again. Exact id wins if its file exists;
  * otherwise the prefix must match exactly one <id>.json. Returns -2 when it
- * matches several (the caller says so, rather than "no call matches"). */
+ * matches several (the caller says so, rather than "no process matches"). */
 int hold_resolve_record_id(const char *dir, const char *token, char *resolved, size_t n) {
     if (!dir || !*dir || !token || !*token || !resolved || n == 0) return -1;
     if (hold_valid_id(token)) {

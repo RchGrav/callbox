@@ -6,7 +6,7 @@
  backmux shell                          backmux shell mode in a tty
  backmux agent --name <name> <program>  override generated name on first run
 
- backmux attach <name|id>               attach a running call to your terminal
+ backmux attach <name|id>               attach running process to your terminal
  backmux tail <name|id>                 tail a server console app
  backmux end <name|id>                  end any process gracefully
  backmux kill <name|id>                 big hammer ends any process forcefully
@@ -24,7 +24,7 @@
 
  Ctrl-P Ctrl-Q detach process with durable handle, full reattach control or end
  Ctrl-P Ctrl-T recall floating user chat window after it has been dismissed
- Ctrl-P Ctrl-H the rest of the control keys to control backmux
+ hold Ctrl-Space the rest of the control keys to control backmux
 
  backmux help aliases                   container aliases (100% less container)
  backmux help agents                    orchestration and tui debugging details

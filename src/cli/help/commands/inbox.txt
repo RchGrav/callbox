@@ -21,8 +21,8 @@ harness may have a different name; use the name printed by the first send
 when crossing between them. Names expire after an hour without use.
 Messages expire one hour after delivery, even if the inbox stays active.
 
-Inside a call, messages arrive as program input; there is no
-automatic outside inbox to read. Use backmux msg --received for that call's
+Inside a process, messages arrive as program input; there is no
+automatic outside inbox to read. Use backmux msg --received for that process's
 delivery history. An explicit outside inbox NAME can still be read.
 
 Exit status: 0 read successfully, 5 no such inbox, 7 timed out,

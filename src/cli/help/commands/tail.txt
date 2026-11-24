@@ -1,6 +1,6 @@
 usage: backmux tail <target>
 
-Watch a running call's output from now on: tail prints only what the call
+Watch a running process's output from now on: tail prints only what the process
 writes after you start, until it ends or you press Ctrl-C. (backmux logs
-<target> -f prints what is already captured first, then follows.) For a call
+<target> -f prints what is already captured first, then follows.) For a process
 that has ended, tail prints its whole log.

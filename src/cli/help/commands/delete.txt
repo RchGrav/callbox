@@ -1,4 +1,4 @@
 usage: backmux delete <name|id>
 
-Remove a call and its record - saved or not - so its name is free again. It
-never stops a program: a running call is ended first with backmux end.
+Remove a process and its record - saved or not - so its name is free again. It
+never stops a program: a running process is ended first with backmux end.

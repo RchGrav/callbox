@@ -85,10 +85,10 @@ curl -LsSf https://github.com/RchGrav/backmux/releases/latest/download/install.s
 curl -LsSf https://github.com/RchGrav/backmux/releases/latest/download/install.sh | sh -s -- --uninstall --system
 ```
 
-This removes the binary and the `# backmux installer` PATH block. The block is removed from the profile chosen by the current `$SHELL` (or `BACKMUX_PROFILE`). Backmux state (your calls, logs, and records) is kept. Remove it by hand if you mean to:
+This removes the binary and the `# backmux installer` PATH block. The block is removed from the profile chosen by the current `$SHELL` (or `BACKMUX_PROFILE`). Backmux state (your processes, logs, and records) is kept. Remove it by hand if you mean to:
 
-- user calls: `~/.local/state/backmux`
-- root-managed calls: `/var/lib/backmux` on Linux, `/var/db/backmux` on macOS
+- user processes: `~/.local/state/backmux`
+- root-managed processes: `/var/lib/backmux` on Linux, `/var/db/backmux` on macOS
 
 ## Pinned version
 

@@ -55,7 +55,7 @@ static const struct setting {
     const char *unset_note;
 } settings[] = {
     {"detach-size", parse_size_value,
-     "detach-size is not set: a detached PTY call takes the invoking terminal's size, or 80 24 without one"},
+     "detach-size is not set: a detached PTY process takes the invoking terminal's size, or 80 24 without one"},
     {"chat-name", parse_name_value, "chat-name is not set: chat gives you a generated name"},
 };
 
@@ -139,7 +139,7 @@ int hold_cmd_config_action(const struct hold_invocation *inv, int argc, char **a
         fprintf(stderr, "backmux: error: cannot save settings: %s\n", strerror(errno));
         return 3;
     }
-    if (set) hold_sig_note(inv, "backmux: %s is %s for new calls; running calls keep their size\n", s->name, value);
+    if (set) hold_sig_note(inv, "backmux: %s is %s for new processes; running processes keep their size\n", s->name, value);
     else hold_sig_note(inv, "backmux: %s cleared\n", s->name);
     return 0;
 }

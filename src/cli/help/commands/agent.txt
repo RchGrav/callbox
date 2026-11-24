@@ -6,7 +6,7 @@ header naming the sender and how to reply,
   [msg from NAME; reply: backmux msg NAME "..."] the text
 
 so the agent knows who wrote and can answer. agent is a setting, not a kind
-of call: backmux set NAME agent / backmux unset NAME agent turn it on and off
+of process: backmux set NAME agent / backmux unset NAME agent turn it on and off
 from the next message, with no relaunch.
 
 Options: as for backmux call. backmux help agents shows the whole loop.

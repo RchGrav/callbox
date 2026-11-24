@@ -1,6 +1,6 @@
 usage: backmux info <name|id>
 
-Everything about a call, running or ended: its name and id, what kind it is
+Everything about a process, running or ended: its name and id, what kind it is
 (call, agent, server, detach, shell), its state and exit, the program and
 its arguments, the folder recall starts it in, how messages reach it,
 whether it is saved, when it started and ended, its environment (names

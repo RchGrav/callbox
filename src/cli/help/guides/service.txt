@@ -1,7 +1,7 @@
 backmux help service - run background services and CI jobs
 
 Use this when a job or service must keep running while a script tests it or
-you do other work. Background calls capture output without a terminal.
+you do other work. Background processes capture output without a terminal.
 Choose -dw when you need the program's exit code; plain -d keeps no waiter.
 
 RUN A JOB AND RETURN ITS RESULT
@@ -54,7 +54,7 @@ CHOOSE THE MODE YOU NEED
   -dw      background program with an exit code for backmux wait
   -dt      detached terminal; peek, send, and screen waits work
 
-  For restart-on-failure behavior, use a non-terminal call:
+  For restart-on-failure behavior, use a non-terminal process:
 
     backmux -d --restart on-failure --name api -- ./server --port 8080
 

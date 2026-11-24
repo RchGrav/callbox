@@ -1,8 +1,8 @@
 # Backmux documentation
 
 Backmux runs named programs that you can return to, inspect, and stop.
-Terminal calls have a screen for people and agents to read and control;
-background calls keep output in a log. Agents can exchange messages even
+Terminal processes have a screen for people and agents to read and control;
+background processes keep output in a log. Agents can exchange messages even
 when their harnesses run outside Backmux.
 
 ## Start with a task
@@ -29,7 +29,7 @@ Use `backmux COMMAND --help` when you know which command you need.
 | Launch modes and options | `backmux help launch` | [Launch reference](../src/cli/help/reference/launch.txt) |
 | Names, IDs, and prefixes | `backmux help targets` | [Target reference](../src/cli/help/reference/targets.txt) |
 | Exit codes, standard output, and scripts | `backmux help scripting` | [Scripting reference](../src/cli/help/reference/scripting.txt) |
-| User and root-managed calls | `backmux help system` | [System reference](../src/cli/help/reference/system.txt) |
+| User and root-managed processes | `backmux help system` | [System reference](../src/cli/help/reference/system.txt) |
 
 The [in-depth guide](guide.md) explains screenshots, keyboard and mouse
 input, waiting, messaging, and CI, with worked examples. The help pages
@@ -40,7 +40,7 @@ is available without a network connection or separate documentation files.
 
 - [Backmux identity](backmux-identity.md): the product model and command vocabulary.
 - [Docker familiarity contract](docker-familiarity-contract.md): shared flag and table conventions.
-- [Console](console.md): terminal and pipe-backed calls, attaching, and detaching.
+- [Console](console.md): terminal and pipe-backed processes, attaching, and detaching.
 - [Screens](screen.md): screen state, the control protocol, snapshots, and messages.
 - [Shell and chat](shell.md): the attached shell and its chat window.
 - [Launcher](launcher.md): sessions, process groups, and launch behavior.
@@ -59,9 +59,9 @@ Public headers live under `include/backmux/`; implementation is layered under
 - `core/`: file I/O, JSON, SHA-256, IDs, names, and shared utilities
 - `screen/`: the headless terminal, snapshots, and PNG rendering
 - `platform/`: OS, account, path, and process information
-- `store/`: durable call records and layout
+- `store/`: durable process records and layout
 - `term/`: terminal spawning and output handling
-- `console/`: the per-call broker, control transport, attach, and chat display
+- `console/`: the per-process broker, control transport, attach, and chat display
 - `access/`: invocation identity and user context
 - `runtime/`: product commands and lifecycle behavior
 - `cli/`: command definitions, parsing, help, and dispatch

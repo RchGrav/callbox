@@ -1,13 +1,13 @@
 backmux help features - a closer look at Backmux
 
 RUN PROGRAMS WITHOUT A CENTRAL DAEMON
-  Backmux records each call on disk. A plain -d launch leaves the program
+  Backmux records each process on disk. A plain -d launch leaves the program
   and its log with no Backmux helper. Terminals, input pipes, exit tracking,
   and restart policies keep a broker, waiter, or supervisor as needed.
   Linux releases include static binaries; macOS builds use system libraries.
 
 INSPECT A TERMINAL WITHOUT ATTACHING
-  A terminal call runs on a PTY, a virtual terminal owned by its broker.
+  A terminal process runs on a PTY, a virtual terminal owned by its broker.
   The broker feeds output into libvterm, keeping the visible cells, colors,
   attributes, cursor, and input modes. peek reads that screen as text,
   JSON, or a PNG with a ruler, cursor marker, and embedded fonts.
@@ -22,31 +22,32 @@ SEND INPUT AND CHECK THE RESULT
 
 WORK TOGETHER ON ONE SCREEN
   A person can stay attached while an agent uses peek, send, and resize.
-  While attached, Ctrl-P Ctrl-A puts another call beside it as a pane and
+  While attached, Ctrl-P Ctrl-A puts another process beside it as a pane and
   Ctrl-P Ctrl-T opens the person's chat over everything; the apps, their
-  logs, and peek snapshots never include either. Calls with the agent
+  logs, and peek snapshots never include either. Processes with the agent
   setting receive messages with a sender header; others receive them as
   typed text. Outside harnesses receive replies in an inbox and can follow
   them with monitor.
 
 REUSE A CALL
-  Calls retain their command, launch mode, explicit environment settings,
-  and initial size. A call's name reconnects while it runs and restarts
+  Processes retain their command, launch mode, explicit environment settings,
+  and initial size. A process's name reconnects while it runs and restarts
   its recorded command after it ends. Logs accumulate across runs.
   Restart policies can supervise non-terminal programs; by default retries
   back off from 1 s to 30 s. --restart-delay sets a fixed delay instead.
 
 MANAGE NAMED PROCESSES
-  Calls have generated or chosen names and stable IDs. Unique prefixes
+  Processes have generated or chosen names and stable IDs. Unique prefixes
   resolve without guessing when there is more than one match. end sends
-  TERM, then KILL after five seconds, to the call's process group.
+  TERM, then KILL after five seconds, to its process group.
   Identity checks use boot and process metadata before signaling.
   save protects a record from ordinary purge; rename also saves it.
 
 USE RESTRICTED AND SHARED ENVIRONMENTS
   Console transport falls back to FIFOs when Unix sockets are blocked.
-  The broker can answer liveness checks across PID namespaces. Root-managed
-  calls expose a redacted public listing; their records and logs stay private.
+  The broker can answer liveness checks across PID namespaces.
+  Root-managed processes expose a redacted public listing; their records and
+  logs stay private.
   See help system for store selection and sudo behavior.
 
 Start with backmux help for task guides; use help all for the full reference.

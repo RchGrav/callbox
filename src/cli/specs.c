@@ -57,7 +57,7 @@ static const struct hold_cli_command_spec command_specs[] = {
     {"delete", NULL, 1, 1, SPEC_STRICT, "usage: backmux delete <name|id>"},
     {"set", NULL, 2, -1, SPEC_OWN_HELP, "usage: backmux set <name|id> <setting>[=<value>]"},
     {"unset", NULL, 2, 2, SPEC_OWN_HELP, "usage: backmux unset <name|id> <setting>"},
-    {"swap", NULL, 1, 2, SPEC_STRICT, "usage: backmux swap <pane>,<pane>   (a name, an id, A-D, or a number)"},
+    {"swap", NULL, 1, 2, SPEC_STRICT, "usage: backmux swap <name|id>,<name|id>"},
     {"manual", NULL, 0, 0, SPEC_STRICT, "usage: backmux manual"},
     {"ps", NULL, 0, 1, SPEC_ALL | SPEC_STRICT | SPEC_PS_DOCKER,
      "usage: backmux ps [-a|--all] [name]"},

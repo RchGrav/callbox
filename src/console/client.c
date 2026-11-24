@@ -117,6 +117,10 @@ enum hold_client_end hold_client_run(const struct hold_client *c) {
             pfds[nfds++] = (struct pollfd){.fd = c->in_fd, .events = POLLIN};
         }
         int timeout = c->out_is_file ? CLIENT_FILE_POLL_MS : (c->probe_fifo ? CLIENT_FIFO_PROBE_MS : -1);
+        if (c->due_in) {
+            int64_t due = c->due_in(c->ctx);
+            if (due >= 0 && (timeout < 0 || due < timeout)) timeout = (int)due;
+        }
         int sr = nfds ? poll(pfds, nfds, timeout) : (nanosleep(&(struct timespec){0, (long)timeout * 1000000L}, NULL), 0);
         if (sr < 0) {
             if (errno == EINTR) continue;
@@ -124,6 +128,7 @@ enum hold_client_end hold_client_run(const struct hold_client *c) {
             break;
         }
 
+        if (c->on_timer && hook_stops(c->on_timer(c->ctx), &end)) break;
         /* POLLNVAL too: macOS poll() rejects character devices such as
          * /dev/null; reading one then reports its end, instead of spinning. */
         if (in_idx >= 0 && (pfds[in_idx].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL))) {

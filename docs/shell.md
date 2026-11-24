@@ -3,13 +3,13 @@
 [Docs index](index.md) | [Repository README](../README.md) | Related: [Console](console.md), [Screens](screen.md), [Design](backmux.md)
 
 > **The model changed in backmux.** Nothing has chat and nothing has splits.
-> `backmux shell` is your shell on a PTY under a name, like any call. Chat
+> `backmux shell` is your shell on a PTY under a name, like any process. Chat
 > belongs to the person: `Ctrl-P Ctrl-T` brings it up over whatever they
 > are attached to, under their chat name, and it follows them to whichever
 > terminal opens it last. Panes come only from `Ctrl-P Ctrl-A`, which puts
-> another running TTY call beside the one on screen. Both are drawn by the
-> attach client's compositor (`src/console/mux.c`), never by a call's
-> broker, so no call carries a display mode. The design, with the reason for
+> another running TTY process beside the one on screen. Both are drawn by the
+> attach client's compositor (`src/console/mux.c`), never by a process's
+> broker, so no process carries a display mode. The design, with the reason for
 > each rule, is [backmux.md](backmux.md). The sections below describe the
 > earlier broker-composited chat shell; its input router and drawing rules
 > carried over to the compositor and are kept here until the fix-up pass
@@ -38,7 +38,7 @@ There is one terminal emulator: the broker's headless screen (see
 [screen.md](screen.md)), fed every byte the PTY produces, whether or not
 anyone is attached and whatever covers it.
 
-For an ordinary call the attach client is handed those bytes too, and the
+For an ordinary process the attach client is handed those bytes too, and the
 person's own terminal interprets them. For a backmux shell it is not. Each
 frame the broker (`src/console/compose.c`):
 
@@ -127,7 +127,7 @@ Everything the attached terminal sends passes through one router
   hiding or leaving chat gives the keyboard, and the cursor, back to the
   shell.
 - **On-screen help.** What just happened and the key that undoes it are
-  shown where the eye is, for a few seconds: the call's own name on attach
+  shown where the eye is, for a few seconds: the process's own name on attach
   (`crucial_phantom | Ctrl-P Ctrl-T: chat`; the name is what others message
   and reply to, and the command just typed needs no repeating), `chat hidden | Ctrl-P Ctrl-T: bring it back` when the
   window closes, `Ctrl-P Ctrl-T: chat | typing in the shell` in the window
@@ -160,13 +160,13 @@ it.
 
 Chat uses `backmux msg`'s transport; there is no second one.
 
-**Out.** `Enter` sends the draft to the selected call as a `msg` request
-whose sender is the shell's own call id. The request returns once the
+**Out.** `Enter` sends the draft to the selected process as a `msg` request
+whose sender is the shell's own process id. The request returns once the
 receiver has the text: at once, apart from up to 2 s while a just-launched
 sender's record is written and up to 10 s of retries while the receiver's
 console is busy. A send with no answer after 90 s is abandoned. The broker
 forks a short-lived helper per send (at most 8 at a time) and stays with the
-display, so the window never freezes. The helper names the shell's call as
+display, so the window never freezes. The helper names the shell's process as
 the sender, so the agent sees an ordinary header —
 
 ```text
@@ -175,24 +175,24 @@ the sender, so the agent sees an ordinary header —
 
 — and answers with an ordinary `backmux msg work "..."`. It needs to know
 nothing about the chat window. A send is shown as `sending...` until the
-receiver confirms it, then `delivered`. If the call is gone or not running,
+receiver confirms it, then `delivered`. If the process is gone or not running,
 its console cannot be reached or does not answer within 90 s, it refuses the
 message (rate limit, too large), or too many sends are in flight, the
 message is marked `NOT DELIVERED` with the reason, and never shown as
-delivered. A conversation with a sender outside any call (an operator,
+delivered. A conversation with a sender outside any process (an operator,
 under the name backmux gave it) is replied to by writing into its inbox, so
 it is marked delivered at once.
 
 **In.** A message for the shell is recorded like any other (so
 `backmux msg --received` works inside the shell) and filed in the chat inbox
-under the call that sent it:
+under the process that sent it:
 
-- from a call: that call's conversation, keyed by its id, so it follows a
+- from a process: that process's conversation, keyed by its id, so it follows a
   rename;
-- sent from outside any call: the name that sender was given (its inbox).
+- sent from outside any process: the name that sender was given (its inbox).
 
 The
-selected conversation stays selected for follow-ups; `Tab` lists the calls
+selected conversation stays selected for follow-ups; `Tab` lists the processes
 that can be messaged (running, on a PTY) and every conversation, with what
 is unread. While the window is hidden a message only raises the corner
 badge (`chat: 2 new from helper`): the window does not open and the shell

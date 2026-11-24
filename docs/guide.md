@@ -11,13 +11,13 @@ shows one command's syntax and options.
 
 ## The whole idea in one minute
 
-- **A call** is a program you start with backmux: `backmux -dt --name app -- CMD`.
+- **A process** is a program you start with backmux: `backmux -dt --name app -- CMD`.
   `-t` gives it a headless terminal, `-d` returns at once. With no flags,
   `backmux CMD` runs it attached on a virtual terminal (a PTY), with a chat
   window for messages when you are using a real terminal. `-it` also
   attaches, but types messages into the program; `-i` relays your input
   on a pipe instead. Every
-  call has a name, an ID, and a log. A TTY call, a `-i` call, and a call
+  call has a name, an ID, and a log. A TTY process, a `-i` process, and a process
   placed with `-w`, `--rm`, or `--restart` also record their exit code.
 - **While attached**, Ctrl-C goes to the
   program, Ctrl-P Ctrl-Q detaches and leaves it running (`backmux attach`
@@ -109,7 +109,7 @@ to count characters. Before the edit, the first rows are:
  5|    for (int i = 0; i < 3; i++)
 ```
 
-`backmux peek --json` includes whether the call is still running and its exit
+`backmux peek --json` includes whether the process is still running and its exit
 code, cursor position and visibility, window title,
 alternate screen, mouse tracking mode, bracketed paste, cursor-key mode, an
 output counter, how long the screen has been idle, whether the size came from
@@ -127,7 +127,7 @@ The relevant fields after this edit are:
 }
 ```
 
-Check the saved file, then close the editor and remove its call record:
+Check the saved file, then close the editor and remove its process record:
 
 ```sh
 cat "$demo_dir/hello.c"                  # the string now reads "agents"
@@ -144,17 +144,17 @@ before it starts. Sizes are always `COLS ROWS`, in character cells:
 ```sh
 backmux -dt --size 120 40 --name wide -- vi "$demo_dir/hello.c"
 backmux config set detach-size 120 40                  # ...or make that your default
-backmux resize wide 100 30                             # change a running call (SIGWINCH)
+backmux resize wide 100 30                             # change a running process (SIGWINCH)
 ```
 
-Without `--size`, a detached TTY call takes your saved `detach-size`, then the
+Without `--size`, a detached TTY process takes your saved `detach-size`, then the
 size of the terminal you launched it from, then 80x24 (an attached launch
-skips the saved default: it has a real terminal). `--size` is where a call
+skips the saved default: it has a real terminal). `--size` is where a process
 starts, not a lock, and a size outside 1-1000 is refused before anything runs.
 
 ## Screenshots agents can read
 
-`backmux peek <call> --image screen.png` renders the live screen to a PNG with
+`backmux peek <process> --image screen.png` renders the live screen to a PNG with
 true colors, bold/underline/inverse, box drawing, Braille, wide and combining
 characters across scripts (CJK, Hebrew, Arabic, Indic, Thai, ...), and
 anti-aliased emoji — plus overlays designed for vision models:
@@ -230,18 +230,18 @@ event was not delivered). Value flags take `--flag value` or `--flag=value`.
 
 Every program started with backmux knows its own address: backmux sets
 `BACKMUX_NAME` and `BACKMUX_ID` in its environment, and `BACKMUX_PARENT`
-when it was launched from inside another call. For a call started with `-it`
+when it was launched from inside another process. For a process started with `-it`
 or `-dt`, `backmux msg` types a message into the program's input at once,
 behind a one-line header, followed by Enter (`--no-enter` leaves it
 unsubmitted). The receiving harness decides what happens to input while it
 is busy; Backmux does not schedule the work or confirm its completion.
-For an attached call started without those flags, messages go to its chat
+For an attached process started without those flags, messages go to its chat
 window instead of the program's input. If the program turned on
 bracketed paste, the message goes in as one paste; otherwise its newlines
 become spaces. Control characters other than newline and tab are removed, so a
 message cannot type Escape, submit early, end a paste, or drive the terminal:
 
-From a lead agent running in a call named `lead`, start a worker using an
+From a lead agent running in a process named `lead`, start a worker using an
 installed and configured harness. Inspect it for setup prompts before
 assigning work:
 
@@ -258,20 +258,20 @@ The receiver sees:
 [msg from lead; reply: backmux msg lead "..."] Review the current diff. ...
 ```
 
-The name is the sending call's name as it is now; a message from outside any
+The name is the sending process's name as it is now; a message from outside any
 call gets a name of its own, and replies to it wait in its inbox (`backmux
 help messaging`). The header is addressing, not proof,
-and needs none: only your own user can reach a call's console (the socket
+and needs none: only your own user can reach a process's console (the socket
 admits no one else), and anything running as you could type the same text with
 `backmux send`. Treat what another agent sends as input, with the same care as
 any text it read.
 
-For delivery to a call, `backmux msg` prints the message ID, and
-`backmux msg --received [ID]` is the call's message history: every message it
+For delivery to a process, `backmux msg` prints the message ID, and
+`backmux msg --received [ID]` is the process's message history: every message it
 received, or one by ID with its sender and full text. Run it inside the
-receiving call, or name the call: `backmux msg CALL --received [ID]`.
+receiving process, or name the process: `backmux msg CALL --received [ID]`.
 
-Call receivers accept at most 20 messages per minute. This limits delivery
+Process receivers accept at most 20 messages per minute. This limits delivery
 rate; it is not a completion signal or a limit on total conversation length.
 
 When the worker is done, `backmux end worker` stops it. Its record and log
@@ -319,7 +319,7 @@ backmux -dt --name helper -- claude    # an agent, placed the ordinary way
 ```
 
 Press **Ctrl-P Ctrl-T**, pick `helper`, type, Enter. Your message arrives in the
-agent's prompt from your shell's call, so the agent answers with a plain
+agent's prompt from your shell's process, so the agent answers with a plain
 `backmux msg` — it needs to know nothing about the window — and the reply lands
 in chat, never at your prompt.
 
@@ -368,7 +368,7 @@ other agents), never run it directly — run it under backmux:
 - Wait (no sleep), and always before you peek: `backmux wait NAME --match "text"` ·
   `--idle` · `backmux send NAME ... --wait 300`
 - Finish: `backmux end NAME` · exit code: `backmux wait NAME`
-- Talk to another agent: `backmux msg NAME "..."`. Inside a call, your name is
+- Talk to another agent: `backmux msg NAME "..."`. Inside a process, your name is
   $BACKMUX_NAME. From outside Backmux, your first message assigns an inbox name;
   `backmux inbox --wait` reads the next unread reply and `backmux monitor`
   continues printing replies until stopped.
@@ -384,7 +384,7 @@ failing step can leave a screenshot behind:
 ```sh
 #!/bin/sh
 set -e
-# however the script ends: stop the call and free its name for the next run
+# however the script ends: stop the process and free its name for the next run
 trap 'backmux end ui >/dev/null 2>&1; backmux purge ui >/dev/null 2>&1' EXIT
 backmux -dt --name ui -- ./my-tui --demo
 backmux wait ui --match "Main menu" --timeout 10000
@@ -394,7 +394,7 @@ backmux send ui q            # the TUI's own quit key
 test "$(backmux wait ui)" = 0
 ```
 
-`backmux wait` prints the program's exit code. An ended call keeps its name,
+`backmux wait` prints the program's exit code. An ended process keeps its name,
 as a Docker container does, so the trap purges it: without that, the next run's
 `--name ui` is refused (exit 11). A program killed by Ctrl-C
 reports 130 (128 + SIGINT), so quit with the program's own key when the test
@@ -418,14 +418,14 @@ the screen tests.
 
 ## Run background jobs and services
 
-A **call** has a durable 64-hex ID, a generated `adjective_noun` name when
-you do not choose one, and captured logs. A detached call runs independently
+A **process** has a durable 64-hex ID, a generated `adjective_noun` name when
+you do not choose one, and captured logs. A detached process runs independently
 of the shell that started it, on the same host.
 
 ```sh
 backmux --name web -d python3 -u -m http.server 8080   # requires Python 3 and a free port
 backmux -dw make test                      # ...keeping a waiter: backmux wait gives the exit code
-backmux list                               # your calls, live and past
+backmux list                               # your processes, live and past
 backmux ps                                 # Docker-style view of what's running
 backmux logs web -f                        # follow its output (-n 100: newest lines)
 backmux ports web                          # listening sockets in use (Linux)
@@ -433,15 +433,15 @@ backmux end web                            # TERM, then KILL after 5 s if still 
 backmux web                                # redial: start it again from its recipe
 backmux save web                           # protect it from cleanup
 backmux rename web api                     # give it a better name
-backmux purge                              # sweep ended calls
+backmux purge                              # sweep ended processes
 ```
 
 Flags look like Docker's where they exist (and cluster the same way: `-dit`):
 `-d`, `-i`, `-t`, `-e`, `--env-file`, `--name`, `--rm`, `--restart`,
-`--detach-keys`. A plain `-d` call writes output directly to its log, and
+`--detach-keys`. A plain `-d` process writes output directly to its log, and
 no Backmux process stays to watch it. Its record and log are retained.
 `-w` keeps a small waiter as its parent, which records the exit code (`--rm` and
-`--restart` calls always have one). For a plain `-d` call, `backmux wait`
+`--restart` processes always have one). For a plain `-d` process, `backmux wait`
 prints `-1` when it ends because no exit code was recorded. Use `-dw` for
 CI jobs whose success you need to check:
 
@@ -454,15 +454,15 @@ backmux purge checks
 
 `make test` here is your project's test command. Neither `-d` nor `-dw`
 creates a terminal, so use logs instead of `peek`, and `end` instead of
-sending keystrokes. `backmux attach` picks up calls placed on
-a PTY (`backmux CMD`, `-it`, `-dt`) and calls placed with `-i`, because those
+sending keystrokes. `backmux attach` picks up processes placed on
+a PTY (`backmux CMD`, `-it`, `-dt`) and processes placed with `-i`, because those
 have a console broker. Every
 call gets its own session and process group; before any signal, backmux
 re-checks the boot ID and the leader's identity, so a recycled PID is never
-killed by mistake. Calls placed as root (or under sudo) normally use the
+killed by mistake. Processes placed as root (or under sudo) normally use the
 root-managed store (`/var/lib/backmux`, or `/var/db/backmux` on macOS).
 A program or existing path argument under the invoking user's home routes
-the call to that user's store instead, including with `--system`; see
+the process to that user's store instead, including with `--system`; see
 `backmux help system`.
 
 ## Choose the right view
@@ -479,13 +479,13 @@ independent screen and input commands remain available.
 
 ## How it works
 
-Each call placed with `-t` gets a **console broker**: a small process born with
-the call and gone with it (backmux stays daemonless). The broker owns the
-program's pseudo-terminal, appends every output byte to the call's log, and
+Each process placed with `-t` gets a **console broker**: a small process born with
+the process and gone with it (backmux stays daemonless). The broker owns the
+program's pseudo-terminal, appends every output byte to the process's log, and
 feeds the same bytes to a headless terminal — vendored
 [libvterm](../third_party/libvterm/) — so it always knows the exact screen.
 `peek`, `send`, `wait`, `resize`, and `msg` talk to the broker over the
-call's private Unix socket (owner-only, peer UID checked), or over private
+process's private Unix socket (owner-only, peer UID checked), or over private
 FIFOs where a sandbox denies Unix sockets. When the program
 exits, the broker saves its final screen beside the log. A `backmux shell` adds
 one step: its broker also composes what your terminal shows — that same
@@ -510,10 +510,10 @@ the task guides and individual reference topics.
 ## FAQ
 
 **Is Backmux a terminal emulator?** Backmux includes a headless terminal
-emulator for terminal calls. It exposes the screen and input to scripts and
+emulator for terminal processes. It exposes the screen and input to scripts and
 agents; you can also attach from your usual terminal to use the program.
 
-**Does it need tmux or screen?** No. Terminal calls have their own console
+**Does it need tmux or screen?** No. Terminal processes have their own console
 broker; background modes can have an exit waiter or restart supervisor.
 There is no central daemon or tmux server to start.
 
@@ -522,7 +522,7 @@ same host can invoke Backmux. Running a terminal-based harness under
 Backmux also makes its screen observable and its input accessible to
 messages. How the harness handles incoming input remains harness-specific.
 
-**Is it safe?** Calls and their sockets are private to your user (root can
+**Is it safe?** Processes and their sockets are private to your user (root can
 see all); signals are delivered only after identity re-validation; `msg` text
 loses its control characters, so a message cannot drive the receiver's
 terminal, and a `msg` header says who sent it — not whether the content is
@@ -532,23 +532,23 @@ exception, `backmux purge --system`, re-runs itself through sudo so sudo can
 ask for your password.
 
 **Does it work in sandboxes that block Unix sockets?** Yes. Where
-`socket(AF_UNIX)` is denied, each call's
+`socket(AF_UNIX)` is denied, each process's
 console runs over FIFOs instead, automatically, with nothing given up: peek,
 send, wait, msg, and attach all work.
 `BACKMUX_CONSOLE_TRANSPORT=fifo` forces that mode anywhere. Details:
 [docs/console.md](console.md#where-unix-sockets-are-denied).
 
-**What happens if my agent's shell is killed?** Detached calls and their
+**What happens if my agent's shell is killed?** Detached processes and their
 helpers run in separate sessions, so ending the launching command's process
 group does not end them. An attached launch handles termination differently:
 it forwards SIGTERM to its program. Ctrl-P Ctrl-Q or a terminal hangup
-(SIGHUP) detaches and leaves the call running. See [launch behavior](launcher.md).
+(SIGHUP) detaches and leaves the process running. See [launch behavior](launcher.md).
 
-**Why "backmux"?** A call box is where you place a call and walk away while
+**Why "backmux"?** A process box is where you place a process and walk away while
 it goes on: backmux keeps a program running after the shell that started it
 is gone. It is how you reach someone else on the line: agents message each
 other through it, with caller ID. And it is a terminal you walk up to and
-operate: every TTY call has a screen you can read and type into.
+operate: every TTY process has a screen you can read and type into.
 
 ---
 

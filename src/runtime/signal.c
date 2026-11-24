@@ -13,7 +13,7 @@
 enum signal_validation_state { SIGNAL_TARGET_RUNNING, SIGNAL_TARGET_EXITED };
 
 static int refuse_signal(const char *id, const char *why) {
-    fprintf(stderr, "backmux: error: call %s %s\n", id, why);
+    fprintf(stderr, "backmux: error: process %s %s\n", id, why);
     return 2;
 }
 
@@ -110,7 +110,7 @@ static void not_running_here(const struct hold_run_record *r, bool can_tell) {
     if (can_tell)
         fprintf(stderr,
                 "backmux: %s is not running in this environment: it runs in another PID namespace (the shell that "
-                "started it), and can be ended only from there. Calls started with -dt can be ended from any shell.\n",
+                "started it), and can be ended only from there. Processes started with -dt can be ended from any shell.\n",
                 label);
     else
         fprintf(stderr,

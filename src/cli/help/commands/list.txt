@@ -1,15 +1,15 @@
 usage: backmux list [all] [-s|--system] [-u|--user] [name]
 
-List running calls with their owner, command, age, status, ports, and name;
-list all adds the stopped ones. By default, list shows your personal calls.
+List running processes with their owner, command, age, status, ports, and name;
+list all adds the stopped ones. By default, list shows your personal processes.
 
-  all              stopped calls too
-  -u, --user       your personal calls (the invoking user's, even under sudo)
-  -s, --system     root-managed calls
+  all              stopped processes too
+  -u, --user       your own processes (the invoking user's, even under sudo)
+  -s, --system     root-managed processes
   -a, --all        both scopes
 
 A name filters the listing. Root defaults to the root-managed store;
-root's -a also includes every user's store. Private root-managed calls
+root's -a also includes every user's store. Private root-managed processes
 appear with 'hidden' owner and command to other users.
 
-For a running-only view across personal and root-managed calls, use ps.
+For a running-only view across personal and root-managed processes, use ps.

@@ -130,9 +130,9 @@ static int ambiguous_cb(const char *id, const char *path, struct hold_run_record
 }
 
 /* Several calls match: say so, and which, so the next try can be exact -
- * "no call matches" would be false, and acting on one of them a guess. */
+ * "no process matches" would be false, and acting on one of them a guess. */
 int hold_report_ambiguous(const struct hold_store *store, const char *token, bool name_prefix) {
-    fprintf(stderr, "backmux: error: more than one call matches '%s':\n", token ? token : "");
+    fprintf(stderr, "backmux: error: more than one process matches '%s':\n", token ? token : "");
     if (store && store->record_dir[0] && token) {
         struct ambiguous_walk w = {token, name_prefix ? MATCH_NAME_PREFIX : MATCH_ID_OR_NAME, 0};
         hold_for_each_record(store->record_dir, ambiguous_cb, &w);
@@ -235,14 +235,14 @@ static int append_public_run_name_target(struct hold_resolved_target **targets,
     if (matches > 1) {
         /* (the public projection is not walked for the list: other users'
          * calls are named, not shown) */
-        fprintf(stderr, "backmux: error: more than one call is named '%s'\n", name);
+        fprintf(stderr, "backmux: error: more than one process is named '%s'\n", name);
         return -2;
     }
     return append_resolved_target(targets, count, RESOLVE_SYSTEM_MANAGED, system_store, matched, true) == 0 ? 1 : -1;
 }
 
 int hold_report_not_found(const char *token) {
-    fprintf(stderr, "backmux: error: no call matches '%s'\n", token ? token : "");
+    fprintf(stderr, "backmux: error: no process matches '%s'\n", token ? token : "");
     return 5;
 }
 
@@ -343,7 +343,7 @@ static int resolve_action_token(const struct hold_invocation *inv,
             if (id_rc == -2) {
                 if (!report_missing) return 6;
                 if (cands[i].public_scan) {
-                    fprintf(stderr, "backmux: error: more than one call matches '%s'; give more of the id\n", token);
+                    fprintf(stderr, "backmux: error: more than one process matches '%s'; give more of the id\n", token);
                     return 6;
                 }
                 return hold_report_ambiguous(&cands[i].store, atom, false);
@@ -481,7 +481,7 @@ int hold_shorten_word(const char *word, bool lone, const char *const *verbs, siz
         fprintf(stderr, "\n");
     }
     if (w.matches) {
-        fprintf(stderr, "  calls:");
+        fprintf(stderr, "  processes:");
         for (int i = 0; i < w.matches && i < 8; i++) fprintf(stderr, " %s", w.shown[i]);
         if (w.matches > 8) fprintf(stderr, " ... and %d more", w.matches - 8);
         fprintf(stderr, "\n");

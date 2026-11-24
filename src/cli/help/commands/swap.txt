@@ -1,19 +1,9 @@
-usage: backmux swap <pane>,<pane>
-       backmux swap <pane> <pane>
+usage: backmux swap <name|id>,<name|id>
+       backmux swap <name|id> <name|id>
 
-Two panes trade places in the terminal that shows them. A pane is named by
-letter, number, or call name:
+Two panes trade places in the terminal that shows them, named by their
+processes' names or ids: whoever runs it may not see that screen, so there
+are no letters or numbers to guess at. Run from inside a pane it acts on that
+terminal; from anywhere else, on the one terminal showing panes.
 
-  A-D        the slots of the window on screen: 1 pane A; 2 panes B A;
-             3 panes B A / C; 4 panes B A / C D
-  1-4, 5-8   the same slots by number across windows (1-4 window 1,
-             5-8 window 2, ...)
-  NAME       a call's name or id
-
-A window fills in order: there is no 3 until there are a 1 and a 2. Swapping
-with the next empty slot of a window, or with the first slot of the window
-after the last (5 when window 1 is full), moves the pane there.
-
-Run from inside a pane it acts on that terminal; from anywhere else, on the
-one terminal showing panes. In that terminal, Ctrl-P Ctrl-A then s does the
-same with two key presses.
+In the terminal itself, Ctrl-P Ctrl-S swaps the panes on the screen.

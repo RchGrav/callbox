@@ -2,9 +2,9 @@ usage: backmux peek <target> [--json] [--ruler] [--last-alt]
                  [--image FILE [--no-ruler] [--cursor-ring] [--scale N]
                                [--no-footer] [--no-mouse-marker] [--text]]
 
-Read a call's screen: the visible rows as plain text, one line per row.
-Terminal calls and -i pipe-input calls have a screen; plain -d and -dw
-calls do not. After a call ends, peek shows its last saved screen.
+Read a process's screen: the visible rows as plain text, one line per row.
+Terminal processes and -i pipe-input processes have a screen; plain -d and -dw
+processes do not. After a process ends, peek shows its last saved screen.
 
   --ruler          add zero-based column and row numbers
   --json           add the cursor, terminal modes, title, output counter and

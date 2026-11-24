@@ -132,6 +132,8 @@ struct hold_client {
     int (*on_input_end)(void *ctx);
     int (*on_resize)(void *ctx, const struct winsize *ws);
     int (*on_command)(void *ctx, unsigned char key); /* the lead key, then a command key */
+    int64_t (*due_in)(void *ctx);  /* ms until on_timer is wanted, <0 never */
+    int (*on_timer)(void *ctx);
     bool want_sigint;
     void *ctx;
 };

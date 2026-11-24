@@ -1,14 +1,14 @@
 usage: backmux logs <target> [--follow|-f] [--tail|-n N]
 
-Print a call's captured output, byte for byte as the program wrote it: plain
-text for a plain call; for a TTY call, its escape sequences too (colors,
+Print a process's captured output, byte for byte as the program wrote it: plain
+text for a plain process; for a TTY process, its escape sequences too (colors,
 cursor moves), as a terminal would receive them.
 
-  -f, --follow     keep printing as a running call writes, until it ends
+  -f, --follow     keep printing as a running process writes, until it ends
   -n N, --tail N   only the newest N lines
 
 For compatibility, --plain, --print, and -p are accepted; they do not change
 the output or remove terminal escape sequences. --tail=N also works.
 
 The log is a file: log_path in backmux inspect <target> names it. For the live
-screen of a TTY call, use backmux peek.
+screen of a TTY process, use backmux peek.

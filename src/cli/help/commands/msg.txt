@@ -2,9 +2,9 @@ usage: backmux msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]
                    [--wait-reply [--timeout MS]]
        backmux msg [<target>] --received [ID]
 
-Send text to a call, or to a person or agent outside any call. A TTY call
-receives it in its prompt, followed by Enter. With the call's agent setting
-on (backmux agent, or backmux set NAME agent), a header comes first:
+Send text to a process, or to a person or agent outside any process. A TTY
+process receives it in its prompt, followed by Enter. With the process's agent
+setting on (backmux agent, or backmux set NAME agent), a header comes first:
 
   [msg from NAME; reply: backmux msg NAME "..."] TEXT
 
@@ -13,33 +13,33 @@ command in a shell. An outside sender's inbox, and a person's chat, receive
 stored text. Backmux delivers immediately; input queueing is up to the
 receiving harness.
 
-Inside a call, BACKMUX_ID (or BACKMUX_NAME) identifies the sender. Outside
+Inside a process, BACKMUX_ID (or BACKMUX_NAME) identifies the sender. Outside
 Backmux, the first send creates an inbox and prints its name on stderr.
 The receiver replies with the same msg command in either case.
 
   --stdin          read the message text from stdin
-  --no-enter       type without pressing Enter (for a call's program input)
+  --no-enter       type without pressing Enter (for the program's input)
   --               treat remaining words as text, including words with dashes
   --wait-reply     from outside Backmux, wait for the first new inbox message
                    after sending and print it; any sender can satisfy this
   --timeout MS     bound --wait-reply in milliseconds (0 = no limit, default)
-  --received [ID]  read a call's delivered-message history, or one message by
-                   its delivery ID. Name the call, or omit the target when
-                   running inside the receiving call.
+  --received [ID]  read a process's delivered-message history, or one message by
+                   its delivery ID. Name the process, or omit the target when
+                   running inside the receiving process.
   -h, --help       show this page
 
 TEXT arguments are joined with spaces. Multi-line text is pasted as one
 bracketed paste when the receiving program enables it; otherwise line breaks
 become spaces. Control characters and terminal escape sequences are removed.
 
-Sending to a call prints its message ID on stdout. Sending to an outside
+Sending to a process prints its message ID on stdout. Sending to an outside
 inbox succeeds without printing an ID. --wait-reply then prints the first
 new message; it does not correlate a reply with a request or sender.
-Delivery is not task completion. Plain -d and -dw calls have no input
-console and refuse messages (exit 10). --received reads call history,
+Delivery is not task completion. Plain -d and -dw processes have no input
+console and refuse messages (exit 10). --received reads process history,
 not outside inboxes; use inbox for those.
 
-A call accepts at most 20 messages per minute. This limit does not apply to
+A process accepts at most 20 messages per minute. This limit does not apply to
 outside inboxes. The header supplies an address, not proof of identity.
 --wait-reply exits 7 on timeout or 8 if the inbox expires while waiting.
 

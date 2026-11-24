@@ -449,7 +449,7 @@ static int foreground_exit_status(const struct hold_store *store, const char *id
             continue;
         }
     }
-    fprintf(stderr, "backmux: exit status unknown for call %.12s\n", id);
+    fprintf(stderr, "backmux: exit status unknown for process %.12s\n", id);
     return 1;
 }
 
@@ -650,7 +650,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     /* --size is for a PTY call; one is never allocated just because a size
      * was given. */
     if (opts->size_cols && !console_mode) {
-        fprintf(stderr, "backmux: error: --size sets a PTY call's terminal size; add -t "
+        fprintf(stderr, "backmux: error: --size sets a PTY process's terminal size; add -t "
                         "(for example: backmux -dt --size 120 40 -- <cmd>)\n");
         return HOLD_EXIT_USAGE;
     }
@@ -776,13 +776,13 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         copy_field(&u, id, sizeof(id), existing_id, "backmux: restart metadata too long");
         copy_field(&u, log_path, sizeof(log_path), opts->existing_log_path, "backmux: restart metadata too long");
         if (opts->existing_run_name && *opts->existing_run_name) {
-            copy_field(&u, run_name, sizeof(run_name), opts->existing_run_name, "backmux: call name too long");
+            copy_field(&u, run_name, sizeof(run_name), opts->existing_run_name, "backmux: process name too long");
         }
         /* One launch per call at a time: claim it, then decide. The caller's
          * "not running" was read before this claim; a redial that launched
          * in between is seen only now (see hold_claim_existing_run). */
         u.claim_fd = hold_claim_existing_run(store, id);
-        if (u.claim_fd < 0) launch_die(&u, "backmux: failed to claim the call for redial");
+        if (u.claim_fd < 0) launch_die(&u, "backmux: failed to claim the process for redial");
         /* sudo-routed user-local redial: the claim is the user's, like the
          * log, so a launcher that died holding it leaves the user a file
          * they can claim again. */
@@ -795,7 +795,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         if (hold_load_record_by_id(store->record_dir, id, &cur, cur_path, sizeof(cur_path)) != 0) {
             char display[ID_DISPLAY_HEX_LEN + 1];
             hold_run_id_display(id, display);
-            fprintf(stderr, "backmux: error: call %s is gone (purged while redialing)\n", display);
+            fprintf(stderr, "backmux: error: process %s is gone (purged while redialing)\n", display);
             launch_undo(&u);
             return HOLD_EXIT_NO_TARGET;
         }
@@ -805,7 +805,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         if (running) {
             char display[ID_DISPLAY_HEX_LEN + 1];
             hold_run_id_display(id, display);
-            fprintf(stderr, "backmux: error: call %s is already running\n", display);
+            fprintf(stderr, "backmux: error: process %s is already running\n", display);
             launch_undo(&u);
             return 6; /* as the caller's own check: already running */
         }
@@ -1035,7 +1035,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     }
     if (run_name[0]) {
         r.has_name = true;
-        copy_field(&u, r.name, sizeof(r.name), run_name, "backmux: call name too long");
+        copy_field(&u, r.name, sizeof(r.name), run_name, "backmux: process name too long");
     }
     r.auto_remove = opts->auto_remove;
     r.pid_ns = hold_current_pid_ns();

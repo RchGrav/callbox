@@ -136,7 +136,7 @@ void chat_draw(struct chat *c, struct compositor *comp, int64_t now, struct comp
 /* The terminal is ready for chat to draw on (rows x cols), with no tip. */
 void chat_ready(struct chat *c, int rows, int cols, int64_t now);
 /* The focused pane changed: its screen is what Ctrl-S sends. */
-void chat_set_screen(struct chat *c, struct hold_screen *screen);
+void chat_set_screen(struct chat *c, struct hold_screen *screen, const char *name);
 /* The chat key (Ctrl-P Ctrl-T): open chat, or hand the keyboard between
  * chat and the program. chat_open_on: open it on a call's conversation. */
 void chat_toggle(struct chat *c);

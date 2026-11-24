@@ -1,7 +1,7 @@
 usage: backmux set <name|id> <setting>[=<value>]
        backmux unset <name|id> <setting>
 
-Change a call's settings, running or ended.
+Change a process's settings, running or ended.
 
   agent              messages arrive formatted for an agent (unset: raw,
                      the text then Enter). Takes effect from the next

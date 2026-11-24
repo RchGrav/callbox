@@ -2,9 +2,9 @@ usage: backmux monitor [NAME] [--timeout MS]
 
 Follow an outside sender's inbox: print unread messages, then keep printing
 new ones until stopped. This is equivalent to backmux inbox --monitor.
-It follows messages, not a call's screen, output log, or task completion.
+It follows messages, not a process's screen, output log, or task completion.
 
-Your first backmux msg from outside a call creates an inbox and prints its
+Your first backmux msg from outside a process creates an inbox and prints its
 name. With no NAME, monitor uses the inbox for the current harness. Use the
 printed name when monitoring from a different terminal or harness.
 

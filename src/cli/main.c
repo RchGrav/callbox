@@ -302,7 +302,7 @@ static int refuse_verb_name(const char *name) {
         return HOLD_EXIT_USAGE;
     }
     if (!name || !hold_cli_command_is_parser_owned(name)) return 0;
-    fprintf(stderr, "backmux: error: '%s' is a backmux command; a call named so could not be redialed by name\n",
+    fprintf(stderr, "backmux: error: '%s' is a backmux command; a process named so could not be redialed by name\n",
             name);
     return HOLD_EXIT_USAGE;
 }
@@ -323,7 +323,7 @@ static int apply_run_value_opt(enum run_opt_id id, const char *value, struct cli
         /* Chat is no longer part of a call: it floats over whatever you are
          * attached to, on Ctrl-P Ctrl-T, so a call has no chat key to set. */
         (void)value;
-        fprintf(stderr, "backmux: error: --chat-key is gone: chat belongs to no call; Ctrl-P Ctrl-T opens it anywhere\n");
+        fprintf(stderr, "backmux: error: --chat-key is gone: chat belongs to no process; Ctrl-P Ctrl-T opens it anywhere\n");
         return HOLD_EXIT_USAGE;
     case OPT_RESTART:
         return parse_restart_policy_arg(value, run->restart_policy);
@@ -367,7 +367,7 @@ static int parse_run_options(int argc,
         /* Rejected, never remapped (docs/docker-familiarity-contract.md). */
         fprintf(stderr,
                 "backmux: error: --privileged is not supported; backmux launches with the invoker's rights.\n"
-                "  To place a call in the root-managed store, run backmux as root (or with sudo).\n");
+                "  To place a process in the root-managed store, run backmux as root (or with sudo).\n");
         return HOLD_EXIT_USAGE;
     }
     if (!strcmp(arg, "--cap-add") || !strncmp(arg, "--cap-add=", 10) ||
@@ -671,7 +671,7 @@ int hold_cli_main(int argc, char **argv) {
     if (!shell_mode && !force_raw && argv[argi][0] == '-' && argv[argi][1] && strcmp(argv[argi], "--version") != 0 &&
         strcmp(argv[argi], "-V") != 0 && strcmp(argv[argi], "--help") != 0 && strcmp(argv[argi], "-h") != 0) {
         fprintf(stderr, "backmux: error: unknown flag '%s'\n"
-                        "  backmux help launch lists the flags for placing a call;\n"
+                        "  backmux help launch lists the flags for placing a process;\n"
                         "  to run a command whose name starts with a dash, put -- before it\n",
                 argv[argi]);
         free_run_options(&run);
@@ -741,7 +741,7 @@ int hold_cli_main(int argc, char **argv) {
     /* Options for placing a call mean nothing to a verb; accepted and
      * ignored, they would only hide a mistake. */
     if (owned && launch_flag) {
-        fprintf(stderr, "backmux: error: %s is for placing a call; it does not apply to 'backmux %s'\n", launch_flag, command);
+        fprintf(stderr, "backmux: error: %s is for placing a process; it does not apply to 'backmux %s'\n", launch_flag, command);
         free(cmd_argv);
         free_run_options(&run);
         return HOLD_EXIT_USAGE;
@@ -879,7 +879,7 @@ int hold_cli_main(int argc, char **argv) {
         }
         /* Resolution fell through to a PATH command: exec argv directly (a
          * missing command fails without leaving a record), matching the doc's
-         * "call id -> call name -> PATH command" order. Shell snippets go
+         * "process id -> process name -> PATH command" order. Shell snippets go
          * through an explicit `backmux -- sh -c ...`. */
         /* User mode: a program placed with no session flags runs attached on
          * a PTY, as `backmux shell` does for a shell - with the chat window,

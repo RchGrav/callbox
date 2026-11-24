@@ -2,7 +2,7 @@ backmux help messaging - exchange messages from any harness
 
 Use this to hand off work and receive reports across terminal agents.
 Anything that can run a command can send a message. A receiving agent needs
-an input-enabled call; a sender outside Backmux receives replies in an inbox.
+an input-enabled process; a sender outside Backmux receives replies in an inbox.
 
 PREPARE A RECEIVER
   This example uses an installed, configured Codex harness:
@@ -12,9 +12,9 @@ PREPARE A RECEIVER
     backmux wait reviewer --idle 1000
     backmux peek reviewer
 
-  Check that its prompt is ready. If it is already running as a call, use
-  that call's name instead (backmux set NAME agent if it was started as a
-  plain call). backmux list shows running calls, not inboxes.
+  Check that its prompt is ready. If it is already running as a process, use
+  that process's name instead (backmux set NAME agent if it was started as a
+  plain process). backmux list shows running processes, not inboxes.
 
 SEND FROM A HARNESS OUTSIDE BACKMUX
   Run this in your existing harness's command tool:
@@ -53,20 +53,20 @@ WAIT FOR A REPLY OR FOLLOW THE CONVERSATION
   text before treating a message as the answer to a particular task.
 
 UNDERSTAND WHERE A MESSAGE GOES
-  Inside a TTY call (call, agent, detach, shell), a message is typed into
+  Inside a TTY process (call, agent, detach, shell), a message is typed into
   the program and Enter submits it: with the agent setting on, behind a
   header naming the sender and how to reply; without it, raw, as if typed.
   backmux set/unset NAME agent switch it from the next message. A message
   to a person goes to their chat (Ctrl-P Ctrl-T), by their chat name.
-  server calls have no input console and refuse messages. Backmux delivers
+  server processes have no input console and refuse messages. Backmux delivers
   input; it does not manage a harness's work queue.
 
   An outside inbox is created on first send, not by monitor. Its name
   expires after an hour without use; individual messages expire one hour
   after delivery. No timeout means keep waiting. Timeout exits 7.
-  backmux wait is different: it waits for a call's screen or process exit.
+  backmux wait is different: it waits for a process's screen or process exit.
 
   When the reviewer is no longer needed: backmux end reviewer, then
-  backmux purge reviewer. This removes the call, not your outside inbox.
+  backmux purge reviewer. This removes the process, not your outside inbox.
 
 Next: backmux help agents. Details: backmux help msg, inbox, monitor.

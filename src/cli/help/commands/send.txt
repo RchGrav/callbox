@@ -2,8 +2,8 @@ usage: backmux send <target> [TEXT]... [--text TEXT] [-k KEY]...
                  [--keys "K1 K2"] [--enter] [--paste TEXT|-] [--stdin] [--seq]
                  [--mouse ACTION,COL,ROW[,BUTTON]] [--wait MS [--timeout MS]]
 
-Send input without attaching. Terminal calls and -i pipe-input calls accept
-input; plain -d and -dw calls do not. Arguments are applied in order.
+Send input without attaching. Terminal processes and -i pipe-input processes
+accept input; plain -d and -dw processes do not. Arguments are applied in order.
 
   TEXT             type literally; separate arguments add no spaces
   --text TEXT      type text that starts with a dash

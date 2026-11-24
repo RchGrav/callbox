@@ -774,7 +774,7 @@ static void handle_send(struct broker *b, struct control_client *c, char *ops) {
     uint64_t seq = b->output_seq;
     bool mouse_off = false, mouse_clamped = false;
     if (b->target_done) {
-        control_replyf(c, "error the call has ended\n");
+        control_replyf(c, "error the process has ended\n");
         return;
     }
     for (char *line = ops; line && *line;) {
@@ -832,7 +832,7 @@ static void handle_resize(struct broker *b, struct control_client *c, const char
     const char *r = kv_get(args, "rows"), *k = kv_get(args, "cols");
     int rows = r ? atoi(r) : 0, cols = k ? atoi(k) : 0;
     if (b->target_done) {
-        control_replyf(c, "error the call has ended\n");
+        control_replyf(c, "error the process has ended\n");
         return;
     }
     if (!hold_term_size_valid(cols, rows)) {
@@ -854,7 +854,7 @@ static void handle_signal(struct broker *b, struct control_client *c, const char
         return;
     }
     if (b->target_done || b->target <= 0 || (kill(-b->target, sig) != 0 && errno == ESRCH)) {
-        control_replyf(c, "error the call has ended\n");
+        control_replyf(c, "error the process has ended\n");
         return;
     }
     control_replyf(c, "ok\n");
@@ -1021,7 +1021,7 @@ static int resolve_sender(const struct broker *b, const char *claim, char *label
 
 static void handle_msg(struct broker *b, struct control_client *c, const char *args, char *body) {
     if (b->target_done) {
-        control_replyf(c, "error the call has ended\n");
+        control_replyf(c, "error the process has ended\n");
         return;
     }
     int64_t now = now_ms();
@@ -1029,7 +1029,7 @@ static void handle_msg(struct broker *b, struct control_client *c, const char *a
     for (int i = 0; i < BROKER_MSG_RATE; i++)
         if (b->sent_ms[i] && now - b->sent_ms[i] < 60000) recent++;
     if (recent >= BROKER_MSG_RATE) {
-        control_replyf(c, "error rate limit: %d messages a minute to one call\n", BROKER_MSG_RATE);
+        control_replyf(c, "error rate limit: %d messages a minute to one process\n", BROKER_MSG_RATE);
         return;
     }
     int slot = -1;
@@ -1560,14 +1560,14 @@ static void show_name(struct broker *b, struct attach_client *c) {
     char path[HOLD_PATH_MAX];
     if (hold_load_record_by_id(b->store->record_dir, b->run_id, &r, path, sizeof(path)) != 0) return;
     /* The name, and the key to everything else: the name is what msg,
-     * attach and every agent take, and Ctrl-P Ctrl-H (spelled out, for clarity) is the
+     * attach and every agent take, and holding Ctrl-Space for help is the
      * one key nobody could guess. Never the command: it is what the person just typed. */
     char label[ALIAS_MAX_LEN + 32];
-    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " %s  Ctrl-P Ctrl-H: help ", r.name);
+    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " %s  hold Ctrl-Space: help ", r.name);
     else {
         char display[ID_DISPLAY_HEX_LEN + 1];
         hold_run_id_display(r.id, display);
-        snprintf(label, sizeof(label), " %s  Ctrl-P Ctrl-H: help ", display);
+        snprintf(label, sizeof(label), " %s  hold Ctrl-Space: help ", display);
     }
     hold_free_run_record(&r);
     snprintf(c->name_label, sizeof(c->name_label), "%s", label);
@@ -1979,7 +1979,7 @@ static void broker_serve(struct broker *b) {
         /* A connection not yet known to be control may be an attach client
          * arriving as the call ends: a control reply would be printed as
          * the program's output. Closing it says the call is over. */
-        else if (ctl[i].phase != CTL_SNIFF) control_replyf(&ctl[i], "error the call has ended\n");
+        else if (ctl[i].phase != CTL_SNIFF) control_replyf(&ctl[i], "error the process has ended\n");
         if (ctl[i].fd >= 0) drop_control(&ctl[i]);
     }
     for (int i = 0; i < BROKER_MAX_MSGS; i++) free(b->msgs[i].text);

@@ -2,9 +2,9 @@
 
 [Docs index](index.md) | [Previous: Store](store.md) | Related: [Launcher](launcher.md), [backmux identity](backmux-identity.md)
 
-Backmux records process identity at launch and checks it before signaling a local process. A call ID or name selects a record, which must match the live process before Backmux sends a signal. From another PID namespace, Backmux asks the call's broker to signal its own program instead.
+Backmux records process identity at launch and checks it before signaling a local process. A process ID or name selects a record, which must match the live process before Backmux sends a signal. From another PID namespace, Backmux asks the process's broker to signal its own program instead.
 
-An unavailable process or lock probe does not mean that a call has exited. When status is `Unknown`, its console may still be reachable through the authenticated broker connection.
+An unavailable process or lock probe does not mean that a process has exited. When status is `Unknown`, its console may still be reachable through the authenticated broker connection.
 
 ## Recorded identity
 
@@ -16,8 +16,8 @@ A record stores:
 - `boot_id`: a boot marker, when one can be read.
 - `proc_starttime_ticks`: the process start time, or 0 when it could not be read. On Linux it is the starttime field of `/proc/<pid>/stat`, in clock ticks. On macOS it is `p_starttime`, in microseconds.
 - `exe_dev` and `exe_ino`: the device and inode of the executable, or 0 when they could not be read.
-- `pid_ns`: the PID namespace the call was launched in (Linux; 0 means unknown).
-- `liveness_lock`: whether the call's supervisor holds a lock on the log for the call's whole life.
+- `pid_ns`: the PID namespace the process was launched in (Linux; 0 means unknown).
+- `liveness_lock`: whether the process's supervisor holds a lock on the log for the process's whole life.
 
 On Linux the probes read `/proc/<pid>/stat`, `/proc/<pid>/exe`, `/proc/self/ns/pid`, and `/proc/sys/kernel/random/boot_id`. macOS has no `/proc`, so start time and executable come from `sysctl(KERN_PROC_PID)` and `proc_pidpath`, and the boot marker is `kern.bootsessionuuid` (`macos-<UUID>`), new at each boot and fixed until the next. Not the boot time: macOS recomputes `kern.boottime` when it adjusts the clock, so the same boot read differently later.
 
@@ -25,7 +25,7 @@ A probe can fail: the process may already be gone, permission may be denied, or 
 
 ## State evaluation
 
-`hold_eval_state` computes a call's state from its record and available liveness evidence each time a command asks: the local process table, or the log lock across PID namespaces. Nothing stores the result. The record's `state` field holds only what the launcher (`running`) or an exit stamp (`exited`) wrote.
+`hold_eval_state` computes a process's state from its record and available liveness evidence each time a command asks: the local process table, or the log lock across PID namespaces. Nothing stores the result. The record's `state` field holds only what the launcher (`running`) or an exit stamp (`exited`) wrote.
 
 ```mermaid
 flowchart TD
@@ -81,17 +81,17 @@ Notes on the diagram:
 - **Leader present:** the leader's stat is readable and it is not a zombie, or `kill(pid, 0)` succeeds or fails with `EPERM`.
 - **Process identity:** compare the recorded starttime, or the executable device and inode when no starttime was recorded and the executable can be inspected.
 
-**Zombie leader.** A zombie leader is not automatically done. The process-group leader can exit while useful descendants remain, which is common with launchers and shell wrappers. If live members of the same group and session remain, the call is running; if the group is empty or holds only zombies, it has exited.
+**Zombie leader.** A zombie leader is not automatically done. The process-group leader can exit while useful descendants remain, which is common with launchers and shell wrappers. If live members of the same group and session remain, the process is running; if the group is empty or holds only zombies, it has exited.
 
-**Another PID namespace.** Some sandboxes give each shell its own PID namespace. There the recorded pid means nothing, and may even name an unrelated process, so it is never consulted. The filesystem is shared, and `flock` locks are held in the kernel, so a lock on the log can still show that the call is alive.
+**Another PID namespace.** Some sandboxes give each shell its own PID namespace. There the recorded pid means nothing, and may even name an unrelated process, so it is never consulted. The filesystem is shared, and `flock` locks are held in the kernel, so a lock on the log can still show that the process is alive.
 
-These processes hold the lifetime lock: the waiter or restart supervisor of a call started under the console fallback (Unix sockets denied, or `BACKMUX_CONSOLE_TRANSPORT=fifo`), and a broker whose endpoint is a FIFO. This includes both TTY calls (`-t`) and calls with input on a pipe (`-i`). These calls record `liveness_lock: true`.
+These processes hold the lifetime lock: the waiter or restart supervisor of a process started under the console fallback (Unix sockets denied, or `BACKMUX_CONSOLE_TRANSPORT=fifo`), and a broker whose endpoint is a FIFO. This includes both TTY processes (`-t`) and processes with input on a pipe (`-i`). These processes record `liveness_lock: true`.
 
-The probe has three outcomes: held, successfully checked and unlocked, or unavailable. A held lock shows the call is running. An unlocked lifetime lock gives `Exited (?)` when no exit was recorded. A missing or unreadable log, or an error from the lock operation, gives `Unknown`; it does not establish that a live supervisor released its lock.
+The probe has three outcomes: held, successfully checked and unlocked, or unavailable. A held lock shows the process is running. An unlocked lifetime lock gives `Exited (?)` when no exit was recorded. A missing or unreadable log, or an error from the lock operation, gives `Unknown`; it does not establish that a live supervisor released its lock.
 
-A plain `-d` call under the fallback has no supervisor. Its program's output descriptors hold a shared lock instead. A held lock shows the call runs; a missing lock proves nothing, because a program may close its output.
+A plain `-d` process under the fallback has no supervisor. Its program's output descriptors hold a shared lock instead. A held lock shows the process runs; a missing lock proves nothing, because a program may close its output.
 
-The normal socket path takes no lifetime lock. A foreign call started that way can therefore have status `Unknown` while its broker is still reachable. Console commands can try the connection in that state, using the same access checks as for a known running call. Status evidence and the ability to communicate with the broker are separate. See [Console](console.md#where-unix-sockets-are-denied) for the supported FIFO path and its regression coverage.
+The normal socket path takes no lifetime lock. A foreign process started that way can therefore have status `Unknown` while its broker is still reachable. Console commands can try the connection in that state, using the same access checks as for a known running process. Status evidence and the ability to communicate with the broker are separate. See [Console](console.md#where-unix-sockets-are-denied) for the supported FIFO path and its regression coverage.
 
 ## What each state allows
 
@@ -106,12 +106,12 @@ Purge uses these states. Signaling checks the live process itself (below); the s
 
 ## Signal safety
 
-`signal_one` (src/runtime/signal.c) loads the record. If the call runs in another PID namespace:
+`signal_one` (src/runtime/signal.c) loads the record. If the process runs in another PID namespace:
 
-- A `-t` or `-i` call is signaled through its broker, which can see its program. This can work even when this shell reports `Unknown` because it cannot inspect the log lock.
-- A plain `-d` or `-dw` call has no broker to ask, so it is refused (exit 3).
+- A `-t` or `-i` process is signaled through its broker, which can see its program. This can work even when this shell reports `Unknown` because it cannot inspect the log lock.
+- A plain `-d` or `-dw` process has no broker to ask, so it is refused (exit 3).
 - `--print` is refused (exit 3), because the pid means nothing in this shell.
-- A failed broker connection is reported as a failure to reach the call, not as proof that it exited.
+- A failed broker connection is reported as a failure to reach the process, not as proof that it exited.
 
 Otherwise `validate_signal_target` checks the live process before any signal:
 
@@ -120,13 +120,13 @@ Otherwise `validate_signal_target` checks the live process before any signal:
 3. If the leader is alive and not a zombie, its recorded starttime must match (or, when no starttime was recorded, its executable device and inode), and its current group and session must match the record. Otherwise refuse (exit 2).
 4. If the leader is gone, the group is checked:
    - live members in the recorded group and session: proceed
-   - empty or zombies only: the call has already exited
+   - empty or zombies only: the process has already exited
    - the table cannot be scanned: refuse (exit 2)
 5. Where step 3 or 4 would proceed, a record with no identity value at all (no starttime, no executable identity) is refused (exit 2).
 
 When the leader is gone but the group lives, nothing is left to compare the recorded identity against, and a process group cannot be checked and signaled in one atomic step. Matching the recorded `pgid` and `sid` within the same boot is the best available check.
 
-Backmux then sends the signal to the whole group with `kill(-pgid, sig)`. `ESRCH` means the call already exited; `EPERM` gives exit 3.
+Backmux then sends the signal to the whole group with `kill(-pgid, sig)`. `ESRCH` means the process already exited; `EPERM` gives exit 3.
 
 **`end`** (alias `stop`) escalates in steps:
 
@@ -139,7 +139,7 @@ Backmux then sends the signal to the whole group with `kill(-pgid, sig)`. `ESRCH
 
 Afterwards, `hold_report_session_escapees` warns about processes still in the session but outside the group.
 
-**`--print`** runs the same validation and also requires the call to be live. It then prints `kill -TERM -- -<pgid>` or `kill -KILL -- -<pgid>` and signals nothing. Nothing is printed for a call that is stale, cannot be validated, has already exited, or runs in another PID namespace.
+**`--print`** runs the same validation and also requires the process to be live. It then prints `kill -TERM -- -<pgid>` or `kill -KILL -- -<pgid>` and signals nothing. Nothing is printed for a process that is stale, cannot be validated, has already exited, or runs in another PID namespace.
 
 ## Why this design works
 

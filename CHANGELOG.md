@@ -31,7 +31,25 @@ records are not carried over; the two never touch each other's calls.
 
 ### Changed
 
-- `list` shows running calls; `list all` adds the stopped ones.
+- Processes are called processes: "call" is gone from every message, page
+  and column (`PROCESS ID`). `backmux call` is still the verb.
+- Keys: `Ctrl-P Ctrl-S` swap panes (each shows `A: name`; two letters),
+  `Ctrl-P Ctrl-G` go to window, `Ctrl-P Ctrl-M` move the active pane to a
+  window (you stay), `Ctrl-P Ctrl-F` toggle full screen, `Ctrl-P Ctrl-J`
+  jump by name, `Ctrl-P Ctrl-W` next window (shown bottom right when there is
+  more than one). Ten windows per terminal, on the number keys.
+- Help is holding `Ctrl-Space`: after 3 seconds the keys and every pane's
+  name show, until let go. A tap still reaches the program. `Ctrl-P Ctrl-H`
+  and `Ctrl-P Ctrl-N` are gone, and so is the hint bar under `Ctrl-P`.
+- `backmux swap` takes names or ids only.
+- A launch on a terminal is inline: no alternate screen, nothing cleared;
+  chat opens over the screen without wiping it. Re-attach and panes still
+  redraw the whole screen.
+- `purge` prints one line: `Cleaned up 6 records, 8 are still active.`
+- The attach list and chat's picker show only processes that are alive.
+- Chat's screen snapshot names the pane's process, not the person.
+- A guard child restores the terminal if the client is killed with -9.
+- `list` shows running processes; `list all` adds the stopped ones.
 - `purge all` ends and removes every call that is not saved, naming the
   calls it ended; saved calls are kept.
 - A message to a call without the agent setting arrives raw: the text, then

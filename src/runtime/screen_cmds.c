@@ -54,7 +54,7 @@ static void close_screen_target(struct screen_target *t) {
 }
 
 static int no_screen(const struct screen_target *t) {
-    fprintf(stderr, "backmux: %s has no terminal screen; place TTY calls with -t (e.g. backmux -dt <cmd>)\n", t->label);
+    fprintf(stderr, "backmux: %s has no terminal screen; place TTY processes with -t (e.g. backmux -dt <cmd>)\n", t->label);
     return HOLD_EXIT_NO_SCREEN;
 }
 
@@ -355,7 +355,7 @@ static const char *mouse_mode_name(uint8_t m) {
 }
 
 static void write_peek_json(const struct screen_target *t, const struct hold_snapshot *s, const char *image, FILE *f) {
-    fprintf(f, "{\n  \"call\": \"%s\",\n  \"name\": ", t->r.id);
+    fprintf(f, "{\n  \"process\": \"%s\",\n  \"name\": ", t->r.id);
     if (t->r.has_name && t->r.name[0]) {
         fputc('"', f);
         hold_json_escape(f, t->r.name);
@@ -714,7 +714,7 @@ static int run_wait(const struct screen_target *t, const char *args, bool print_
      * instead of closing: the console closed, as above. Why: a send --wait
      * whose wait arrived late (the FIFO transport is slower) said only "the
      * call has ended", exit 1, where it means input sent, then ended (8). */
-    if (!strncmp(r, "error the call has ended", 24)) {
+    if (!strncmp(r, "error the process has ended", 24)) {
         free(reply);
         return WAIT_CONSOLE_CLOSED;
     }
@@ -775,7 +775,7 @@ static int wait_record_exit(const struct screen_target *t, long timeout_ms) {
         }
         /* A plain -d call leaves nothing behind to record its exit code. */
         if (st == STATE_EXITED && !records) {
-            fprintf(stderr, "backmux: %s has ended; a plain -d call records no exit code (launch it with -dw to "
+            fprintf(stderr, "backmux: %s has ended; a plain -d process records no exit code (launch it with -dw to "
                             "record one)\n", t->label);
             printf("-1\n");
             return 0;
@@ -1044,7 +1044,7 @@ static int msg_received(const struct hold_invocation *inv, const struct hold_sto
                         const struct hold_store *system_store, const char *token, const char *want) {
     if (!token || !*token) token = getenv("BACKMUX_ID");
     if (!token || !*token) {
-        fprintf(stderr, "backmux: msg --received reads a call's messages: run it inside a backmux call, or name one "
+        fprintf(stderr, "backmux: msg --received reads a process's messages: run it inside a backmux call, or name one "
                         "(backmux msg CALL --received)\n");
         return 1;
     }
@@ -1093,7 +1093,7 @@ static int msg_received(const struct hold_invocation *inv, const struct hold_sto
             struct tm tmv;
             char at[32] = "?";
             if (localtime_r(&tt, &tmv)) strftime(at, sizeof(at), "%Y-%m-%d %H:%M:%S", &tmv);
-            const char *who = strcmp(from, "-") ? from : "(no sender: sent from outside any call)";
+            const char *who = strcmp(from, "-") ? from : "(no sender: sent from outside any process)";
             (void)from_call;
             if (want) {
                 printf("id:   %s\nfrom: %s\nat:   %s\n\n%s\n", id, who, at, hex);
@@ -1193,7 +1193,7 @@ static int msg_action_impl(const struct hold_invocation *inv,
     if (outside && hold_operator_name(user_store, true, opname, sizeof(opname), &made) != 0) opname[0] = '\0';
     if (wait_reply && !outside) {
         fprintf(stderr, "backmux: --wait-reply is for a sender outside backmux.\n"
-                        "Inside a call, replies arrive as program input or chat.\n");
+                        "Inside a process, replies arrive as program input or chat.\n");
         rc = HOLD_EXIT_USAGE;
         goto out;
     }

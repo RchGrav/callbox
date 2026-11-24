@@ -1,6 +1,6 @@
 usage: backmux stats <target> [--no-stream]
 
-Live resource usage for the call's process group: CPU %, resident memory, and
+Live resource usage for its process group: CPU %, resident memory, and
 process count, refreshed in place every second until Ctrl-C. --no-stream (or
 a stdout that is not a terminal) prints one frame. Linux only: on macOS
 the figures read zero.

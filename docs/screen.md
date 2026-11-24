@@ -2,11 +2,11 @@
 
 [Docs index](index.md) | [Repository README](../README.md) | Related: [Console](console.md), [Implementation invariants](SPEC.md)
 
-A call placed with `-t` runs on a PTY owned by its **console broker**, a
-process born with the call and gone with it (Backmux stays daemonless). The
-broker writes every output byte to the call's log, and also feeds it to a
+A process placed with `-t` runs on a PTY owned by its **console broker**, a
+process born with the process and gone with it (Backmux stays daemonless). The
+broker writes every output byte to the process's log, and also feeds it to a
 headless terminal — vendored [libvterm](../third_party/libvterm/) 0.3.3 —
-so it always knows the call's screen: every cell's characters, colors and
+so it always knows the process's screen: every cell's characters, colors and
 attributes, the cursor, and the program's input modes.
 
 ## Layers
@@ -23,7 +23,7 @@ attributes, the cursor, and the program's input modes.
 
 ## The control protocol
 
-Every connection to a call's socket starts undecided. A client that opens
+Every connection to a process's socket starts undecided. A client that opens
 with the 8-byte magic `holdctl1` is a **control client**: it sends one
 request as a big-endian u32 length plus text, receives one reply in the same
 framing, and is closed. Anything else is the attach client (`holdv1` framed,
@@ -50,7 +50,7 @@ nested keys=<hex>            -> no reply; held open while a nested attach client
 ```
 
 Errors are one line, `error <why>`: for example `error busy`, `error the
-call has ended`, `error rate limit: 20 messages a minute to one call`,
+call has ended`, `error rate limit: 20 messages a minute to one process`,
 `error too many undelivered messages`. When the program exits, a `wait` that asked
 for the exit (`exit=1`, or no condition at all) replies `ok`; any other
 replies `ended`. A `timeout` of 0 or none means no deadline.
@@ -63,7 +63,7 @@ output never counts. Without `--since`, silence counts from the later of the
 wait's start and the last output, so a reply to input sent just before the
 wait is still awaited.
 
-## The size a call starts at
+## The size a process starts at
 
 Sizes are `COLS ROWS` in character cells everywhere — `--size`, `backmux config
 set detach-size`, `backmux resize` — parsed by one function
@@ -71,7 +71,7 @@ set detach-size`, `backmux resize` — parsed by one function
 (1 to 1000 each). Zero, negative, non-numeric, incomplete, and out-of-range
 sizes are refused before anything is started or saved.
 
-The launcher resolves a TTY call's first size, in this order:
+The launcher resolves a TTY process's first size, in this order:
 
 1. `--size COLS ROWS` (a redial replays the size its recipe was placed with,
    unless the redial gives its own);
@@ -83,11 +83,11 @@ The launcher resolves a TTY call's first size, in this order:
 
 The broker opens the PTY and creates the headless screen at that size before
 it forks the program, so a TUI that asks for its dimensions the moment it
-starts gets the right answer. `--size` is where the call starts, not a lock:
+starts gets the right answer. `--size` is where the process starts, not a lock:
 `backmux resize`, and an attached terminal's window, change it afterwards.
 `--size` requires a terminal mode: explicit `-t`, a bare launch, or
-`backmux shell`. It does not turn a plain `-d` call into a terminal.
-A saved default never touches a call that is already
+`backmux shell`. It does not turn a plain `-d` process into a terminal.
+A saved default never touches a process that is already
 running, and a saved value that no longer reads as a size is not guessed at:
 the launch stops and says how to set or clear it.
 
@@ -119,7 +119,7 @@ palette indexes are not carried.
 
 When no more output can come, the broker writes the final snapshot to
 `<id>.screen` beside `<id>.log`. It rewrites it once the program is reaped,
-so the file records the exit. `backmux peek` reads it for ended calls, and
+so the file records the exit. `backmux peek` reads it for ended processes, and
 purge removes it with `<id>.altscreen` and `<id>.msgs`.
 
 Full-screen programs draw on the alternate screen and switch back when they
@@ -131,9 +131,9 @@ alt=1`); at exit it is saved as `<id>.altscreen`. Only the first
 switch-back in each read of output is seen, and only while the alternate
 screen is active; a sequence split across two reads is missed.
 
-## Messages between calls
+## Messages between processes
 
-(Calls with chat are the exception to what follows about typing: a bare
+(Processes with chat are the exception to what follows about typing: a bare
 launch on a real terminal or `backmux shell` sends messages to its chat
 window instead of typing into the program. See [shell.md](shell.md).)
 
@@ -141,7 +141,7 @@ window instead of typing into the program. See [shell.md](shell.md).)
 once, without waiting for a quiet screen. The receiving harness decides
 whether input received while busy is queued, handled immediately, or ignored;
 Backmux does not track its tasks. Two things can hold a message
-back. A sender whose call has no record yet gets up to 2 s, because a call
+back. A sender whose process has no record yet gets up to 2 s, because a process
 that messages the instant it starts can beat its own record, and the
 header's name comes from that record. And
 messages go in oldest first, one per broker pass, with at most 16 pending.
@@ -155,18 +155,18 @@ in as a bracketed paste when the program enabled mode 2004. Otherwise
 newlines and carriage returns become spaces, so it cannot submit early.
 Enter follows, unless `--no-enter` was given (`submit=0`).
 
-The sender names its call by `BACKMUX_ID`, else `BACKMUX_NAME`; only an id
-or a call name is taken (anything else could break the header or a `.msgs`
-line). The receiver looks that call up and shows its name as the record has it
-now, so a renamed call is shown, and answered, by its new name. The header,
+The sender names its process by `BACKMUX_ID`, else `BACKMUX_NAME`; only an id
+or a process name is taken (anything else could break the header or a `.msgs`
+line). The receiver looks that process up and shows its name as the record has it
+now, so a renamed process is shown, and answered, by its new name. The header,
 on one line before the text:
 
 ```text
 [msg from NAME; reply: backmux msg NAME "..."]
 ```
 
-A sender outside any call (`BACKMUX_ID` and `BACKMUX_NAME` unset) is given a
-name of its own, made like a call's from its harness process (the first
+A sender outside any process (`BACKMUX_ID` and `BACKMUX_NAME` unset) is given a
+name of its own, made like a process's from its harness process (the first
 process above backmux that is not a shell or a wrapper), and an inbox under
 that name in `<store>/inbox/`. It sends that name with `op=1`; the receiver
 shows it in the same header, and `backmux msg NAME` from anywhere appends to
@@ -186,9 +186,9 @@ prompt for a reply to be typed into, and the receiver should not need to know
 that; one way of replying works for everyone. Only when no name can be made
 does the header fall back to `[msg from outside backmux]`.
 
-Inbox identity lookup and creation share the call-name lock, so parallel
+Inbox identity lookup and creation share the process-name lock, so parallel
 first sends use one inbox and an active inbox name cannot also be allocated
-to a call in the same store. Existing records are not renamed automatically.
+to a process in the same store. Existing records are not renamed automatically.
 
 The header is addressing, not proof. Only the console's own user can reach
 it (the socket checks the peer's uid; FIFOs are the user's), and anything
@@ -199,9 +199,9 @@ verify step and a longer header in front of every agent, and read as "safe"
 when it meant only "from".
 
 Each delivered message is appended to `<id>.msgs` as `ID UNIXTIME FROMCALL
-SENDER HEXTEXT` (FROMCALL is 1 when the sender is a call; it is where that
+SENDER HEXTEXT` (FROMCALL is 1 when the sender is a process; it is where that
 earlier version wrote its verified flag, so older logs read the same).
-`backmux msg --received` reads it: the call's message history. Delivery is
+`backmux msg --received` reads it: the process's message history. Delivery is
 capped at 20 messages a minute per receiver, counted when a request is
 accepted. This slows message loops; it does not establish task completion
 or guarantee a conversation will end. Outside inbox delivery has no such

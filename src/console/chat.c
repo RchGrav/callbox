@@ -4,6 +4,7 @@
 #include "backmux/store.h"
 #include "backmux/console.h"
 #include "backmux/screen.h"
+#include "backmux/console_internal.h"
 #include "overlay.h"
 
 /* A backmux shell's chat: the floating window, its conversations, and the
@@ -139,6 +140,7 @@ struct chat {
 
     bool dirty, screen_dirty;
     void (*on_sent)(void *app, const char *label, const char *text, size_t len);
+    char screen_name[ALIAS_MAX_LEN + 1]; /* whose screen Ctrl-S sends (hosted: the focused pane's process) */
     int cur_row, cur_col; /* where the chat's own cursor was last drawn */
     int badge_col;        /* the corner badge's first column, -1 = none shown */
     int body_rows;        /* of the last frame, for paging */
@@ -538,7 +540,7 @@ static int pick_record(const char *id, const char *path, struct hold_run_record 
     /* A call that can be messaged: on a PTY, not known to have ended, its
      * console still listening. */
     if (!r->has_console || r->has_exit_code || !r->has_state || strcmp(r->state, "running") != 0 ||
-        !hold_path_exists(r->console_sock))
+        !hold_path_exists(r->console_sock) || !hold_console_record_alive(r))
         return 0;
     struct pick_entry *e = &c->picks[c->npicks++];
     memset(e, 0, sizeof(*e));
@@ -627,8 +629,8 @@ static void start_picking(struct chat *c) {
 static void pick_confirm(struct chat *c) {
     const struct pick_entry *e = pick_at(c, c->pick_sel);
     if (!e) {
-        if (c->filter_len) set_notice(c, "no running call matches '%s'", c->filter);
-        else set_notice(c, "no other PTY call is running");
+        if (c->filter_len) set_notice(c, "no running process matches '%s'", c->filter);
+        else set_notice(c, "no other PTY process is running");
         return;
     }
     struct chat_thread *t = get_thread(c, e->kind, e->key, e->label);
@@ -726,7 +728,9 @@ static char *with_screen(const struct chat *c, const char *text, size_t len, siz
         hold_snapshot_free(&snap);
         return NULL;
     }
-    self_label(c, name, sizeof(name));
+    /* the screen's own process, not the person: hosted, it is the pane's */
+    if (c->screen_name[0]) snprintf(name, sizeof(name), "%s", c->screen_name);
+    else self_label(c, name, sizeof(name));
     memcpy(out, text, len);
     size_t n = len;
     n += (size_t)snprintf(out + n, cap - n, "\n\n[screen of %s: %u columns x %u rows, cursor at column %u, row %u]\n", name,
@@ -768,7 +772,7 @@ static void send_message(struct chat *c) {
         return;
     }
     if (t->kind == TH_OUTSIDE) {
-        set_notice(c, "sent from outside backmux: no call to answer");
+        set_notice(c, "sent from outside backmux: no process to answer");
         return;
     }
     struct chat_msg *m = add_msg(t, MSG_SENDING, c->input, len);
@@ -814,7 +818,7 @@ static void send_message(struct chat *c) {
     struct hold_run_record r;
     char path[HOLD_PATH_MAX], sock[HOLD_PATH_MAX] = "";
     if (!c->host.store || hold_load_record_by_id(c->host.store->record_dir, t->key, &r, path, sizeof(path)) != 0) {
-        fail_msg(c, m, "%s is gone (its call was removed)", t->label);
+        fail_msg(c, m, "%s is gone (its process was removed)", t->label);
         free(body);
         return;
     }
@@ -1573,7 +1577,7 @@ static void draw_picker(struct chat *c, const struct layout *L) {
     }
     if (n == 0) {
         put(c, row + 1 < L->body_top + L->body_rows ? row + 1 : row, c->x + 1, width,
-            c->filter_len ? "no running call matches" : "no other call is running on a PTY", &ST_DIM);
+            c->filter_len ? "no running process matches" : "no other process is running on a PTY", &ST_DIM);
     }
     if (L->body_rows >= 4)
         put(c, L->body_top + L->body_rows - 1, c->x + 1, width,
@@ -1833,8 +1837,9 @@ void chat_ready(struct chat *c, int rows, int cols, int64_t now) {
     c->dirty = true;
 }
 
-void chat_set_screen(struct chat *c, struct hold_screen *screen) {
+void chat_set_screen(struct chat *c, struct hold_screen *screen, const char *name) {
     c->host.screen = screen;
+    snprintf(c->screen_name, sizeof(c->screen_name), "%s", name ? name : "");
 }
 
 void chat_toggle(struct chat *c) {

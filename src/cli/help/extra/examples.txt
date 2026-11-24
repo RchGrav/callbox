@@ -53,4 +53,4 @@ DRIVE SEVERAL SERIAL CONSOLES
 
   This assumes each disk boots a serial console and accepts that login.
   Ctrl-P Ctrl-Q detaches. Shut down the guests normally before removing
-  their ended calls with backmux purge.
+  their ended processes with backmux purge.

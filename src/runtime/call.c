@@ -146,12 +146,12 @@ static int restart_existing_run(const struct hold_invocation *inv,
     if (st == STATE_RUNNING) {
         char display[ID_DISPLAY_HEX_LEN + 1];
         hold_run_id_display(old.id, display);
-        fprintf(stderr, "backmux: error: call %s is already running\n", display);
+        fprintf(stderr, "backmux: error: process %s is already running\n", display);
         hold_free_run_record(&old);
         return 6;
     }
     if (!old.has_log || !old.log_path[0]) {
-        fprintf(stderr, "backmux: error: call %s has no retained log path\n", id);
+        fprintf(stderr, "backmux: error: process %s has no retained log path\n", id);
         hold_free_run_record(&old);
         return 5;
     }
@@ -323,7 +323,7 @@ static int protect_record_action(const struct hold_invocation *inv,
      * from a copy read before this save and drop the saved flag or name. */
     int lock_fd = hold_store_lock(target.store.record_dir);
     if (new_name && run_name_exists_in_store(&target.store, new_name, target.id)) {
-        fprintf(stderr, "backmux: error: call name '%s' already exists\n", new_name);
+        fprintf(stderr, "backmux: error: process name '%s' already exists\n", new_name);
         hold_store_unlock(lock_fd);
         free(targets);
         return HOLD_EXIT_NAME_TAKEN;
@@ -351,7 +351,7 @@ static int protect_record_action(const struct hold_invocation *inv,
     int argc = 0;
     if (hold_read_owned_file_no_symlink(record_path, &j) != 0 ||
         hold_json_get_argv_alloc(j, &argv, &argc) != 0) {
-        fprintf(stderr, "backmux: error: failed to load call record for %s\n", target.id);
+        fprintf(stderr, "backmux: error: failed to load process record for %s\n", target.id);
         hold_store_unlock(lock_fd);
         free(j);
         hold_free_run_record(&r);
@@ -366,8 +366,8 @@ static int protect_record_action(const struct hold_invocation *inv,
     r.saved = true;
     char out_path[HOLD_PATH_MAX];
     if (hold_write_record_atomic(target.store.record_dir, &r, argc, argv, out_path, sizeof(out_path)) != 0) {
-        hold_die_errno(new_name ? "backmux: failed to write renamed call record"
-                                : "backmux: failed to write saved call record");
+        hold_die_errno(new_name ? "backmux: failed to write renamed process record"
+                                : "backmux: failed to write saved process record");
     }
     if (target.store.kind == STORE_SYSTEM_MANAGED) {
         (void)hold_write_public_index_atomic(&target.store, &r, NULL);
@@ -392,7 +392,7 @@ int hold_cmd_rename_action(const struct hold_invocation *inv,
                              const char *target_token,
                              const char *new_name) {
     if (!hold_valid_alias(new_name)) {
-        fprintf(stderr, "backmux: error: invalid call name '%s'\n", new_name);
+        fprintf(stderr, "backmux: error: invalid process name '%s'\n", new_name);
         return 5;
     }
     return protect_record_action(inv, user_store, system_store, target_token, new_name);
@@ -409,11 +409,11 @@ int hold_pick_run_name_locked(const struct hold_store *store, const char *id, co
                               char out[ALIAS_MAX_LEN + 1]) {
     if (requested && *requested) {
         if (!hold_valid_alias(requested)) {
-            fprintf(stderr, "backmux: error: invalid call name '%s'\n", requested);
+            fprintf(stderr, "backmux: error: invalid process name '%s'\n", requested);
             return 5;
         }
         if (run_name_exists_in_store(store, requested, id)) {
-            fprintf(stderr, "backmux: error: call name '%s' already exists\n", requested);
+            fprintf(stderr, "backmux: error: process name '%s' already exists\n", requested);
             return HOLD_EXIT_NAME_TAKEN;
         }
         snprintf(out, ALIAS_MAX_LEN + 1, "%s", requested);

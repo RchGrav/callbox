@@ -38,7 +38,7 @@ void hold_note_attached_elsewhere(const char *label, pid_t by, const struct hold
     for (int i = 0; i < 2 && o.sid > 0 && !o.label[0]; i++)
         if (stores[i] && stores[i]->record_dir[0]) (void)hold_for_each_record(stores[i]->record_dir, match_session, &o);
     if (o.label[0])
-        fprintf(stderr, "backmux: %s is already attached, from inside the call %s (pid %ld). Detach it there: Ctrl-P Ctrl-Q.\n",
+        fprintf(stderr, "backmux: %s is already attached, from inside the process %s (pid %ld). Detach it there: Ctrl-P Ctrl-Q.\n",
                 label, o.label, (long)by);
     else if (by > 0)
         fprintf(stderr, "backmux: %s is already attached in another terminal (pid %ld). Detach it there: Ctrl-P Ctrl-Q.\n",
@@ -152,7 +152,7 @@ static int attach_console_record(const struct hold_invocation *inv,
      * tell what it came back to: 0 detached without a confirmed exit; 8 the call
      * has ended (before or while attached; the same "ended" as wait's 8);
      * 3 unreachable or refused (attached elsewhere, or this is that call); 10 the call has
-     * no console to attach to (the same "wrong kind of call" as peek's). */
+     * no console to attach to (the same "wrong kind of process" as peek's). */
     if (program_ended(st)) {
         hold_sig_note(inv, "backmux: %s has ended - see 'backmux logs %s'\n", label, label);
         return 8;

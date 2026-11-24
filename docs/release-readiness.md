@@ -33,7 +33,7 @@ are harness-dependent behaviors, not guarantees added by this release.
 | --- | --- |
 | Help architecture | The existing plain-text generator is retained. The overview is 38 lines; all 36 compiled pages fit 80 columns. `help all` includes 23 canonical command pages, launch/reference sections, five command aliases, and four topic aliases. Source/render equality and coverage are tested. See [help maintenance](help.md). |
 | TUI inspection and control | Executed the `help tui` Vim-compatible `vi` example: text, color PNGs, cursor JSON, mouse input, resize from 80×24 to 100×30, saved alternate screen, exit code, and purge. Inspected both PNGs. |
-| Shared interactive use | A real PTY remained attached while independent `send`, `peek`, and `resize` commands operated the editor. Human and agent input appeared on the same screen. Detach returned 0 and left the call running; normal exit and purge then succeeded. |
+| Shared interactive use | A real PTY remained attached while independent `send`, `peek`, and `resize` commands operated the editor. Human and agent input appeared on the same screen. Detach returned 0 and left the process running; normal exit and purge then succeeded. |
 | Agent messaging | Local test processes exercised inside/outside delivery, a stable process-derived inbox identity, unread messages, history, continuous monitoring, and reply waits. Real agent harnesses were not launched. |
 | CI jobs and services | Executed the job flow with success and failure: printed child codes 0 and 2 propagated to the script. A Python HTTP server passed readiness/content checks; success and failing-test paths both logged output, stopped the service, and purged its record. |
 | Presentation | A runnable `sh`/`tr` quickstart, explicit launch modes, and direct links to the same guides replace competing command summaries. Four existing PNGs were reviewed and retained unchanged; Vim is the README hero. No new artwork or screenshots were introduced. |
@@ -49,8 +49,8 @@ example. See [LICENSE](../LICENSE) and [third_party](../third_party/).
 
 | Problem reproduced on the baseline | Change and regression |
 | --- | --- |
-| Parallel first messages could create several inbox names for one harness, splitting replies. A contention test produced 12 names for the same identity. | Keep identity lookup and allocation under the same directory lock used by call naming. `test_operator_inbox_parallel_registration` now observes one identity. |
-| A call could take an active inbox name; `msg NAME` then went to the inbox instead of the call. | Check live inbox names during launch and rename in the same store. `test_operator_inbox_names_do_not_shadow_calls` covers refusal with status 11 and reuse after expiry. |
+| Parallel first messages could create several inbox names for one harness, splitting replies. A contention test produced 12 names for the same identity. | Keep identity lookup and allocation under the same directory lock used by process naming. `test_operator_inbox_parallel_registration` now observes one identity. |
+| A process could take an active inbox name; `msg NAME` then went to the inbox instead of the process. | Check live inbox names during launch and rename in the same store. `test_operator_inbox_names_do_not_shadow_calls` covers refusal with status 11 and reuse after expiry. |
 | An unrepresentable timeout was accepted as `LONG_MAX`, then overflowed into an immediate timeout. | Share checked parsing between inbox and reply waits; compare elapsed time instead of adding a deadline. `test_operator_inbox_timeout_bounds` covers invalid values, zero, and a delayed reply with `LONG_MAX`. |
 | A monitor that had printed messages still reported “no reply” at its deadline. | Describe the end of the monitoring window; preserve timeout status 7. |
 | A no-helper test mistook the sandbox parent's command-line text for a Backmux process. | Check its executable name, including Linux's 15-byte `comm` limit. Verified with an actual binary named `backmux-under-test`; the privileged companion uses the same helper. |
@@ -109,7 +109,7 @@ Markdown files resolved, and 16 executable shell example blocks passed
   and help-topic aliases remain available. The old abbreviation `m` is now
   ambiguous with `msg`; use `msg` or `monitor` explicitly.
 - `monitor` is a reserved verb/name. An external program named `monitor`
-  can still be launched with `backmux -- monitor`. An existing call with
+  can still be launched with `backmux -- monitor`. An existing process with
   that name can be managed normally, redialed by ID, or renamed.
 - An outside inbox starts with the first `msg`, not with `monitor`.
   Its default identity depends on process ancestry; explicit inbox names
@@ -120,8 +120,8 @@ Markdown files resolved, and 16 executable shell example blocks passed
   harness queued a message, finished a task, or woke an agent on output.
 - Backmux cannot adopt a program started outside it. Mouse input requires
   the application to enable reporting. Only one interactive client can
-  attach to a call, while independent control commands remain available.
-- Plain `-d` and `-dw` calls have logs but no screen or input console.
+  attach to a process, while independent control commands remain available.
+- Plain `-d` and `-dw` processes have logs but no screen or input console.
   Plain `-d` records no exit code. Restart policies do not install a boot
   service. `ports` and meaningful `stats` output are Linux-only.
 - Root/sudo, other PID namespaces, macOS, native Unix sockets, unavailable

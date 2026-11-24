@@ -1,4 +1,4 @@
 usage: backmux save <target>
 
-Keep a call as a profile: purge and purge all leave it alone, and backmux
+Keep a process as a profile: purge and purge all leave it alone, and backmux
 recall starts it again. backmux delete <target> removes it.

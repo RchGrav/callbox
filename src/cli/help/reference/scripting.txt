@@ -3,7 +3,7 @@ backmux help scripting - exit codes, stdout, and stderr
 stdout is for machine data. Human banners, confirmations, warnings, and
 errors go to stderr; --quiet suppresses normal human status.
 
-  id=$(backmux -d <cmd...>)       capture the bare 64-hex call id
+  id=$(backmux -d <cmd...>)       capture the bare 64-hex process id
   id=$(backmux -dw <cmd...>)      ...and record its exit code for backmux wait
   backmux end --print <id>        print kill -TERM -- -<pgid>
   backmux kill --print <id>       print kill -KILL -- -<pgid>
@@ -15,22 +15,22 @@ Exit codes:
   2  refused for safety
   3  permission denied, unavailable console, or storage/security failure
   4  signal delivery failed
-  5  no matching call or inbox, or an invalid target id or name
-  6  more than one call (or verb) matches: they are listed; be more exact
+  5  no matching process or inbox, or an invalid target id or name
+  6  more than one process (or verb) matches: they are listed; be more exact
   7  wait, inbox --wait, monitor, or msg --wait-reply timed out
      (send --wait: input was sent; the program did not go quiet in time)
-  8  the call ended: before the wait condition held (send --wait: after the
+  8  the process ended: before the wait condition held (send --wait: after the
      input was sent), or (attach) before or while you were on it; attach
      exits 0 when you detach, 3 if refused or unreachable; an inbox can expire
      while waiting
   9  send --mouse: the program has mouse reporting off (not delivered)
-  10 the call has no terminal screen or console (placed without -t / -i)
-  11 the requested name is taken by a call or active inbox
+  10 the process has no terminal screen or console (placed without -t / -i)
+  11 the requested name is taken by a process or active inbox
   126 the command was found but cannot be run; 127 command not found
 
 With several targets (end a b c), each is acted on alone: the ones that
 resolve are ended, the rest reported, and the exit code is the worst.
-backmux msg to a call prints its delivery ID. Sending to an outside inbox
+backmux msg to a process prints its delivery ID. Sending to an outside inbox
 does not print an ID. --wait-reply then prints the first new inbox message,
 from any sender. inbox and monitor print [HH:MM from NAME] TEXT; messages
 can span multiple lines. Status notes and the first inbox name go to stderr.
@@ -38,7 +38,7 @@ can span multiple lines. Status notes and the first inbox name go to stderr.
 An exit-only backmux wait returns 0 on success and prints the program's
 exit code. Capture that value to propagate a job's result; use -dw to keep
 it, since plain -d has no exit record and wait prints -1.
-If another environment cannot determine whether the call ended, its status
+If another environment cannot determine whether the process ended, its status
 is Unknown. wait keeps waiting for evidence or --timeout; Unknown is not an
 exit code. Console commands can still reach a broker whose process is not
 visible here.

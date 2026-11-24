@@ -1,9 +1,9 @@
 usage: backmux recall <name|id>
 
-Start an ended call again, under the same name and id: the same program,
+Start an ended process again, under the same name and id: the same program,
 the same arguments, in the same folder, attached or in the background as it
 first ran. backmux set NAME program=/args=/working= change what the next
 recall runs; backmux unset NAME working runs it where you stand.
 
-A call that is still running is reached with backmux attach (or tail), not
+A process that is still running is reached with backmux attach (or tail), not
 recalled. Docker's spelling: backmux start.

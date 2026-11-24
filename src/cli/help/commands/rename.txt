@@ -1,5 +1,6 @@
 usage: backmux rename <target> <name>
 
-Change a running or ended call's name. rename also saves the call, protecting
-it from ordinary purge; backmux purge <name> --force still removes it.
-The new name must be unused by another call or active inbox in the same store.
+Change a running or ended process's name. rename also saves the process,
+protecting it from ordinary purge; backmux purge <name> --force still removes
+it. The new name must be unused by another process or active inbox in the same
+store.

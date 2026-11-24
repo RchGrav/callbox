@@ -1,6 +1,6 @@
 backmux help system - root, sudo, and the global store
 
-Root and sudo calls normally use the root-managed store:
+Root and sudo processes normally use the root-managed store:
 
   Linux: /var/lib/backmux
   macOS: /var/db/backmux
@@ -11,12 +11,12 @@ without a sudo user uses its own home for this check. This routing also
 applies when --system is supplied.
 
 Private root records and logs stay root-only. Normal users see only the
-redacted public index, where a call's USER and COMMAND read 'hidden'.
+redacted public index, where a process's USER and COMMAND read 'hidden'.
 Acting on a root-managed target requires root; user-local targets win
 over root-public collisions.
 
   sudo backmux <cmd...>           start with root privileges
-  sudo backmux list               list the global calls (authoritative)
-  sudo backmux list -a            global calls plus every user's calls
+  sudo backmux list               list the global processes (authoritative)
+  sudo backmux list -a            global processes plus every user's processes
   backmux list -s                 the redacted global view, as a normal user
   backmux purge -s                sweep the global store (re-execs via sudo)

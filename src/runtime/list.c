@@ -382,7 +382,7 @@ static void print_table_row(const char *cells[TABLE_COLS], const size_t widths[T
 
 static int print_collected_table(struct list_rows *rows, bool with_user) {
     static const char *headers[TABLE_COLS] = {
-        "CALL ID", "USER", "COMMAND", "CREATED", "STATUS", "PORTS", "NAMES"
+        "PROCESS ID", "USER", "COMMAND", "CREATED", "STATUS", "PORTS", "NAMES"
     };
     if (rows->count > 1) qsort(rows->items, rows->count, sizeof(rows->items[0]), compare_list_rows);
     char (*cmds)[PS_CMD_CELL] = NULL;
@@ -574,19 +574,19 @@ int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const 
     uint64_t here = hold_current_pid_ns();
     if (st == STATE_UNKNOWN && !allow_unknown && r.pid_ns != 0 && here != 0 && r.pid_ns != here) {
         fprintf(stderr,
-                "backmux: error: call %s was started in another PID namespace and this shell cannot tell whether it "
+                "backmux: error: process %s was started in another PID namespace and this shell cannot tell whether it "
                 "ended (no exit was recorded, and no supervisor answers); purge it from the shell that started it, "
                 "or remove it anyway with --force\n", id);
         hold_free_run_record(&r);
         return 2;
     }
     if (st == STATE_UNKNOWN && !allow_unknown) {
-        fprintf(stderr, "backmux: error: call %s is %s and cannot be purged\n", id, hold_state_str(st));
+        fprintf(stderr, "backmux: error: process %s is %s and cannot be purged\n", id, hold_state_str(st));
         hold_free_run_record(&r);
         return 2;
     }
     if (st != STATE_EXITED && st != STATE_FAILED && st != STATE_UNKNOWN && !(allow_stale && st == STATE_STALE)) {
-        fprintf(stderr, "backmux: error: call %s is %s and cannot be purged\n", id, hold_state_str(st));
+        fprintf(stderr, "backmux: error: process %s is %s and cannot be purged\n", id, hold_state_str(st));
         hold_free_run_record(&r);
         return 2;
     }
@@ -604,7 +604,7 @@ int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const 
     }
     if (running_now || hold_existing_run_claimed(store, id)) {
         hold_store_unlock(lock_fd);
-        fprintf(stderr, "backmux: error: call %s is being redialed and cannot be purged\n", id);
+        fprintf(stderr, "backmux: error: process %s is being redialed and cannot be purged\n", id);
         hold_free_run_record(&r);
         return 2;
     }
@@ -730,10 +730,7 @@ static int prune_record_cb(const char *id, const char *path, struct hold_run_rec
         unlink_call_artifacts(w->store, r);
         unlink_public_index(w->store, r->id);
         hold_store_unlock(lock_fd);
-        char display_id[ID_DISPLAY_HEX_LEN + 1];
-        hold_run_id_display(r->id, display_id);
-        /* Docker prune prints what it deletes; so do we. */
-        printf("%s%s%s\n", display_id, r->has_name && r->name[0] ? "  " : "", r->has_name && r->name[0] ? r->name : "");
+        /* the one-line summary says how many; list shows what is left */
         w->stats->removed++;
     }
     return 0;
@@ -755,23 +752,6 @@ static int cmd_prune_store_all(const struct hold_store *store, bool include_stal
     return 0;
 }
 
-/* Account for everything the sweep saw, so "purged 6" while the visible list
- * still has entries is never a mystery. snprintf returns the would-have-
- * written length; the clamp keeps a (theoretical) truncation from wrapping
- * `n - off` into a huge size on the next append. */
-static void format_kept_note(const struct prune_sweep_stats *stats, char *kept, size_t n) {
-    const struct { int count; const char *what; } parts[] = {
-        { stats->kept_live, "live" }, { stats->kept_stale, "stale" }, { stats->kept_saved, "saved" },
-    };
-    size_t off = 0;
-    kept[0] = '\0';
-    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
-        if (parts[i].count <= 0) continue;
-        int w = snprintf(kept + off, n - off, "%s%d %s", off ? ", " : "; kept ", parts[i].count, parts[i].what);
-        if (w > 0) off = (size_t)w >= n - off ? n - 1 : off + (size_t)w;
-    }
-}
-
 int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_store *user_store,
                           const struct hold_store *system_store, const char *target_token,
                           bool all, bool force, bool system_scope) {
@@ -785,16 +765,16 @@ int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_s
         struct prune_sweep_stats stats;
         bool include_stale = all || force || (target_token && strcmp(target_token, "all") == 0);
         int rc = cmd_prune_store_all(store, include_stale, &stats);
-        fflush(stdout); /* purged-call lines print before the summary note */
+        /* One line: what it did, and what is still running. Why one: the
+         * person can count, and list shows the rest. */
         if (rc == 0) {
-            char kept[128];
-            format_kept_note(&stats, kept, sizeof(kept));
-            const char *hint = stats.kept_stale > 0 ? " (purge -a sweeps stale)" : "";
+            char active[64] = "";
+            if (stats.kept_live > 0)
+                snprintf(active, sizeof(active), ", %d %s still active", stats.kept_live, stats.kept_live == 1 ? "is" : "are");
             if (stats.removed > 0)
-                hold_sig_note(inv, "backmux: purged %d past call%s%s%s\n",
-                              stats.removed, stats.removed == 1 ? "" : "s", kept, hint);
+                hold_sig_note(inv, "Cleaned up %d record%s%s.\n", stats.removed, stats.removed == 1 ? "" : "s", active);
             else
-                hold_sig_note(inv, "backmux: nothing to purge%s%s\n", kept, hint);
+                hold_sig_note(inv, "Nothing to clean up%s.\n", active);
         }
         return rc;
     }
@@ -831,7 +811,7 @@ int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_s
             hold_run_id_display(r.id, display_id);
             if (r.saved) {
                 fprintf(stderr,
-                        "backmux: '%s' is saved \xe2\x80\x94 purging a saved call requires --force\n"
+                        "backmux: '%s' is saved \xe2\x80\x94 purging a saved process requires --force\n"
                         "  backmux purge %s --force\n",
                         r.has_name ? r.name : display_id, target_token);
                 hold_free_run_record(&r);
@@ -870,15 +850,9 @@ int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_s
     }
     if (worst == 0) {
         if (removed_count > 0) {
-            const char *atom = NULL;
-            enum id_token_scope token_scope = hold_parse_id_token(target_token, &atom);
-            if (token_scope != ID_TOKEN_INVALID && atom && hold_valid_alias(atom) && !hold_valid_id_prefix(atom))
-                hold_sig_note(inv, "backmux: purged %d past call%s for '%s'\n",
-                              removed_count, removed_count == 1 ? "" : "s", atom);
-            else
-                hold_sig_note(inv, "backmux: purged %d past call%s\n", removed_count, removed_count == 1 ? "" : "s");
+            hold_sig_note(inv, "Cleaned up %d record%s.\n", removed_count, removed_count == 1 ? "" : "s");
         } else {
-            hold_sig_note(inv, "backmux: nothing to purge\n");
+            hold_sig_note(inv, "Nothing to clean up.\n");
         }
     }
     free(targets);

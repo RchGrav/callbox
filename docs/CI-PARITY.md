@@ -59,7 +59,7 @@ no invoking user, so it cannot test provenance.
 | `layer-dependencies` | `bash scripts/lint_layers.sh`. |
 
 The build, sanitizer, cppcheck, and lint jobs run the same commands as
-`scripts/ci.sh` but do not call it. The version-sync check runs only
+`scripts/ci.sh` but do not process it. The version-sync check runs only
 locally. The root-runner, FIFO, and macOS lanes run only on GitHub.
 
 ## Release gate (`.github/workflows/release.yml`)

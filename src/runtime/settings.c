@@ -89,8 +89,8 @@ int hold_cmd_set_action(const struct hold_invocation *inv,
     }
     if (unset && (!strcmp(key, "program") || !strcmp(key, "name"))) {
         fprintf(stderr, "backmux: error: %s cannot be unset: %s\n", key,
-                !strcmp(key, "program") ? "a call without a program is nothing; backmux set NAME program=... changes it"
-                                        : "every command and agent finds a call by its name; backmux set NAME name=... changes it");
+                !strcmp(key, "program") ? "a process without a program is nothing; backmux set NAME program=... changes it"
+                                        : "every command and agent finds a process by its name; backmux set NAME name=... changes it");
         return HOLD_EXIT_USAGE;
     }
     if (!unset && !strcmp(key, "agent") && value) {
@@ -380,29 +380,27 @@ int hold_cmd_purge_all_action(const struct hold_invocation *inv,
     char boot[128];
     struct purge_all_walk w = {.boot_id = hold_boot_id_or_null(boot)};
     if (hold_for_each_record(store->record_dir, purge_all_cb, &w) != 0) {
-        fprintf(stderr, "backmux: error: cannot read the calls\n");
+        fprintf(stderr, "backmux: error: cannot read the processes\n");
         return 1;
     }
     int rc = 0;
     if (w.n == 0) {
-        hold_sig_note(inv, "backmux: nothing to purge (saved calls are kept)\n");
+        hold_sig_note(inv, "backmux: nothing to purge (saved processes are kept)\n");
         goto out;
     }
     /* It does what it says, as the menu has it - end and purge all calls
      * not saved - and says which it ended, so nothing goes unnoticed.
      * Saving a call (backmux save) is how one is kept. */
     (void)force;
-    if (w.running > 0) {
-        fprintf(stderr, "backmux: purge all ends %d running call%s:", w.running, w.running == 1 ? "" : "s");
-        for (int i = 0; i < w.n; i++)
-            if (w.live[i]) fprintf(stderr, " %s", w.labels[i]);
-        fputc('\n', stderr);
-    }
+
     int removed = 0;
     for (int i = 0; i < w.n; i++) {
         if (w.live[i]) {
             char *one[1] = {w.ids[i]};
-            int src = hold_cmd_signal_action(inv, user_store, system_store, "stop", 1, one, SIGTERM, true, false, false);
+            /* quietly: the one summary line says what was ended */
+            struct hold_invocation quiet = *inv;
+            quiet.quiet = true;
+            int src = hold_cmd_signal_action(&quiet, user_store, system_store, "stop", 1, one, SIGTERM, true, false, false);
             if (src != 0) {
                 if (src > rc) rc = src;
                 continue;
@@ -413,7 +411,11 @@ int hold_cmd_purge_all_action(const struct hold_invocation *inv,
         if (gone) removed++;
         if (prc > rc) rc = prc;
     }
-    hold_sig_note(inv, "backmux: purged %d call%s\n", removed, removed == 1 ? "" : "s");
+    if (w.running > 0)
+        hold_sig_note(inv, "Ended %d process%s and cleaned up %d record%s.\n", w.running, w.running == 1 ? "" : "es", removed,
+                      removed == 1 ? "" : "s");
+    else
+        hold_sig_note(inv, "Cleaned up %d record%s.\n", removed, removed == 1 ? "" : "s");
 out:
     free(w.ids);
     free(w.labels);
@@ -455,7 +457,7 @@ int hold_cmd_swap_action(const struct hold_invocation *inv,
     if (argc == 1) {
         const char *comma = strchr(argv[0], ',');
         if (!comma || comma == argv[0] || !comma[1] || (size_t)(comma - argv[0]) >= sizeof(a)) {
-            fprintf(stderr, "usage: backmux swap <pane>,<pane>   (A-D, a number, or a call's name)\n");
+            fprintf(stderr, "usage: backmux swap <pane>,<pane>   (A-D, a number, or a process's name)\n");
             return HOLD_EXIT_USAGE;
         }
         snprintf(a, sizeof(a), "%.*s", (int)(comma - argv[0]), argv[0]);

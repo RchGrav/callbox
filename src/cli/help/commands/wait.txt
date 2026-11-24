@@ -13,9 +13,9 @@ step. For messages in an outside inbox, use inbox --wait or monitor.
                    --match, --exit or peek there.
   --match TEXT     the text is on the screen (already there counts)
   --regex RE       match a POSIX extended regular expression on the screen
-  --since SEQ      for a running call, require output past SEQ before
+  --since SEQ      for a running process, require output past SEQ before
                    testing --idle, --match, or --regex
-  --exit           the call ends. Also what a wait with no condition means.
+  --exit           the process ends. Also what a wait with no condition means.
                    An exit-only wait prints its recorded exit code: -1 for
                    plain -d, which keeps no waiter (use -dw to record it).
   --timeout MS     bound the wait (0 = never). Default: 30s for screen
@@ -25,17 +25,17 @@ If several conditions are given, any one can finish the wait. --idle means
 quiet output, not that an agent's task is complete. Durations accept
 milliseconds or suffixes ms, s, m, up to 24 hours. Screen waits require a
 terminal or -i pipe-input console.
-A text match can also succeed on an ended call's saved final screen.
+A text match can also succeed on an ended process's saved final screen.
 
 To wait for a redraw after input:
 
   seq=$(backmux send app -k Down --seq)
   backmux wait app --since "$seq" --idle 300
 
-On an --rm call, wait returns once the call is removed, so its name is free;
-for a minute after that, wait still reports how it exited.
+On an --rm process, wait returns once the process is removed, so its name is
+free; for a minute after that, wait still reports how it exited.
 
-Exit status: 0 the condition held, 7 timed out, 8 the call ended first.
+Exit status: 0 the condition held, 7 timed out, 8 the process ended first.
 A successful exit wait returns 0 even if the program failed; its printed
 exit code is separate. To pass a job's result to CI, capture and use it:
 

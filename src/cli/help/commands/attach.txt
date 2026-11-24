@@ -1,12 +1,12 @@
 usage: backmux attach <target> [--detach-keys KEYS]
 
-Pick a running call back up in this terminal: a PTY call (backmux <cmd>, -it,
--dt) or one placed with -i. Detach again with Ctrl-P Ctrl-Q. (console is an
+Pick a running process back up in this terminal: a PTY process (backmux <cmd>,
+-it, -dt) or one placed with -i. Detach again with Ctrl-P Ctrl-Q. (console is an
 alias of attach.)
 
-Without a terminal (piped), attach sends its input and then keeps showing
-the call's output until the call ends; it does not end the call's input, so
-a -di call can be fed again by the next attach. To drive a call from a
+Without a terminal (piped), attach sends its input and then keeps showing the
+process's output until the process ends; it does not end the process's input, so
+a -di process can be fed again by the next attach. To drive a process from a
 script, backmux send, peek, and wait are usually what you want.
 
 Ctrl-P is a lead key: it waits for the next key, with no time limit. Ctrl-Q
@@ -15,9 +15,9 @@ sends both through, so nothing typed is lost. --detach-keys KEYS changes the
 keys for this attach (ctrl-a,ctrl-d; one key, such as ctrl-], detaches at
 once).
 
-One terminal has a call at a time: a second attach is told who has it.
-Attached from inside another call (a backmux shell, say), the detach keys let go
-of the innermost attach first - the one on screen - and leave you in the call
-around it; press them again to detach that one. A console is free again as
-soon as its client is gone, however it went (a closed window, a killed
+One terminal has a process at a time: a second attach is told who has it.
+Attached from inside another process (a backmux shell, say), the detach keys let
+go of the innermost attach first - the one on screen - and leave you in the
+process around it; press them again to detach that one. A console is free again
+as soon as its client is gone, however it went (a closed window, a killed
 process).

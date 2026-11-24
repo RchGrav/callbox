@@ -37,7 +37,7 @@
 #include "backmux/console_internal.h"
 #include "overlay.h"
 
-#define MUX_MAX_WINDOWS 16
+#define MUX_MAX_WINDOWS 10 /* one per number key: 1-9, then 0 */
 #define MUX_MAX_PANES (MUX_MAX_WINDOWS * 4)
 #define MUX_NAME_MS 2000     /* a name shown on arrival, focus or hover */
 #define MUX_FRAME_MS 16      /* output is drawn at most this often */
@@ -48,9 +48,16 @@
 #define KEY_DETACH 0x11 /* Ctrl-Q */
 #define KEY_ATTACH 0x01 /* Ctrl-A */
 #define KEY_CHAT 0x14   /* Ctrl-T */
-#define KEY_HELP 0x08   /* Ctrl-H */
-#define KEY_NAMES 0x0e  /* Ctrl-N */
-#define KEY_WINDOW 0x17 /* Ctrl-W */
+#define KEY_WINDOW 0x17 /* Ctrl-W: the next window with panes */
+#define KEY_SWAP 0x13   /* Ctrl-S: swap two panes on this screen */
+#define KEY_GOTO 0x07   /* Ctrl-G: go to a window by its number */
+#define KEY_MOVE 0x0d   /* Ctrl-M (Enter's byte): move the active pane to a window */
+#define KEY_FULL 0x06   /* Ctrl-F: the active pane full screen, or back */
+#define KEY_JUMP 0x0a   /* Ctrl-J: jump to a pane by its name */
+#define KEY_HOLD 0x80   /* Ctrl-Space held (handed over by plain attach): the keys and names */
+#define MUX_TAP_MS 700    /* a second Ctrl-Space within this is a hold (key repeat starts at 250-660 ms) */
+#define MUX_LET_GO_MS 150 /* no repeat for this long: let go (repeats come every 30-92 ms) */
+#define MUX_HOLD_MS 3000  /* held this long: the keys and the names show */
 
 struct pane {
     char id[ID_STR_LEN];
@@ -66,7 +73,7 @@ struct pane {
     bool heard;
 };
 
-enum floater { FL_NONE, FL_ATTACH, FL_SWAP, FL_HELP };
+enum floater { FL_NONE, FL_ATTACH, FL_SWAP, FL_GOTO, FL_MOVE, FL_JUMP };
 
 struct pick {
     char id[ID_STR_LEN];
@@ -82,7 +89,10 @@ struct mux {
     const struct hold_store *store;
     char me[ALIAS_MAX_LEN + 1];
     struct pane *slot[MUX_MAX_PANES]; /* window w holds slot[w*4 .. w*4+3], dense from its start */
-    int nwin;
+    struct pane *full; /* the pane toggled full screen, NULL none */
+    /* Ctrl-Space: a tap goes to the program; held, the keys and names show */
+    bool nul_pending, holding;
+    int64_t nul_first, nul_last;
     int view;  /* the window on screen */
     int focus; /* a slot on the window on screen */
     struct compositor *comp;
@@ -253,8 +263,28 @@ static int win_count(const struct mux *m, int w) {
 
 static int pane_total(const struct mux *m) {
     int n = 0;
-    for (int w = 0; w < m->nwin; w++) n += win_count(m, w);
+    for (int w = 0; w < MUX_MAX_WINDOWS; w++) n += win_count(m, w);
     return n;
+}
+
+static int windows_in_use(const struct mux *m) {
+    int n = 0;
+    for (int w = 0; w < MUX_MAX_WINDOWS; w++) n += win_count(m, w) > 0;
+    return n;
+}
+
+/* A window's number is its key: 1-9, then 0 for the tenth. */
+static int window_key(int w) {
+    return (w + 1) % 10;
+}
+
+/* The next window, after w, that has panes; w itself if none other does. */
+static int next_window(const struct mux *m, int w) {
+    for (int i = 1; i <= MUX_MAX_WINDOWS; i++) {
+        int c = (w + i) % MUX_MAX_WINDOWS;
+        if (win_count(m, c) > 0) return c;
+    }
+    return w;
 }
 
 /* Where slot k of a window with n panes goes, on a rows x cols screen. One
@@ -282,13 +312,16 @@ static void place(int n, int k, int rows, int cols, int *r, int *c, int *h, int 
     }
 }
 
+/* Every pane where it goes; a pane toggled full takes its window's whole
+ * screen (the others in that window wait behind it, at their sizes). */
 static void relayout(struct mux *m) {
-    for (int w = 0; w < m->nwin; w++) {
+    for (int w = 0; w < MUX_MAX_WINDOWS; w++) {
         int n = win_count(m, w);
         for (int k = 0; k < n; k++) {
             struct pane *p = m->slot[w * 4 + k];
             int r, c, h, wd;
-            place(n, k, m->trows, m->tcols, &r, &c, &h, &wd);
+            if (p == m->full) r = 0, c = 0, h = m->trows, wd = m->tcols;
+            else place(n, k, m->trows, m->tcols, &r, &c, &h, &wd);
             p->row = r, p->col = c;
             if (p->rows != h || p->cols != wd) {
                 p->rows = h, p->cols = wd;
@@ -300,33 +333,29 @@ static void relayout(struct mux *m) {
     m->advertise = true;
 }
 
-/* Remove empty windows and keep every window's panes dense from its start:
- * panes after a gap move up in arrival order. */
+/* Keep each window's panes dense from its start, in arrival order (there is
+ * no C before a B). Windows keep their numbers: an empty one is a gap. The
+ * view moves on if its window emptied. */
 static void compact(struct mux *m) {
-    struct pane *keep[MUX_MAX_PANES];
-    int nw = 0;
-    for (int w = 0; w < m->nwin; w++) {
+    for (int w = 0; w < MUX_MAX_WINDOWS; w++) {
         struct pane *in[4];
         int k = 0;
         for (int i = 0; i < 4; i++)
             if (m->slot[w * 4 + i]) in[k++] = m->slot[w * 4 + i];
-        if (!k) {
-            if (m->view > nw && m->view >= w) m->view--;
-            continue;
-        }
-        for (int i = 0; i < 4; i++) keep[nw * 4 + i] = i < k ? in[i] : NULL;
-        nw++;
+        for (int i = 0; i < 4; i++) m->slot[w * 4 + i] = i < k ? in[i] : NULL;
     }
-    memset(m->slot, 0, sizeof(m->slot));
-    memcpy(m->slot, keep, (size_t)nw * 4 * sizeof(keep[0]));
-    m->nwin = nw;
-    if (m->view >= nw) m->view = nw > 0 ? nw - 1 : 0;
-    int n = nw ? win_count(m, m->view) : 0;
+    if (m->full) {
+        bool there = false;
+        for (int i = 0; i < MUX_MAX_PANES && !there; i++) there = m->slot[i] == m->full;
+        if (!there) m->full = NULL;
+    }
+    if (win_count(m, m->view) == 0) m->view = next_window(m, m->view);
+    int n = win_count(m, m->view);
     if (m->focus < m->view * 4 || m->focus >= m->view * 4 + n) m->focus = m->view * 4;
 }
 
 static struct pane *focused(const struct mux *m) {
-    return m->nwin ? m->slot[m->focus] : NULL;
+    return m->slot[m->focus];
 }
 
 static void show_name(struct mux *m, struct pane *p) {
@@ -340,7 +369,7 @@ static void set_focus(struct mux *m, int slot) {
     /* chat talks to the pane you are in: moving there while it is up moves
      * the conversation with you (Tab still reaches anyone else) */
     if (m->chat && m->focus != slot) {
-        chat_set_screen(m->chat, m->slot[slot]->scr); /* Ctrl-S sends this pane's screen */
+        chat_set_screen(m->chat, m->slot[slot]->scr, m->slot[slot]->name); /* Ctrl-S sends this pane's screen */
         chat_show_call(m->chat, m->slot[slot]->id, m->slot[slot]->name);
     }
     m->focus = slot;
@@ -349,11 +378,12 @@ static void set_focus(struct mux *m, int slot) {
     m->advertise = true;
 }
 
-/* A new pane takes the first free slot: the end of the first window that
- * has room, else a new window. Focus goes to it. */
+/* A new pane joins the window on screen when it has room, else the first
+ * window that does. Focus goes to it. */
 static int add_pane(struct mux *m, struct pane *p) {
-    for (int w = 0; w < MUX_MAX_WINDOWS; w++) {
-        if (w >= m->nwin) m->nwin = w + 1;
+    for (int i = 0; i < MUX_MAX_WINDOWS; i++) {
+        int w = i == 0 ? m->view : i - 1;
+        if (i > 0 && w == m->view) continue;
         int n = win_count(m, w);
         if (n < 4) {
             m->slot[w * 4 + n] = p;
@@ -372,56 +402,44 @@ static bool has_pane(const struct mux *m, const char *id) {
     return false;
 }
 
-/* A slot from a letter (A-D, on the window on screen) or a number (1-based,
- * across all windows). -1 if neither. */
-static int slot_of_word(const struct mux *m, const char *w) {
-    if (strlen(w) == 1 && toupper((unsigned char)w[0]) >= 'A' && toupper((unsigned char)w[0]) <= 'D')
-        return m->view * 4 + (toupper((unsigned char)w[0]) - 'A');
-    char *end = NULL;
-    long n = strtol(w, &end, 10);
-    if (end && !*end && n >= 1 && n <= MUX_MAX_PANES) return (int)n - 1;
+/* A pane by its process's name or id: what backmux swap takes from a shell
+ * or an agent, which cannot see this screen. -1 if none. */
+static int slot_of_name(const struct mux *m, const char *w) {
     for (int i = 0; i < MUX_MAX_PANES; i++)
-        if (m->slot[i] && (!strcmp(m->slot[i]->name, w) || !strncmp(m->slot[i]->id, w, strlen(w)))) return i;
+        if (m->slot[i] && !strcmp(m->slot[i]->name, w)) return i;
+    size_t l = strlen(w);
+    for (int i = 0; l >= 4 && i < MUX_MAX_PANES; i++)
+        if (m->slot[i] && !strncmp(m->slot[i]->id, w, l)) return i;
     return -1;
 }
 
-/* Two slots trade places. A target that is empty must be the next free slot
- * of its window (there is no 3 until there are a 1 and a 2) or the first
- * slot of the window after the last: the pane moves there, and the window it
- * left closes up. */
-static int do_swap(struct mux *m, int a, int b, char *why, size_t n) {
-    if (a < 0 || b < 0 || a >= MUX_MAX_PANES || b >= MUX_MAX_PANES) {
-        snprintf(why, n, "no such pane");
-        return -1;
-    }
-    if (a == b) return 0;
-    if (!m->slot[a] && m->slot[b]) {
-        int t = a;
-        a = b;
-        b = t;
-    }
-    if (!m->slot[a]) {
-        snprintf(why, n, "both panes are empty");
-        return -1;
-    }
-    if (!m->slot[b]) {
-        int w = b / 4;
-        bool next_in_window = w < m->nwin && b == w * 4 + win_count(m, w);
-        bool new_window = w == m->nwin && b == w * 4 && w < MUX_MAX_WINDOWS;
-        if (!next_in_window && !new_window) {
-            snprintf(why, n, "pane %d cannot be filled yet: a window fills in order (1-4, 5-8, ...)", b + 1);
-            return -1;
-        }
-        if (new_window) m->nwin = w + 1;
-    }
+/* Two panes trade places: their windows and positions. */
+static void do_swap(struct mux *m, int a, int b) {
+    if (a == b || !m->slot[a] || !m->slot[b]) return;
     struct pane *t = m->slot[a];
     m->slot[a] = m->slot[b];
     m->slot[b] = t;
-    struct pane *moved = m->slot[b];
-    compact(m);
     relayout(m);
-    for (int i = 0; i < MUX_MAX_PANES; i++)
-        if (m->slot[i] == moved) set_focus(m, i);
+    m->dirty = true;
+}
+
+/* The active pane goes to window w (its key's), at the end; the view stays
+ * where it is. 0 moved; -1 that window is full. */
+static int move_pane(struct mux *m, int slot, int w) {
+    struct pane *p = m->slot[slot];
+    if (!p || w == slot / 4) return 0;
+    int n = win_count(m, w);
+    if (n >= 4) return -1;
+    m->slot[slot] = NULL;
+    m->slot[w * 4 + n] = p;
+    if (m->full == p) m->full = NULL;
+    int view = m->view;
+    compact(m);
+    if (win_count(m, view) > 0) {
+        m->view = view;
+        m->focus = view * 4;
+    }
+    relayout(m);
     return 0;
 }
 
@@ -437,7 +455,9 @@ static int pick_cb(const char *id, const char *path, struct hold_run_record *r, 
     if (!r || m->npicks >= MUX_PICK_MAX) return 0;
     /* Only TTY calls can be panes: a pane shows a screen, and a server's
      * output is a log. */
-    if (!r->has_console || !r->recipe.mode_tty || r->has_exit_code || !hold_path_exists(r->console_sock)) return 0;
+    if (!r->has_console || !r->recipe.mode_tty || r->has_exit_code || !hold_path_exists(r->console_sock) ||
+        !hold_console_record_alive(r))
+        return 0;
     if (has_pane(m, id)) return 0;
     /* the call this terminal itself runs in: shown inside itself, it would
      * draw itself forever */
@@ -707,9 +727,9 @@ static void draw_pick(struct mux *m) {
     int w = m->tcols - 8 < 76 ? m->tcols - 8 : 76, h = m->trows - 4 < 20 ? m->trows - 4 : 20;
     if (w < 20 || h < 8) return;
     int x = (m->tcols - w) / 2, y = (m->trows - h) / 2;
-    draw_box(m, y, x, h, w, "attach a running call beside this one");
+    draw_box(m, y, x, h, w, "attach a running process beside this one");
     int list_h = (h - 2) / 2;
-    if (m->npicks == 0) put(m, y + 2, x + 2, w - 4, "No other running TTY calls.", &ST_BOX_DIM);
+    if (m->npicks == 0) put(m, y + 2, x + 2, w - 4, "No other running TTY processes.", &ST_BOX_DIM);
     int first = m->pick_sel >= list_h ? m->pick_sel - list_h + 1 : 0;
     m->pick_x = x, m->pick_w = w, m->pick_top = y + 1, m->pick_first = first, m->pick_rows = list_h;
     for (int i = first; i < m->npicks && i - first < list_h; i++) {
@@ -734,42 +754,56 @@ static void draw_pick(struct mux *m) {
     put(m, y + h - 1, x + 2, w - 4, "Up/Down choose  Enter attach  s swap panes", &ST_BOX_DIM);
 }
 
+/* Swap: each pane on screen shows its letter and name; two letters swap. */
 static void draw_swap(struct mux *m) {
     int n = win_count(m, m->view);
     for (int k = 0; k < n; k++) {
         struct pane *p = m->slot[m->view * 4 + k];
-        char text[8];
+        char text[ALIAS_MAX_LEN + 16];
         bool chosen = m->swap_first == m->view * 4 + k;
-        snprintf(text, sizeof(text), " %c%s ", 'A' + k, chosen ? "*" : "");
-        put(m, p->row, p->col, 6, text, &ST_LETTER);
+        snprintf(text, sizeof(text), " %c: %s%s ", 'A' + k, p->name, chosen ? " *" : "");
+        put(m, p->row, p->col, p->cols, text, &ST_LETTER);
     }
-    char hint[160];
-    snprintf(hint, sizeof(hint), " swap: %s  (A-D, or a number: %d is window %d's first) ",
-             m->swap_first < 0 ? "press two letters" : "now the second", m->nwin * 4 + 1, m->nwin + 1);
-    put(m, m->trows - 1, 0, m->tcols, hint, &ST_LETTER);
 }
 
+/* The keys, while Ctrl-Space is held: what each does, nothing more - a mode
+ * says what it wants when it is entered. */
 static const char *const help_lines[] = {
-    "Ctrl-P Ctrl-Q   detach; everything keeps running",
-    "Ctrl-P Ctrl-T   chat (yours, over any pane)",
-    "Ctrl-P Ctrl-A   attach another running call beside this one",
-    "                (in that window: s swaps two panes)",
-    "Ctrl-P Ctrl-N   show every pane's name",
-    "Ctrl-P Ctrl-W   next window (panes 5-8 are window 2, ...)",
-    "Ctrl-P Ctrl-H   this help",
-    "Ctrl-P Ctrl-P   a Ctrl-P for the program",
-    "Ctrl-P, any other key: cancelled, nothing is sent",
-    "",
-    "Click a pane to move to it. Panes fill B A / C D, in order.",
-    "backmux swap A,B  (A-D on this window, or numbers) from anywhere.",
+    "Ctrl-P Ctrl-Q   detach",
+    "Ctrl-P Ctrl-T   chat",
+    "Ctrl-P Ctrl-A   attach a running process beside this one",
+    "Ctrl-P Ctrl-S   swap panes",
+    "Ctrl-P Ctrl-G   go to window",
+    "Ctrl-P Ctrl-M   move active pane to another window",
+    "Ctrl-P Ctrl-F   toggle full screen",
+    "Ctrl-P Ctrl-J   jump by name",
 };
 
 static void draw_help(struct mux *m) {
     int n = (int)(sizeof(help_lines) / sizeof(help_lines[0]));
-    int w = 66 < m->tcols - 2 ? 66 : m->tcols - 2, h = n + 3 < m->trows ? n + 3 : m->trows;
+    int w = 60 < m->tcols - 2 ? 60 : m->tcols - 2, h = n + 2 < m->trows ? n + 2 : m->trows;
     int x = (m->tcols - w) / 2, y = (m->trows - h) / 2;
-    draw_box(m, y, x, h, w, "backmux keys");
-    for (int i = 0; i < n && i + 2 < h; i++) put(m, y + 2 + i, x + 2, w - 4, help_lines[i], &ST_BOX);
+    for (int r = y; r < y + h; r++) comp_fill(m->comp, r, x, w, &ST_BOX);
+    for (int i = 0; i < n && i + 1 < h; i++) put(m, y + 1 + i, x + 2, w - 4, help_lines[i], &ST_BOX);
+}
+
+/* Jump: the panes of this terminal by name, with their window's number. */
+static void draw_jump(struct mux *m) {
+    int rows = 0;
+    for (int i = 0; i < MUX_MAX_PANES; i++) rows += m->slot[i] != NULL;
+    int w = 48 < m->tcols - 4 ? 48 : m->tcols - 4, h = rows + 2 < m->trows - 2 ? rows + 2 : m->trows - 2;
+    if (w < 12 || h < 3) return;
+    int x = (m->tcols - w) / 2, y = (m->trows - h) / 2, k = 0;
+    for (int r = y; r < y + h; r++) comp_fill(m->comp, r, x, w, &ST_BOX);
+    for (int i = 0; i < MUX_MAX_PANES && k < h - 2; i++) {
+        if (!m->slot[i]) continue;
+        const struct comp_style *st = k == m->pick_sel ? &ST_SEL : &ST_BOX;
+        char line[ALIAS_MAX_LEN + 24];
+        snprintf(line, sizeof(line), " %-*s window %d", w - 14, m->slot[i]->name, window_key(i / 4));
+        comp_fill(m->comp, y + 1 + k, x + 1, w - 2, st);
+        put(m, y + 1 + k, x + 1, w - 2, line, st);
+        k++;
+    }
 }
 
 /* chat/mux.<pid>: which panes this terminal shows, for backmux swap from
@@ -796,31 +830,35 @@ static void render(struct mux *m) {
     m->dirty = false;
     comp_begin(m->comp, NULL);
     struct pane *f = focused(m);
-    int n = m->nwin ? win_count(m, m->view) : 0;
+    int n = win_count(m, m->view);
+    bool full = m->full && m->full == f;
+    bool show_keys = m->holding && m->now - m->nul_first >= MUX_HOLD_MS;
     for (int k = 0; k < n; k++) {
         struct pane *p = m->slot[m->view * 4 + k];
+        if (full && p != m->full) continue;
         struct hold_snapshot snap;
         if (hold_screen_snapshot(p->scr, &snap) == 0) {
             comp_blit(m->comp, &snap, p->row, p->col, p->rows, p->cols);
             hold_snapshot_free(&snap);
         }
     }
-    draw_separators(m);
-    /* names: on arrival, focus, hover, or Ctrl-P Ctrl-N */
+    if (!full) draw_separators(m);
+    /* names: on arrival, focus, hover, or Ctrl-Space held */
     for (int k = 0; k < n; k++) {
         struct pane *p = m->slot[m->view * 4 + k];
-        if (m->now < p->name_until || m->now < m->names_until) {
-            char text[ALIAS_MAX_LEN + 32];
-            if (m->now < m->names_until)
-                snprintf(text, sizeof(text), " %c %d %s ", 'A' + k, m->view * 4 + k + 1, p->name);
-            else
-                snprintf(text, sizeof(text), " %s ", p->name);
+        if (full && p != m->full) continue;
+        if (m->now < p->name_until || show_keys) {
+            char text[ALIAS_MAX_LEN + 8];
+            snprintf(text, sizeof(text), " %s ", p->name);
             draw_badge(m, p->row, p->col + p->cols, text, &ST_NAME);
         }
     }
-    if (m->nwin > 1 && m->now < m->window_note_until) {
-        char text[48];
-        snprintf(text, sizeof(text), " window %d of %d ", m->view + 1, m->nwin);
+    /* More than one window in this terminal: the key to the next, and where
+     * it goes. Nothing at all with one. */
+    if (windows_in_use(m) > 1) {
+        char text[64];
+        snprintf(text, sizeof(text), " Ctrl-P Ctrl-W  window %d -> %d ", window_key(m->view),
+                 window_key(next_window(m, m->view)));
         draw_badge(m, m->trows - 1, m->tcols, text, &ST_NAME);
     }
     struct comp_want want = {0};
@@ -853,13 +891,18 @@ static void render(struct mux *m) {
     } else if (m->fl == FL_SWAP) {
         draw_swap(m);
         want.cursor_visible = false;
-    } else if (m->fl == FL_HELP) {
+    } else if (m->fl == FL_JUMP) {
+        draw_jump(m);
+        want.cursor_visible = false;
+    } else if (m->fl == FL_GOTO || m->fl == FL_MOVE) {
+        /* the mode says what it wants, bottom left, only while it is on */
+        put(m, m->trows - 1, 0, m->tcols, m->fl == FL_GOTO ? " Go to window: press its number " : " Move to window: press a number ",
+            &ST_LETTER);
+    }
+    if (show_keys) {
         draw_help(m);
         want.cursor_visible = false;
     }
-    if (m->lead)
-        draw_badge(m, m->trows - 1, m->tcols,
-                   " Ctrl-P: Q detach  T chat  A attach  N names  W window  H help  P itself ", &ST_NAME);
     if (m->now < m->notice_until) put(m, m->trows - 1, 0, m->tcols, m->notice, &ST_BAD);
     char *buf = NULL;
     size_t len = 0, cap = 0;
@@ -870,9 +913,10 @@ static void render(struct mux *m) {
 /* ---- input ------------------------------------------------------------- */
 
 static int slot_at(const struct mux *m, int row, int col) {
-    int n = m->nwin ? win_count(m, m->view) : 0;
+    int n = win_count(m, m->view);
     for (int k = 0; k < n; k++) {
         const struct pane *p = m->slot[m->view * 4 + k];
+        if (m->full && m->full == focused(m) && p != m->full) continue;
         if (row >= p->row && row < p->row + p->rows && col >= p->col && col < p->col + p->cols) return m->view * 4 + k;
     }
     return -1;
@@ -886,8 +930,8 @@ static void handle_mouse(struct mux *m, int b, int x, int y, bool release) {
     bool motion = (b & 32) != 0;
     bool wheel = (b & 64) != 0;
     int button = b & 3;
-    if (m->fl == FL_HELP) {
-        /* help is read, not worked in: any click puts it away */
+    if (m->fl == FL_SWAP || m->fl == FL_GOTO || m->fl == FL_MOVE || m->fl == FL_JUMP) {
+        /* a click anywhere puts the mode away */
         if (!motion && !release) {
             m->fl = FL_NONE;
             m->dirty = true;
@@ -955,29 +999,31 @@ static void to_pane(struct mux *m, const unsigned char *b, size_t n) {
 
 static void open_floater(struct mux *m, enum floater f);
 
-/* Keys for the floating window that has the keyboard. seq is one key: a
- * byte, or a whole escape sequence. */
+/* A number key as a window: 1-9, then 0 for the tenth. -1 if not one. */
+static int window_of_key(unsigned char c) {
+    if (c >= '1' && c <= '9') return c - '1';
+    if (c == '0') return 9;
+    return -1;
+}
+
+/* Keys for the floating window or mode that has the keyboard. seq is one
+ * key: a byte, or a whole escape sequence. */
 static void floater_key(struct mux *m, const unsigned char *seq, size_t n) {
     bool esc = n == 1 && seq[0] == 0x1b;
     bool up = n == 3 && seq[0] == 0x1b && (seq[1] == '[' || seq[1] == 'O') && seq[2] == 'A';
     bool down = n == 3 && seq[0] == 0x1b && (seq[1] == '[' || seq[1] == 'O') && seq[2] == 'B';
     bool enter = n == 1 && (seq[0] == '\r' || seq[0] == '\n');
-    switch (m->fl) {
-    case FL_HELP:
-        if (esc || enter || (n == 1 && seq[0] == 'q')) {
-            m->fl = FL_NONE;
-            m->dirty = true;
-        }
+    m->dirty = true;
+    if (esc) {
+        m->fl = FL_NONE;
         return;
+    }
+    switch (m->fl) {
     case FL_ATTACH:
-        if (esc) {
-            m->fl = FL_NONE;
-        } else if (up && m->pick_sel > 0) {
+        if (up && m->pick_sel > 0) {
             m->pick_sel--;
         } else if (down && m->pick_sel + 1 < m->npicks) {
             m->pick_sel++;
-        } else if (n == 1 && (seq[0] == 's' || seq[0] == 'S')) {
-            open_floater(m, FL_SWAP);
         } else if (enter && m->npicks > 0) {
             const struct pick *p = &m->picks[m->pick_sel];
             const char *why = NULL;
@@ -987,30 +1033,56 @@ static void floater_key(struct mux *m, const unsigned char *seq, size_t n) {
                 struct pane *np = pane_open(p->id, p->name, p->sock, m->trows, m->tcols, &why);
                 if (!np) notice(m, "cannot attach %s: %s", p->name, why ? why : "unknown");
                 else (void)add_pane(m, np);
-                if (np && win_count(m, m->view) == 1 && m->nwin > 1) m->window_note_until = m->now + MUX_NAME_MS;
             }
             m->fl = FL_NONE;
         }
-        m->dirty = true;
         return;
     case FL_SWAP: {
-        if (esc) {
+        if (n != 1) return;
+        int c = toupper(seq[0]) - 'A';
+        if (c < 0 || c >= win_count(m, m->view)) return;
+        int s2 = m->view * 4 + c;
+        if (m->swap_first < 0) {
+            m->swap_first = s2;
+        } else {
+            do_swap(m, m->swap_first, s2);
             m->fl = FL_NONE;
-            m->dirty = true;
+        }
+        return;
+    }
+    case FL_GOTO: {
+        int w = n == 1 ? window_of_key(seq[0]) : -1;
+        if (w < 0) return;
+        if (win_count(m, w) == 0) {
+            notice(m, " window %d is empty: press another key ", window_key(w));
             return;
         }
-        if (n != 1) return;
-        char word[2] = {(char)seq[0], 0};
-        int s = slot_of_word(m, word);
-        if (s < 0) return;
-        if (m->swap_first < 0) {
-            m->swap_first = s;
-        } else {
-            char why[160];
-            if (do_swap(m, m->swap_first, s, why, sizeof(why)) != 0) notice(m, "%s", why);
+        set_focus(m, w * 4);
+        m->fl = FL_NONE;
+        return;
+    }
+    case FL_MOVE: {
+        int w = n == 1 ? window_of_key(seq[0]) : -1;
+        if (w < 0) return;
+        if (move_pane(m, m->focus, w) != 0) {
+            notice(m, " window %d is full: press another key, or Esc ", window_key(w));
+            return;
+        }
+        m->fl = FL_NONE;
+        return;
+    }
+    case FL_JUMP: {
+        int rows = 0;
+        for (int i = 0; i < MUX_MAX_PANES; i++) rows += m->slot[i] != NULL;
+        if (up && m->pick_sel > 0) m->pick_sel--;
+        else if (down && m->pick_sel + 1 < rows) m->pick_sel++;
+        else if (enter) {
+            for (int i = 0, k = 0; i < MUX_MAX_PANES; i++) {
+                if (!m->slot[i]) continue;
+                if (k++ == m->pick_sel) set_focus(m, i);
+            }
             m->fl = FL_NONE;
         }
-        m->dirty = true;
         return;
     }
     default:
@@ -1020,21 +1092,10 @@ static void floater_key(struct mux *m, const unsigned char *seq, size_t n) {
 
 static void open_floater(struct mux *m, enum floater f) {
     if (m->chat && f != FL_NONE) chat_put_away(m->chat); /* one floating window at a time */
-    switch (f) {
-    case FL_ATTACH:
-        load_picks(m);
-        m->fl = FL_ATTACH;
-        break;
-    case FL_SWAP:
-        m->swap_first = -1;
-        m->fl = FL_SWAP;
-        break;
-    case FL_HELP:
-        m->fl = FL_HELP;
-        break;
-    default:
-        m->fl = FL_NONE;
-    }
+    m->pick_sel = 0;
+    m->swap_first = -1;
+    if (f == FL_ATTACH) load_picks(m);
+    m->fl = f;
     m->dirty = true;
 }
 
@@ -1052,26 +1113,70 @@ static int command(struct mux *m, unsigned char key) {
     case KEY_CHAT:
         chat_key_pressed(m);
         return 0;
-    case KEY_HELP:
-        open_floater(m, m->fl == FL_HELP ? FL_NONE : FL_HELP);
+    case KEY_SWAP:
+        if (win_count(m, m->view) > 1) open_floater(m, m->fl == FL_SWAP ? FL_NONE : FL_SWAP);
         return 0;
-    case KEY_NAMES:
-        m->names_until = m->now + MUX_NAME_MS;
-        m->dirty = true;
+    case KEY_GOTO:
+        open_floater(m, m->fl == FL_GOTO ? FL_NONE : FL_GOTO);
+        return 0;
+    case KEY_MOVE:
+        if (focused(m)) open_floater(m, m->fl == FL_MOVE ? FL_NONE : FL_MOVE);
+        return 0;
+    case KEY_JUMP:
+        open_floater(m, m->fl == FL_JUMP ? FL_NONE : FL_JUMP);
+        return 0;
+    case KEY_FULL:
+        m->full = m->full == focused(m) ? NULL : focused(m);
+        relayout(m);
         return 0;
     case KEY_WINDOW:
-        if (m->nwin > 1) {
-            m->view = (m->view + 1) % m->nwin;
-            m->focus = m->view * 4;
-            show_name(m, focused(m));
-        }
-        m->window_note_until = m->now + MUX_NAME_MS;
+        if (windows_in_use(m) > 1) set_focus(m, next_window(m, m->view) * 4);
+        return 0;
+    case KEY_HOLD: /* handed over by plain attach: Ctrl-Space is being held */
+        m->holding = true;
+        m->nul_first = m->now - MUX_TAP_MS;
+        m->nul_last = m->now;
         m->dirty = true;
-        m->advertise = true;
         return 0;
     default:
         return 0; /* anything else: cancelled, nothing sent */
     }
+}
+
+/* Ctrl-Space (a NUL byte). One on its own is the program's tap, sent once
+ * it is clear no repeat follows; a second within the key-repeat delay makes
+ * it a hold, and every one of them is swallowed. */
+static void nul_key(struct mux *m) {
+    if (m->holding) {
+        m->nul_last = m->now;
+        return;
+    }
+    if (m->nul_pending && m->now - m->nul_first <= MUX_TAP_MS) {
+        m->nul_pending = false;
+        m->holding = true;
+        m->nul_last = m->now;
+        m->dirty = true;
+        return;
+    }
+    m->nul_pending = true;
+    m->nul_first = m->now;
+}
+
+/* The Ctrl-Space timers: a lone tap goes through; a hold ends when the
+ * repeats stop (the key was let go), taking the keys and names away. */
+static void nul_tick(struct mux *m) {
+    if (m->nul_pending && !m->holding && m->now - m->nul_first > MUX_TAP_MS) {
+        static const unsigned char nul = 0;
+        m->nul_pending = false;
+        if (m->chat && chat_has_keyboard(m->chat)) chat_input(m->chat, &nul, 1, m->now);
+        else to_pane(m, &nul, 1);
+        flush_keys(m);
+    }
+    if (m->holding && m->now - m->nul_last > MUX_LET_GO_MS) {
+        m->holding = false;
+        m->dirty = true;
+    }
+    if (m->holding && m->now - m->nul_first >= MUX_HOLD_MS) m->dirty = true;
 }
 
 /* Length of the escape sequence at s (n bytes there), 0 if not whole yet.
@@ -1149,6 +1254,11 @@ static int handle_input(struct mux *m, const unsigned char *buf, size_t n) {
         if (b == KEY_LEAD) {
             m->lead = true; /* waits for the next key, however long it takes */
             m->dirty = true;
+            continue;
+        }
+        if (b == 0x00) {
+            flush_keys(m);
+            nul_key(m);
             continue;
         }
         if (m->fl != FL_NONE) floater_key(m, &b, 1);
@@ -1252,7 +1362,7 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
     }
     (void)add_pane(m, first);
     first->name_until = 0;
-    if (m->chat) chat_set_screen(m->chat, first->scr);
+    if (m->chat) chat_set_screen(m->chat, first->scr, first->name);
     /* Inline, the terminal shows this pane's screen already (and the
      * person's lines above where the launch began): start from that, so
      * chat paints only its own window instead of wiping the screen. */
@@ -1285,7 +1395,8 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
         if (pane_total(m) == 0) break; /* every pane has ended */
         /* One pane left and nothing floating: back to plain attach, the
          * screen exactly as it is without panes. */
-        if (pane_total(m) == 1 && m->fl == FL_NONE && !m->lead && m->now >= m->names_until &&
+        nul_tick(m);
+        if (pane_total(m) == 1 && m->fl == FL_NONE && !m->lead && !m->holding && !m->nul_pending && !m->full &&
             !(m->chat && chat_on_screen(m->chat, m->now))) {
             struct pane *p = m->slot[0];
             /* the last frame, with nothing over the program: inline nothing
@@ -1308,10 +1419,14 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
             unlink(req_path);
             char a[96] = "", b[96] = "", why2[160] = "bad request";
             int ok = -1;
+            /* by name or id only: whoever asks cannot see this screen */
             if (sscanf(req, "%95s %95s", a, b) == 2) {
-                int sa = slot_of_word(m, a), sb = slot_of_word(m, b);
-                if (sa < 0 || sb < 0) snprintf(why2, sizeof(why2), "no pane %s", sa < 0 ? a : b);
-                else ok = do_swap(m, sa, sb, why2, sizeof(why2));
+                int sa = slot_of_name(m, a), sb = slot_of_name(m, b);
+                if (sa < 0 || sb < 0) snprintf(why2, sizeof(why2), "%s is not a pane in that terminal", sa < 0 ? a : b);
+                else {
+                    do_swap(m, sa, sb);
+                    ok = 0;
+                }
             }
             if (ok != 0) notice(m, "swap: %s", why2);
             /* the answer, for the backmux swap waiting on it */
@@ -1338,6 +1453,7 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
         int sidx = (int)nf, snf = m->chat ? chat_poll_fds(m->chat, pfds + nf, CHAT_MAX_OUTBOUND) : 0;
         nf += (nfds_t)snf;
         int timeout = m->dirty ? MUX_FRAME_MS : MUX_LOOK_MS;
+        if ((m->nul_pending || m->holding) && timeout > 40) timeout = 40; /* Ctrl-Space timers */
         if (m->chat) {
             int64_t due = chat_due_in(m->chat, m->now);
             if (due >= 0 && due < timeout) timeout = (int)due;

@@ -1,8 +1,8 @@
 usage: backmux ps [-a|--all] [name]
 
-List running calls across your personal and root-managed stores.
--a, --all includes ended calls. A name filters the listing.
+List running processes across your personal and root-managed stores.
+-a, --all includes ended processes. A name filters the listing.
 
-The columns are CALL ID, COMMAND, CREATED, STATUS, PORTS, and NAMES.
-Private root-managed calls show a 'hidden' command. ps takes no scope
+The columns are PROCESS ID, COMMAND, CREATED, STATUS, PORTS, and NAMES.
+Private root-managed processes show a 'hidden' command. ps takes no scope
 flags; use list for --user, --system, and an owner column.

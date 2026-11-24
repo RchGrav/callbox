@@ -300,6 +300,9 @@ struct attach_state {
     bool holding;
     bool resize_failed;
     bool line_mode;           /* the program is on pipes: keep the terminal's lines */
+    bool hold_keys;           /* Ctrl-Space held hands over to the compositor */
+    bool nul_pending;         /* a Ctrl-Space waiting to see whether it repeats */
+    int64_t nul_first;
     struct hold_term_line line;
 };
 
@@ -321,11 +324,55 @@ static int attach_on_command(void *ctx, unsigned char key) {
     return 1;
 }
 
+/* Ctrl-Space (NUL): a second one within the key-repeat delay is a hold -
+ * the compositor takes over to show the keys and names; a lone one goes
+ * to the program once it is clear no repeat follows. */
+#define ATTACH_TAP_MS 700
+
 /* Bytes the keys release go to the broker as DATA frames. */
 static int attach_on_input(void *ctx, const unsigned char *bytes, size_t n) {
     struct attach_state *a = ctx;
     if (a->writer < 0) return 0;
+    if (a->hold_keys) {
+        size_t from = 0;
+        for (size_t i = 0; i < n; i++) {
+            if (bytes[i] != 0x00) continue;
+            if (i > from) {
+                int rc = sent_or_over(write_frame(a->writer, CONSOLE_FRAME_DATA, bytes + from, (uint16_t)(i - from)));
+                if (rc != 0) return rc;
+            }
+            from = i + 1;
+            int64_t now = attach_now_ms();
+            if (a->nul_pending && now - a->nul_first <= ATTACH_TAP_MS) {
+                a->nul_pending = false;
+                (void)write_frame(a->writer, CONSOLE_FRAME_DETACH, NULL, 0);
+                a->detach_sent_ms = now;
+                g_mux_cmd = 0x80; /* held: the compositor shows the keys */
+                return 1;
+            }
+            a->nul_pending = true;
+            a->nul_first = now;
+        }
+        if (from >= n) return 0;
+        bytes += from;
+        n -= from;
+    }
     return sent_or_over(write_frame(a->writer, CONSOLE_FRAME_DATA, bytes, (uint16_t)n));
+}
+
+static int64_t attach_due_in(void *ctx) {
+    struct attach_state *a = ctx;
+    if (!a->nul_pending) return -1;
+    int64_t left = a->nul_first + ATTACH_TAP_MS - attach_now_ms();
+    return left < 0 ? 0 : left;
+}
+
+static int attach_on_timer(void *ctx) {
+    struct attach_state *a = ctx;
+    if (!a->nul_pending || attach_now_ms() - a->nul_first <= ATTACH_TAP_MS) return 0;
+    a->nul_pending = false;
+    static const unsigned char nul = 0; /* a tap: the program's */
+    return a->writer >= 0 ? sent_or_over(write_frame(a->writer, CONSOLE_FRAME_DATA, &nul, 1)) : 0;
 }
 
 /* A program on pipes: keys go through the line editor, and only whole lines
@@ -550,8 +597,11 @@ static int attach_once(const char *sock_path) {
      * default two-key lead form and a terminal to draw on. */
     bool mux_keys = interactive && !g_line_mode && !g_composited && g_mux_store && g_detach_key_count == 2 &&
                     term->owned;
+    a.hold_keys = mux_keys;
     if (mux_keys) {
-        static const unsigned char cmds[] = {0x01, 0x14, 0x08, 0x0e, 0x17};
+        /* A attach, T chat, S swap, G go to window, M move, F full, J jump,
+         * W next window */
+        static const unsigned char cmds[] = {0x01, 0x14, 0x13, 0x07, 0x0d, 0x06, 0x0a, 0x17};
         hold_term_detach_set_commands(&detach, cmds, sizeof(cmds));
     }
     enum hold_client_end end = HOLD_CLIENT_OUTPUT_ENDED;
@@ -584,6 +634,8 @@ static int attach_once(const char *sock_path) {
             .on_input_end = attach_on_input_end,
             .on_resize = attach_on_resize,
             .on_command = mux_keys ? attach_on_command : NULL,
+            .due_in = mux_keys ? attach_due_in : NULL,
+            .on_timer = mux_keys ? attach_on_timer : NULL,
             .ctx = &a,
         };
         end = hold_client_run(&c);
