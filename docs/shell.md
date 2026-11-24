@@ -129,8 +129,9 @@ Everything the attached terminal sends passes through one router
   hiding or leaving chat gives the keyboard, and the cursor, back to the
   shell.
 - **On-screen help.** What just happened and the key that undoes it are
-  shown where the eye is, for a few seconds: `callbox shell | Ctrl-P Ctrl-T:
-  chat` on attach, `chat hidden | Ctrl-P Ctrl-T: bring it back` when the
+  shown where the eye is, for a few seconds: the call's own name on attach
+  (`crucial_phantom | Ctrl-P Ctrl-T: chat`; the name is what others message
+  and reply to, and the command just typed needs no repeating), `chat hidden | Ctrl-P Ctrl-T: bring it back` when the
   window closes, `Ctrl-P Ctrl-T: chat | typing in the shell` in the window
   when the keyboard is handed over. Like the window, none of it reaches the
   shell, its screen, or its log.

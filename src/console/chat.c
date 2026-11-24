@@ -131,7 +131,7 @@ struct chat {
     char notice[160]; /* a line in the window: why something did not happen, or a tip */
     bool notice_tip;
     int64_t notice_until_ms;
-    char hint[96]; /* a tip in the corner while the window is hidden */
+    char hint[CHAT_LABEL_LEN + 64]; /* a tip in the corner while the window is hidden; holds the call's name */
     int64_t hint_until_ms;
 
     struct outbound out[CHAT_MAX_OUTBOUND];
@@ -1575,10 +1575,18 @@ static void draw_window(struct chat *c) {
     /* title bar: the handle to drag, and the close control */
     const struct comp_style *ts = c->focused ? &ST_TITLE : &ST_TITLE_IDLE;
     comp_fill(c->comp, c->y, c->x, c->w, ts);
-    int room = c->w - 5, used = put(c, c->y, c->x + 1, room, "chat", ts);
-    if (c->picking) used += put(c, c->y, c->x + 1 + used, room - used, " \xc2\xb7 who to talk to", ts);
+    /* "<you> chat -> <them>": both ends of the conversation, and the way
+     * your messages go. Why: the title is the one line always in view, and
+     * it is where you look to learn your own name (the one others reply to). */
+    int room = c->w - 5, used = 0;
+    if (c->self[0]) {
+        used += put(c, c->y, c->x + 1, room, c->self, ts);
+        used += put(c, c->y, c->x + 1 + used, room - used, " ", ts);
+    }
+    used += put(c, c->y, c->x + 1 + used, room - used, "chat", ts);
+    if (c->picking) used += put(c, c->y, c->x + 1 + used, room - used, " -> who to talk to", ts);
     else if (c->current) {
-        used += put(c, c->y, c->x + 1 + used, room - used, " \xc2\xb7 ", ts);
+        used += put(c, c->y, c->x + 1 + used, room - used, " -> ", ts);
         used += put(c, c->y, c->x + 1 + used, room - used, c->current->label, ts);
     }
     int others = total_unread(c, c->picking ? NULL : c->current);
@@ -1641,7 +1649,7 @@ static void draw_window(struct chat *c) {
 
 /* With chat hidden: what is unread, or (just after attaching) how to open it. */
 static void draw_badge(struct chat *c, int64_t now) {
-    char text[ALIAS_MAX_LEN + 96] = "", key[24], menu[96];
+    char text[CHAT_LABEL_LEN + 96] = "", key[24], menu[96];
     int unread = total_unread(c, NULL);
     chat_keys(c, key);
     c->badge_col = -1;
@@ -1770,7 +1778,14 @@ void chat_attached(struct chat *c, int rows, int cols, int64_t now) {
     c->pasting = false;
     c->mouse_on = false;
     chat_terminal_resized(c, rows, cols);
-    if (!c->visible) set_tip(c, c->host.program ? "callbox" : "callbox shell", "chat");
+    /* The name is read on every attach, not first when the chat opens, and
+     * the tip is the name alone. Why: it is what msg, peek and attach take,
+     * and whoever starts or rejoins a shell or tool had no way to learn it
+     * until they chatted; the command they just typed needs no repeating.
+     * -it shows it in a corner banner; with the chat window on, this tip is
+     * that banner. */
+    self_label(c, c->self, sizeof(c->self));
+    if (!c->visible) set_tip(c, c->self, "chat");
     comp_invalidate(c->comp); /* a fresh terminal: paint it all, set every mode */
     /* What arrived for the conversation on show while nobody was attached is
      * in front of them now. */

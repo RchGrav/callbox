@@ -5772,7 +5772,7 @@ start_shell_in_terminal() {
   shift 2
   "$HOLD_BIN" -dt --size "$cols" "$rows" --name term -- "$HOLD_REAL_BIN" shell --name work "$@" </dev/null >/dev/null || return 1
   # the corner hint shows that the composited display is up
-  "$HOLD_BIN" wait term --match 'callbox shell | Ctrl-P Ctrl-T: chat' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" wait term --match 'work | Ctrl-P Ctrl-T: chat' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
 }
 
 # Where a piece of text sits on a TTY call's screen: "COL ROW" of its first
@@ -5827,7 +5827,7 @@ wait_gone() {
 
 # The chat window is drawn over the shell, never into it.
 shell_untouched() {
-  if out_has 'chat ·\|who to talk to\|\[ \] screen' "$HOLD_BIN" peek work; then
+  if out_has 'chat ->\|who to talk to\|\[ \] screen' "$HOLD_BIN" peek work; then
     echo "the chat window is on the shell's own screen" >&2
     "$HOLD_BIN" peek work >&2
     return 1
@@ -5862,7 +5862,7 @@ test_shell_launch_grammar() {
   out_has '"chat": true' "$HOLD_BIN" inspect work || { echo "the call is not recorded as a shell with chat" >&2; "$HOLD_BIN" inspect work >&2; return 1; }
   # No shell named: $SHELL.
   "$HOLD_BIN" -dt -e SHELL=/bin/sh --name term2 -- "$HOLD_REAL_BIN" shell --name plain </dev/null >/dev/null || return 1
-  "$HOLD_BIN" wait term2 --match 'callbox shell | Ctrl-P Ctrl-T: chat' --timeout 8000 || { "$HOLD_BIN" peek term2 >&2; return 1; }
+  "$HOLD_BIN" wait term2 --match 'plain | Ctrl-P Ctrl-T: chat' --timeout 8000 || { "$HOLD_BIN" peek term2 >&2; return 1; }
   out_has '"/bin/sh" .* plain$' "$HOLD_BIN" list || { echo "callbox shell did not start \$SHELL" >&2; "$HOLD_BIN" list >&2; return 1; }
   # --chat-key: the lead key, then that key, opens chat; the default one is
   # then just another key, and goes through with the lead key.
@@ -5910,21 +5910,21 @@ test_shell_chat_request_and_reply() {
   "$HOLD_BIN" wait term --match 'pong 1' --timeout 10000 || { "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" wait term --match 'delivered' --timeout 8000 || { echo "the sent message is not marked delivered" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   # in the agent's conversation, never at the shell prompt, on its screen, or in its log.
-  out_has 'chat · agent' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
+  out_has 'chat -> agent' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
   if out_has 'pong' "$HOLD_BIN" peek work; then echo "the reply was typed into the shell" >&2; "$HOLD_BIN" peek work >&2; return 1; fi
-  if out_has 'pong\|chat ·\|ping from' "$HOLD_BIN" logs work; then echo "chat text reached the shell's log" >&2; return 1; fi
+  if out_has 'pong\|chat ->\|ping from' "$HOLD_BIN" logs work; then echo "chat text reached the shell's log" >&2; return 1; fi
   shell_untouched || return 1
   "$HOLD_BIN" msg work --received | grep -Eq '^[0-9a-f]{6} .* agent +pong 1$' || { "$HOLD_BIN" msg work --received >&2; return 1; }
   # Hidden: the conversation stays, the shell goes on, a new reply waits behind a badge.
   "$HOLD_BIN" send term -k Escape || return 1
-  wait_gone term 'chat · agent' || return 1
+  wait_gone term 'chat -> agent' || return 1
   "$HOLD_BIN" wait term --match 'chat hidden | Ctrl-P Ctrl-T: bring it back' --timeout 8000 || { echo "hiding chat did not say how to bring it back" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   if out_has 'chat hidden' "$HOLD_BIN" peek work; then echo "the tip reached the shell's screen" >&2; return 1; fi
   "$HOLD_BIN" send term 'echo typed-at-the-prompt' -k Enter || return 1
   "$HOLD_BIN" wait work --regex '^typed-at-the-prompt$' --timeout 8000 || { echo "the shell did not get the keyboard back" >&2; "$HOLD_BIN" peek work >&2; return 1; }
   "$HOLD_BIN" send agent 'ping again' -k Enter || return 1
   "$HOLD_BIN" wait term --match 'chat: 1 new from agent' --timeout 10000 || { echo "no unread badge" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  if out_has 'pong 2\|chat · agent' "$HOLD_BIN" peek term; then echo "a reply opened the hidden window" >&2; return 1; fi
+  if out_has 'pong 2\|chat -> agent' "$HOLD_BIN" peek term; then echo "a reply opened the hidden window" >&2; return 1; fi
   if out_has 'pong\|chat:' "$HOLD_BIN" peek work; then echo "a hidden reply reached the shell" >&2; "$HOLD_BIN" peek work >&2; return 1; fi
   # Opening shows it, after the first exchange.
   "$HOLD_BIN" send term -k C-p -k C-t || return 1
@@ -5938,7 +5938,7 @@ test_shell_chat_request_and_reply() {
   "$HOLD_BIN" wait agent --match 'ping with my screen' --timeout 10000 || { "$HOLD_BIN" peek agent >&2; return 1; }
   out_has 'screen of work: 100 columns x 30 rows' "$HOLD_BIN" peek agent || { echo "the screen did not go with the message" >&2; "$HOLD_BIN" peek agent >&2; return 1; }
   out_has 'typed-at-the-prompt' "$HOLD_BIN" peek agent || { echo "the shared screen lacks the shell's content" >&2; return 1; }
-  if out_has 'chat · agent\|\[x\] screen' "$HOLD_BIN" peek agent; then echo "the shared screen shows the chat window" >&2; return 1; fi
+  if out_has 'chat -> agent\|\[x\] screen' "$HOLD_BIN" peek agent; then echo "the shared screen shows the chat window" >&2; return 1; fi
   "$HOLD_BIN" wait term --match 'pong 3' --timeout 10000 || return 1
   out_has '\[ \] screen' "$HOLD_BIN" peek term || { echo "Include screen stayed on after one message" >&2; return 1; }
 }
@@ -5977,7 +5977,7 @@ test_shell_chat_failures_and_outside_senders() {
   "$HOLD_BIN" wait term --match "$op  1 new" --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" send term "$op" -k Enter || return 1
   "$HOLD_BIN" wait term --match 'from a plain terminal' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
-  out_has "chat · $op" "$HOLD_BIN" peek term || return 1
+  out_has "chat -> $op" "$HOLD_BIN" peek term || return 1
   "$HOLD_BIN" send term 'hello?' -k Enter || return 1
   "$HOLD_BIN" wait term --match 'delivered' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
   env -u CALLBOX_ID -u CALLBOX_NAME "$HOLD_BIN" inbox | grep -q 'from work\] hello?' || { echo "the reply did not reach the inbox" >&2; env -u CALLBOX_ID -u CALLBOX_NAME "$HOLD_BIN" inbox >&2; return 1; }
@@ -6044,12 +6044,12 @@ print(newest)' "$1"
   [ "$t1" -gt "$t0" ] || { echo "the program stopped updating under the window" >&2; return 1; }
   shell_untouched || return 1
   # Move it by its title bar: what it covered shows the current frame.
-  read -r x y < <(screen_pos term 'chat ·') || return 1
+  read -r x y < <(screen_pos term 'chat ->') || return 1
   "$HOLD_BIN" send term --mouse "press,$x,$y" || return 1
   "$HOLD_BIN" send term --mouse "drag,$((x - 20)),$((y + 5))" || return 1
   "$HOLD_BIN" send term --mouse "drag,$((x - 40)),$((y + 10))" || return 1
   "$HOLD_BIN" send term --mouse "release,$((x - 40)),$((y + 10))" || return 1
-  "$HOLD_BIN" wait term --regex "^r$(printf '%02d' $((y + 10))) [0-9 ]{4}.* chat · who to talk to" --timeout 8000 || { echo "the window did not move" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" wait term --regex "^r$(printf '%02d' $((y + 10))) [0-9 ]{4}.* chat -> who to talk to" --timeout 8000 || { echo "the window did not move" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   sleep 0.3
   t2=$(fresh "$t1") || { echo "moving the window uncovered stale cells" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   # Resize it from the lower-right corner: the strip it gave up is current too.
@@ -6090,14 +6090,14 @@ test_shell_resize_reaches_program_overlay_does_not() {
   "$HOLD_BIN" wait work --match 'WINCH 32 110' --timeout 8000 || { echo "no resize with chat open" >&2; "$HOLD_BIN" peek work >&2; return 1; }
   "$HOLD_BIN" resize term 40 9 || return 1
   "$HOLD_BIN" wait work --match 'WINCH 9 40' --timeout 8000 || return 1
-  "$HOLD_BIN" wait term --match 'chat ·' --timeout 8000 || { echo "the title bar left the shrunken terminal" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" wait term --match 'chat ->' --timeout 8000 || { echo "the title bar left the shrunken terminal" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   screen_pos term '×' >/dev/null || { echo "the close control left the shrunken terminal" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" resize term 100 30 || return 1
   "$HOLD_BIN" wait work --match 'WINCH 30 100' --timeout 8000 || return 1
   wait_mouse term || return 1
   winches=$("$HOLD_BIN" logs work | grep -c WINCH)
   # only the chat window: moved, resized, hidden, shown
-  read -r x y < <(screen_pos term 'chat ·') || return 1
+  read -r x y < <(screen_pos term 'chat ->') || return 1
   "$HOLD_BIN" send term --mouse "press,$x,$y" || return 1
   "$HOLD_BIN" send term --mouse "drag,$((x - 30)),$((y + 6))" || return 1
   "$HOLD_BIN" send term --mouse "release,$((x - 30)),$((y + 6))" || return 1
@@ -6137,7 +6137,7 @@ test_shell_chat_input_never_reaches_program() {
   "$HOLD_BIN" send term 'secret words' || return 1
   "$HOLD_BIN" wait term --match '> secret words' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
   # a drag from the title bar, across the window's edge, released far outside
-  read -r x y < <(screen_pos term 'chat ·') || return 1
+  read -r x y < <(screen_pos term 'chat ->') || return 1
   "$HOLD_BIN" send term --mouse "press,$x,$y" || return 1
   "$HOLD_BIN" send term --mouse "drag,$((x - 20)),$((y + 4))" || return 1
   "$HOLD_BIN" send term --mouse "drag,2,20" || return 1
@@ -6412,7 +6412,7 @@ test_shell_chat_draft_editing() {
   start_shell_in_terminal 100 30 /bin/sh || return 1
   env -u CALLBOX_ID -u CALLBOX_NAME "$HOLD_BIN" msg work 'hello' || return 1
   "$HOLD_BIN" send term -k C-p -k C-t || return 1
-  "$HOLD_BIN" wait term --regex 'chat · [a-z0-9_-]+' --timeout 8000 || return 1
+  "$HOLD_BIN" wait term --regex 'chat -> [a-z0-9_-]+' --timeout 8000 || return 1
   "$HOLD_BIN" send term 'héllo wörld 日本語' || return 1
   "$HOLD_BIN" wait term --match '> héllo wörld 日本語' --timeout 8000 || { "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" send term -k Backspace -k Backspace -k Home 'X' -k End '!' || return 1
@@ -6574,7 +6574,7 @@ test_shell_detach_attach_and_redial() {
   "$HOLD_BIN" send term2 'exit' -k Enter || return 1
   "$HOLD_BIN" wait work --timeout 8000 >/dev/null || { echo "the shell did not exit" >&2; return 1; }
   "$HOLD_BIN" -dt --size 80 24 --name term3 -- "$HOLD_REAL_BIN" work </dev/null >/dev/null || return 1
-  "$HOLD_BIN" wait term3 --match 'callbox shell | Ctrl-P Ctrl-T: chat' --timeout 8000 || { echo "redial did not bring the shell back with chat" >&2; "$HOLD_BIN" peek term3 >&2; return 1; }
+  "$HOLD_BIN" wait term3 --match 'work | Ctrl-P Ctrl-T: chat' --timeout 8000 || { echo "redial did not bring the shell back with chat" >&2; "$HOLD_BIN" peek term3 >&2; return 1; }
   "$HOLD_BIN" send term3 -k C-p -k C-t || return 1
   "$HOLD_BIN" wait term3 --match 'chat' --timeout 8000 || return 1
 }
