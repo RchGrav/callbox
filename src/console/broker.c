@@ -1443,28 +1443,23 @@ static void reap_target(struct broker *b, bool block) {
     }
 }
 
-/* Another client wants the console. Before it is turned away: is the one
- * that has it still there? A client whose process no longer exists is not,
- * whatever its connection has (not yet) reported - a FIFO on macOS never
- * reports its end, and is only probed when the broker is otherwise idle. */
+/* Another client wants the console: it takes it. The one that had it lets
+ * go, silently; the call runs on. Why the newer attach wins: the person
+ * asking for the call here is almost always the one attached there, in a
+ * window they left open (or a pane they now want in another terminal), and
+ * sending them to find it and detach first is the annoying part. Unlike a
+ * detach, the call's terminal is still being looked at, so an attach nested
+ * inside the call is not told to let go. Returns false: the console is
+ * free for the newcomer. */
 static bool console_taken(struct broker *b, struct attach_client *cl) {
     if (cl->fd < 0) return false;
-    if (cl->peer_pid > 0 && kill(cl->peer_pid, 0) != 0 && errno == ESRCH) {
-        drop_attach(b, cl);
-        return false;
-    }
-    return true;
-}
-
-/* Turn a second attach away, naming the process that has the console (so
- * the person can be told where it is attached, not just that it is). */
-static void refuse_attach(struct control_client *c, const struct attach_client *cl) {
-    char msg[80];
-    int n = cl->peer_pid > 0
-                ? snprintf(msg, sizeof(msg), "backmux: console already attached (by pid %ld)\n", (long)cl->peer_pid)
-                : snprintf(msg, sizeof(msg), "backmux: console already attached\n");
-    (void)hold_write_all(c->fd, msg, (size_t)n);
-    drop_control(c);
+    if (cl->name_until_ms) (void)repaint_raw(b, cl, NULL);
+    if (cl->output != cl->fd) close(cl->output);
+    close(cl->fd);
+    if (b->chat) chat_detached(b->chat);
+    memset(cl, 0, sizeof(*cl));
+    cl->fd = -1;
+    return false;
 }
 
 /* Route a freshly accepted connection once its first bytes are readable:
@@ -1488,10 +1483,7 @@ static void sniff_connection(struct broker *b, struct control_client *c, struct 
         read_control(b, c);
         return;
     }
-    if (console_taken(b, cl)) {
-        refuse_attach(c, cl);
-        return;
-    }
+    (void)console_taken(b, cl); /* a newer attach takes the console */
     memset(cl, 0, sizeof(*cl));
     cl->fd = c->fd;
     cl->output = c->output;
@@ -1505,10 +1497,7 @@ static void sniff_connection(struct broker *b, struct control_client *c, struct 
  * read-only attach so output-only clients still see the screen. */
 static void sniff_timeout(struct broker *b, struct control_client *c, struct attach_client *cl, int64_t now) {
     if (c->phase != CTL_SNIFF || now - c->accepted_ms < BROKER_SNIFF_MS) return;
-    if (console_taken(b, cl)) {
-        refuse_attach(c, cl);
-        return;
-    }
+    (void)console_taken(b, cl); /* a newer attach takes the console */
     memset(cl, 0, sizeof(*cl));
     cl->fd = c->fd;
     cl->output = c->output;

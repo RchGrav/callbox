@@ -5864,9 +5864,13 @@ test_panes_attach_beside_and_hand_back() {
   local p1col p2col
   "$HOLD_BIN" detach --name p1 -- sh -c 'stty -echo; echo P1-UP; exec cat' mark-one >/dev/null || return 1
   "$HOLD_BIN" detach --name p2 -- sh -c 'stty -echo; echo P2-UP; exec cat' mark-two >/dev/null || return 1
+  # p2 is attached in another terminal: Ctrl-P Ctrl-A still lists it and
+  # takes it, and that terminal lets go
+  start_term other p2 || return 1
   start_term term p1 || return 1
   if "$HOLD_BIN" peek term | grep -q '│'; then echo "a lone call was split" >&2; return 1; fi
   pick_pane term mark-two || return 1
+  "$HOLD_BIN" wait other --timeout 8000 >/dev/null 2>&1 || { echo "the other terminal kept p2" >&2; "$HOLD_BIN" peek other >&2; return 1; }
   "$HOLD_BIN" wait term --match 'P2-UP' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
   out_has '│' "$HOLD_BIN" peek term || { echo "no split after Ctrl-P Ctrl-A" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   p1col=$(screen_pos term P1-UP | cut -d' ' -f1); p2col=$(screen_pos term P2-UP | cut -d' ' -f1)
@@ -6345,9 +6349,8 @@ test_attach_again_after_client_vanishes() {
   console_free quiet QUIET-UP || return 1
 }
 
-# An attach that cannot have the call says who has it, where a person will see
-# it (not on a screen that is wiped as the attach gives up), and fails. Leaving
-# a call says it is still running and how to return. Calls go by their names.
+# A newer attach takes the call from the terminal that had it, which lets go
+# without a word; leaving says nothing either. Calls go by their names.
 test_attach_messages_say_what_happened() {
   local rc
   "$HOLD_BIN" -dt --name app -- /bin/sh -c 'echo APP-UP; while :; do sleep 1; done' </dev/null >/dev/null || return 1
@@ -6356,21 +6359,16 @@ test_attach_messages_say_what_happened() {
   "$HOLD_BIN" -dt --size 120 12 --name around -- /bin/sh </dev/null >/dev/null || return 1
   "$HOLD_BIN" send around "\"$HOLD_REAL_BIN\" attach app" -k Enter || return 1
   "$HOLD_BIN" wait around --match APP-UP --timeout 8000 || { "$HOLD_BIN" peek around >&2; return 1; }
-  set +e
-  "$HOLD_BIN" attach app </dev/null >"$TEST_ROOT/refused.out" 2>"$TEST_ROOT/refused.err"; rc=$?
-  set -e
-  [ "$rc" -eq 3 ] || { echo "a refused attach exited $rc" >&2; return 1; }
-  grep -q 'backmux: app is already attached, from inside the call around (pid [0-9]*)' "$TEST_ROOT/refused.err" || { cat "$TEST_ROOT/refused.err" >&2; return 1; }
-  [ ! -s "$TEST_ROOT/refused.out" ] || { echo "the refusal was written to stdout" >&2; cat "$TEST_ROOT/refused.out" >&2; return 1; }
-  # on a terminal, the reason is still on screen after the attach has given up
+  # a newer attach takes the call; the one that had it lets go, silently,
+  # and the call runs on
   "$HOLD_BIN" -dt --size 120 6 --name second -- "$HOLD_REAL_BIN" attach app </dev/null >/dev/null || return 1
-  "$HOLD_BIN" wait second --timeout 8000 >/dev/null || return 1
-  out_has 'app is already attached, from inside the call around' "$HOLD_BIN" peek second || { echo "a refused attach left nothing on the terminal" >&2; "$HOLD_BIN" peek second >&2; return 1; }
-  # leaving says nothing: the call runs on, as list shows
-  "$HOLD_BIN" send around -k C-p -k C-q || return 1
+  "$HOLD_BIN" wait second --match APP-UP --timeout 8000 >/dev/null || { echo "the newer attach did not get the call" >&2; "$HOLD_BIN" peek second >&2; return 1; }
   "$HOLD_BIN" send around 'echo LEFT' -k Enter || return 1
-  "$HOLD_BIN" wait around --regex '^LEFT$' --timeout 8000 >/dev/null || { echo "the shell did not come back after the detach" >&2; "$HOLD_BIN" peek around >&2; return 1; }
-  if "$HOLD_BIN" peek around | grep -q 'detached from'; then echo "a plain detach printed a note" >&2; "$HOLD_BIN" peek around >&2; return 1; fi
+  "$HOLD_BIN" wait around --regex '^LEFT$' --timeout 8000 >/dev/null || { echo "the older attach did not let go" >&2; "$HOLD_BIN" peek around >&2; return 1; }
+  if "$HOLD_BIN" peek around | grep -q 'backmux:'; then echo "the hand-over printed a note" >&2; "$HOLD_BIN" peek around >&2; return 1; fi
+  # leaving says nothing either: the call runs on, as list shows
+  "$HOLD_BIN" send second -k C-p -k C-q || return 1
+  "$HOLD_BIN" wait second --timeout 8000 >/dev/null 2>&1 || return 1
   out_has 'Up .* app$' "$HOLD_BIN" list || return 1
   # a call cannot be attached from inside itself
   "$HOLD_BIN" send around "\"$HOLD_REAL_BIN\" attach around; echo RC=\$?" -k Enter || return 1
@@ -6724,7 +6722,7 @@ run_test "a mistyped command line is a usage error and acts on nothing" test_cli
 run_test "help stays concise, matches its source, and exposes the full reference" test_help_pages_fit_and_say_it
 run_test "a console is free again once its attach client is gone" test_attach_again_after_client_vanishes
 run_test "nested attach: the detach keys let go of the innermost first" test_nested_attach_detaches_innermost_first
-run_test "attach says who has a call, leaves quietly, and uses names" test_attach_messages_say_what_happened
+run_test "a newer attach takes the call; leaving is quiet; names, not ids" test_attach_messages_say_what_happened
 run_test "peek shows the last screen after exit; purge removes it" test_peek_after_exit_and_purge
 run_test "screen verbs refuse calls without a TTY" test_screen_verbs_need_a_tty
 run_test "send --mouse to a program without mouse reporting exits 9" test_send_mouse_off_is_reported

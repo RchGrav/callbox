@@ -1478,7 +1478,9 @@ static void drop_ended(struct mux *m) {
     for (int i = 0; i < MUX_MAX_PANES; i++) {
         struct pane *p = m->slot[i];
         if (p && p->ended) {
-            notice(m, "%s has ended", p->name);
+            /* Its console still there: another terminal took the call; it
+             * runs on, so say nothing. Gone: it ended. */
+            if (!hold_path_exists(p->sock)) notice(m, "%s has ended", p->name);
             pane_free(p);
             m->slot[i] = NULL;
             any = true;
