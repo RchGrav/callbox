@@ -22,7 +22,6 @@ void hold_note_enclosing_call(const struct hold_store *a, const struct hold_stor
 /* The lines a person reads when an attach is turned away (another client has
  * the console; by is its pid, 0 unknown) and after they detach. */
 void hold_note_attached_elsewhere(const char *label, pid_t by, const struct hold_store *a, const struct hold_store *b);
-void hold_note_detached(const struct hold_invocation *inv, const char *label);
 /* An attach to a TTY call has come back (rc 0), or found its console already
  * gone (unseen). Says what that was - detached, or a program that closed its
  * terminal and runs on - and, when the screen is over for good, leaves the

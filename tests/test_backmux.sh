@@ -2474,7 +2474,8 @@ test_pipe_input_keys_detach_and_attach() {
   "$HOLD_BIN" send pdrv abc -k BSpace -k Enter || return 1
   "$HOLD_BIN" wait pdrv --match 'got:ab' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek pdrv >&2; return 1; }
   "$HOLD_BIN" send pdrv -k C-p -k C-q || return 1
-  "$HOLD_BIN" wait pdrv --match 'detached from piper' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek pdrv >&2; return 1; }
+  "$HOLD_BIN" wait pdrv --exit --timeout 5000 >/dev/null || { echo "the detach did not end the attach" >&2; "$HOLD_BIN" peek pdrv >&2; return 1; }
+  if "$HOLD_BIN" peek pdrv | grep -q 'detached from'; then echo "a plain detach printed a note" >&2; return 1; fi
   out_has 'Up ' "$HOLD_BIN" list all piper || { echo "detaching stopped the call" >&2; return 1; }
   "$HOLD_BIN" -dt --name pdrv2 -- "$HOLD_REAL_BIN" attach piper >/dev/null || return 1
   sleep 0.5
@@ -6365,9 +6366,12 @@ test_attach_messages_say_what_happened() {
   "$HOLD_BIN" -dt --size 120 6 --name second -- "$HOLD_REAL_BIN" attach app </dev/null >/dev/null || return 1
   "$HOLD_BIN" wait second --timeout 8000 >/dev/null || return 1
   out_has 'app is already attached, from inside the call around' "$HOLD_BIN" peek second || { echo "a refused attach left nothing on the terminal" >&2; "$HOLD_BIN" peek second >&2; return 1; }
-  # leaving says where things stand
+  # leaving says nothing: the call runs on, as list shows
   "$HOLD_BIN" send around -k C-p -k C-q || return 1
-  "$HOLD_BIN" wait around --match 'backmux: detached from app; it is still running. Pick it back up: backmux attach app' --timeout 8000 || { echo "detaching said nothing" >&2; "$HOLD_BIN" peek around >&2; return 1; }
+  "$HOLD_BIN" send around 'echo LEFT' -k Enter || return 1
+  "$HOLD_BIN" wait around --regex '^LEFT$' --timeout 8000 >/dev/null || { echo "the shell did not come back after the detach" >&2; "$HOLD_BIN" peek around >&2; return 1; }
+  if "$HOLD_BIN" peek around | grep -q 'detached from'; then echo "a plain detach printed a note" >&2; "$HOLD_BIN" peek around >&2; return 1; fi
+  out_has 'Up .* app$' "$HOLD_BIN" list || return 1
   # a call cannot be attached from inside itself
   "$HOLD_BIN" send around "\"$HOLD_REAL_BIN\" attach around; echo RC=\$?" -k Enter || return 1
   "$HOLD_BIN" wait around --match 'backmux: you are inside around already' --timeout 8000 || { "$HOLD_BIN" peek around >&2; return 1; }
@@ -6720,7 +6724,7 @@ run_test "a mistyped command line is a usage error and acts on nothing" test_cli
 run_test "help stays concise, matches its source, and exposes the full reference" test_help_pages_fit_and_say_it
 run_test "a console is free again once its attach client is gone" test_attach_again_after_client_vanishes
 run_test "nested attach: the detach keys let go of the innermost first" test_nested_attach_detaches_innermost_first
-run_test "attach says who has a call, where you stand after leaving, and uses names" test_attach_messages_say_what_happened
+run_test "attach says who has a call, leaves quietly, and uses names" test_attach_messages_say_what_happened
 run_test "peek shows the last screen after exit; purge removes it" test_peek_after_exit_and_purge
 run_test "screen verbs refuse calls without a TTY" test_screen_verbs_need_a_tty
 run_test "send --mouse to a program without mouse reporting exits 9" test_send_mouse_off_is_reported
