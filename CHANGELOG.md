@@ -31,6 +31,15 @@ records are not carried over; the two never touch each other's calls.
 
 ### Changed
 
+- `backmux shell` is the layer in your terminal, not a process: your home
+  shell has no name and is not listed; the corner shows you. `Ctrl-P Ctrl-Q`
+  with a program running sends it to the background under its own name,
+  recorded as its real command line and folder, and gives you a new home in
+  the same folder; at a bare prompt it starts a new shell in the background.
+  An adopted program's exit code is unknown (`Exited (?)`). `--name` names
+  you (your chat name).
+- `config chat-name` now renames a chat name you already had, messages and
+  all (before, a name once generated never changed).
 - Processes are called processes: "call" is gone from every message, page
   and column (`PROCESS ID`). `backmux call` is still the verb.
 - Keys: `Ctrl-P Ctrl-S` swap panes (each shows `A: name`; two letters),

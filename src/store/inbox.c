@@ -113,6 +113,19 @@ int hold_inbox_claim(const struct hold_store *s, const char *name, const char *k
     return rc;
 }
 
+int hold_inbox_rename(const struct hold_store *s, const char *from, const char *to, const char *key) {
+    if (hold_inbox_claim(s, to, key) != 0) return -1;
+    static const char *const parts[] = {".msgs", ".seen"};
+    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
+        char a[HOLD_PATH_MAX], b[HOLD_PATH_MAX];
+        if (inbox_path(s, from, parts[i], a, sizeof(a)) == 0 && inbox_path(s, to, parts[i], b, sizeof(b)) == 0)
+            (void)rename(a, b); /* absent: nothing was sent yet */
+    }
+    char old[HOLD_PATH_MAX];
+    if (inbox_path(s, from, ".who", old, sizeof(old)) == 0) unlink(old);
+    return 0;
+}
+
 int hold_inbox_deliver(const struct hold_store *s, const char *name, const char *from, const char *text, size_t len) {
     char path[HOLD_PATH_MAX];
     if (!hold_inbox_live(s, name)) {

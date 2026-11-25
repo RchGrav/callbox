@@ -1,12 +1,21 @@
 usage: backmux shell [--name NAME] [--size COLS ROWS] [-e KEY=VALUE]... [--rm]
                      [shell [args...]]
 
-Your shell (or the one you name) on a PTY, under backmux: it keeps running
-when you detach, and recall brings it back as a shell. Backmux's flags come
-before the shell's name; every word after it is the shell's own (backmux
-shell zsh -l). With no shell named: an executable $SHELL, else your login
-shell, else /bin/sh.
+Backmux in your terminal: your shell (or the one you name), with backmux
+under it. It is your home, not a process: it has no name of its own and is
+not in backmux list. --name names you (your chat name, as backmux config
+chat-name NAME). Backmux's flags come before the shell's name; every word
+after it is the shell's own (backmux shell zsh -l). With no shell named: an
+executable $SHELL, else your login shell, else /bin/sh.
 
-It is a process like any other: chat and panes are not part of it. Ctrl-P
-Ctrl-T brings up chat over whatever you are attached to, and Ctrl-P Ctrl-A
-puts another process beside it (hold Ctrl-Space for the keys).
+Ctrl-P Ctrl-Q in it:
+  a program running      it goes on in the background under its own name,
+                         recorded as what it really is (its command line and
+                         folder); you get a new home in the same folder
+  at a bare prompt       a new shell starts in the background in this
+                         folder; you stay where you are
+
+A home that replaces another is a fresh shell: what was only in the old
+one's memory (variables set without export, unsaved history) stays with it.
+exit leaves backmux shell. Ctrl-P Ctrl-T is chat, Ctrl-P Ctrl-A puts another
+process beside you (hold Ctrl-Space for the keys).

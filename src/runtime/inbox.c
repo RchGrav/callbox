@@ -79,6 +79,22 @@ static int operator_name_for(const struct hold_store *store, const char *key, co
     if (hold_inbox_dir(store, dir, sizeof(dir)) != 0) return -1;
     int lock_fd = hold_store_lock(store->record_dir);
     int rc = hold_inbox_find(store, key, name, n), saved;
+    /* It has one, but the person has since chosen another (chat-name, or
+     * backmux shell --name): take the chosen one if no process or inbox
+     * has it, messages and all. */
+    if (rc == 0 && own && *own && strcmp(name, own) != 0 && hold_valid_alias(own)) {
+        char cand[ALIAS_MAX_LEN + 1];
+        char hex[65];
+        struct sha256_ctx h;
+        unsigned char digest[32];
+        hold_sha256_init(&h);
+        hold_sha256_update(&h, key, strlen(key));
+        hold_sha256_final(&h, digest);
+        hold_hex_encode(digest, sizeof(digest), hex, sizeof(hex));
+        if (hold_pick_run_name_locked(store, hex, own, cand) == 0 && !strcmp(cand, own) &&
+            hold_inbox_rename(store, name, own, key) == 0)
+            (void)hold_checked_snprintf(name, n, "%s", own);
+    }
     if (rc <= 0 || !create) goto out; /* 0: it has one; -1: error; 1: none */
     /* A generated name, as a call gets: from a hash of the key, stepping on
      * while the name is taken by a call or another inbox. */

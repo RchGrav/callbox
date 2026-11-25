@@ -105,6 +105,10 @@ bool hold_inbox_live(const struct hold_store *s, const char *name);
 void hold_inbox_touch(const struct hold_store *s, const char *name);
 int hold_inbox_find(const struct hold_store *s, const char *key, char *name, size_t n);
 int hold_inbox_claim(const struct hold_store *s, const char *name, const char *key);
+/* The same inbox under a new name, its messages and what was read with it:
+ * the person chose a chat name after they had a generated one. The caller
+ * holds the store lock. -1 with EEXIST when the new name is taken. */
+int hold_inbox_rename(const struct hold_store *s, const char *from, const char *to, const char *key);
 int hold_inbox_deliver(const struct hold_store *s, const char *name, const char *from, const char *text, size_t len);
 off_t hold_inbox_size(const struct hold_store *s, const char *name);
 int hold_inbox_read(const struct hold_store *s, const char *name, off_t from_off, off_t *end_off, hold_inbox_fn fn, void *ctx);

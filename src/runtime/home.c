@@ -174,6 +174,16 @@ int hold_cmd_shell_layer(const struct hold_invocation *inv, const struct hold_st
                          struct hold_start_options *opts) {
     char id[ID_STR_LEN + 1];
     const char *shell = opts->argc > 0 ? opts->argv[0] : "/bin/sh";
+    /* --name names the person, not the shell (home has none): it is their
+     * chat name from now on, the same as backmux config chat-name NAME. */
+    if (opts->run_name && *opts->run_name) {
+        const char *home = hold_person_home_dir(inv);
+        if (!hold_valid_alias(opts->run_name) || !home || hold_settings_put(home, "chat-name", opts->run_name) != 0) {
+            fprintf(stderr, "backmux: error: cannot take '%s' as your name\n", opts->run_name);
+            return HOLD_EXIT_USAGE;
+        }
+        opts->run_name = NULL;
+    }
     for (;;) {
         id[0] = '\0';
         opts->home = true;

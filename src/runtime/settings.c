@@ -425,15 +425,26 @@ out:
 
 /* ---- the compositor's needs, and backmux swap -------------------------- */
 
+/* The person's chat name: their chat-name setting when it is free, else the
+ * one they were given. One place, so the corner, chat and a home's record
+ * agree. */
+const char *hold_person_home_dir(const struct hold_invocation *inv) {
+    return inv && inv->euid_root && inv->have_sudo_user && inv->invoking_home[0] ? inv->invoking_home : getenv("HOME");
+}
+
+int hold_person_name(const struct hold_invocation *inv, const struct hold_store *store, char *name, size_t n) {
+    char own[ALIAS_MAX_LEN + 1] = "";
+    const char *home = hold_person_home_dir(inv);
+    if (home && hold_settings_get(home, "chat-name", own, sizeof(own)) != 0) own[0] = '\0';
+    return hold_person_chat_name(store, own, name, n);
+}
+
 void hold_prepare_mux(const struct hold_invocation *inv, const struct hold_store *store) {
     static struct hold_store kept;
     if (!store || !isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) return;
     kept = *store;
-    char own[ALIAS_MAX_LEN + 1] = "", name[ALIAS_MAX_LEN + 1] = "";
-    const char *home = inv && inv->euid_root && inv->have_sudo_user && inv->invoking_home[0] ? inv->invoking_home
-                                                                                           : getenv("HOME");
-    if (home && hold_settings_get(home, "chat-name", own, sizeof(own)) != 0) own[0] = '\0';
-    if (hold_person_chat_name(&kept, own, name, sizeof(name)) != 0) name[0] = '\0';
+    char name[ALIAS_MAX_LEN + 1] = "";
+    if (hold_person_name(inv, &kept, name, sizeof(name)) != 0) name[0] = '\0';
     hold_console_set_mux(&kept, name);
 }
 

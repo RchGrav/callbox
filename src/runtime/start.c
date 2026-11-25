@@ -1061,7 +1061,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     r.recipe.mode_shell = opts->shell;
     if (opts->home) {
         r.home = true;
-        r.has_person = hold_person_chat_name(store, NULL, r.person, sizeof(r.person)) == 0 && r.person[0];
+        r.has_person = hold_person_name(inv, store, r.person, sizeof(r.person)) == 0 && r.person[0];
     }
     if (opts->out_id) snprintf(opts->out_id, ID_STR_LEN + 1, "%s", id);
     r.recipe.mode_agent = opts->agent;

@@ -5879,7 +5879,7 @@ test_inline_launch_keeps_the_screen() {
   "$HOLD_BIN" detach --size 80 16 --name term -- /bin/sh >/dev/null || return 1
   "$HOLD_BIN" send term 'echo line-one; echo line-two' -k Enter || return 1
   "$HOLD_BIN" wait term --regex '^line-two$' --timeout 5000 >/dev/null || return 1
-  "$HOLD_BIN" send term "SHELL=/bin/sh \"$HOLD_REAL_BIN\" shell --name inl" -k Enter || return 1
+  "$HOLD_BIN" send term "\"$HOLD_REAL_BIN\" call --name inl -- /bin/sh" -k Enter || return 1
   "$HOLD_BIN" wait term --regex ' inl  hold Ctrl-Space: help *$' --timeout 8000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
   out_has '^line-one$' "$HOLD_BIN" peek term || { echo "the launch wiped the screen" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   out_has '"alt_screen": false' "$HOLD_BIN" peek term --json || { echo "the launch took the alternate screen" >&2; return 1; }
@@ -5937,7 +5937,7 @@ test_detach_says_so_and_split_is_clean() {
   "$HOLD_BIN" detach --name dside -- sh -c 'echo DSIDE-UP; exec cat' mark-dside >/dev/null || return 1
   "$HOLD_BIN" detach --size 100 20 --name dterm -- /bin/sh >/dev/null || return 1
   "$HOLD_BIN" send dterm "echo PERSON-LINE" -k Enter || return 1
-  "$HOLD_BIN" send dterm "SHELL=/bin/sh \"$HOLD_REAL_BIN\" shell --name dinl" -k Enter || return 1
+  "$HOLD_BIN" send dterm "\"$HOLD_REAL_BIN\" call --name dinl -- /bin/sh" -k Enter || return 1
   "$HOLD_BIN" wait dterm --match 'dinl  hold Ctrl-Space: help' --timeout 8000 >/dev/null || { "$HOLD_BIN" peek dterm >&2; return 1; }
   "$HOLD_BIN" send dterm -k C-p -k C-q || return 1
   "$HOLD_BIN" wait dterm --regex '^backmux: detached dinl$' --timeout 5000 >/dev/null || { echo "detach said nothing" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
@@ -5966,9 +5966,63 @@ test_detach_says_so_and_split_is_clean() {
   # the split was on the alternate screen: the person's own screen is back
   # as it was - their line whole, no corner label, no split lines, no picker
   out_has '^PERSON-LINE$' "$HOLD_BIN" peek dterm || { echo "the person's screen did not come back" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
-  out_has 'shell --name dinl$' "$HOLD_BIN" peek dterm || { echo "the person's command line was cut" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
+  out_has 'call --name dinl -- /bin/sh$' "$HOLD_BIN" peek dterm || { echo "the person's command line was cut" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
   if "$HOLD_BIN" peek dterm | grep -q 'hold Ctrl-Space\|│\|attach a running'; then echo "the split left marks on the person's screen" >&2; "$HOLD_BIN" peek dterm >&2; return 1; fi
   "$HOLD_BIN" end dside dinl dterm >/dev/null 2>&1 || true
+}
+
+# backmux shell is the layer: home has no name (the corner shows the person,
+# whom --name names); Ctrl-P Ctrl-Q at a bare prompt starts a shell in the
+# background and stays home; with a program in front it adopts that program
+# - its record is the program's, read from the process - and home starts
+# again in the same folder; an attach run from home lets go first; exit
+# leaves the layer.
+test_shell_layer_adopts_and_stays_home() {
+  local name proj
+  mkdir -p "$TEST_ROOT/proj"
+  # a process's folder is the real path (macOS: /var is /private/var)
+  proj=$(cd "$TEST_ROOT/proj" && pwd -P)
+  "$HOLD_BIN" detach --name inner -- sh -c 'echo INNER-UP; exec cat' >/dev/null || return 1
+  "$HOLD_BIN" detach --size 100 24 --name lt -- /bin/sh >/dev/null || return 1
+  "$HOLD_BIN" send lt "SHELL=/bin/sh \"$HOLD_REAL_BIN\" shell --name rich; echo LAYER-RC=\$?" -k Enter || return 1
+  "$HOLD_BIN" wait lt --match 'rich  hold Ctrl-Space: help' --timeout 8000 >/dev/null || { echo "the corner does not name the person" >&2; "$HOLD_BIN" peek lt >&2; return 1; }
+  out_has '^chat-name rich$' cat "$HOME/.config/backmux/config" || { echo "--name did not name the person" >&2; return 1; }
+  # a bare prompt: a new shell in the background; still home
+  "$HOLD_BIN" send lt -k C-p -k C-q || return 1
+  "$HOLD_BIN" wait lt --regex 'started [a-z_]+ in ' --timeout 8000 >/dev/null || { echo "no shell was started" >&2; "$HOLD_BIN" peek lt >&2; return 1; }
+  [ "$("$HOLD_BIN" list | tail -n +2 | wc -l)" -eq 3 ] || { echo "list after a bare detach:" >&2; "$HOLD_BIN" list >&2; return 1; }
+  "$HOLD_BIN" send lt 'echo STILL-HOME' -k Enter || return 1
+  "$HOLD_BIN" wait lt --regex '^STILL-HOME$' --timeout 8000 >/dev/null || { "$HOLD_BIN" peek lt >&2; return 1; }
+  # an attach run from home: the keys let go of it first
+  "$HOLD_BIN" send lt "\"$HOLD_REAL_BIN\" attach inner" -k Enter || return 1
+  "$HOLD_BIN" wait lt --match INNER-UP --timeout 8000 >/dev/null || return 1
+  "$HOLD_BIN" send lt -k C-p -k C-q || return 1
+  wait_gone lt INNER-UP || { echo "the nested attach did not let go" >&2; return 1; }
+  "$HOLD_BIN" send lt 'echo BACK-HOME' -k Enter || return 1
+  "$HOLD_BIN" wait lt --regex '^BACK-HOME$' --timeout 8000 >/dev/null || { "$HOLD_BIN" peek lt >&2; return 1; }
+  # a program in front: adopted, as what it really is, where it runs (the
+  # screen cleared first: the nested attach's own "detached inner" is on it)
+  "$HOLD_BIN" send lt 'clear' -k Enter || return 1
+  wait_gone lt 'detached inner' || return 1
+  "$HOLD_BIN" send lt "cd $TEST_ROOT/proj && sh -c 'echo PROG-UP; while :; do sleep 1; done' adopt-me" -k Enter || return 1
+  "$HOLD_BIN" wait lt --regex '^PROG-UP$' --timeout 8000 >/dev/null || return 1
+  "$HOLD_BIN" send lt -k C-p -k C-q || return 1
+  "$HOLD_BIN" wait lt --regex '^backmux: detached [a-z_]+$' --timeout 8000 >/dev/null || { echo "the program was not detached" >&2; "$HOLD_BIN" peek lt >&2; return 1; }
+  name=$("$HOLD_BIN" peek lt | sed -n 's/^backmux: detached \([a-z_]*\)$/\1/p' | tail -1)
+  "$HOLD_BIN" info "$name" > "$TEST_ROOT/adopted.info" 2>&1 || return 1
+  grep -q '^program: *sh$' "$TEST_ROOT/adopted.info" && grep -q 'adopt-me' "$TEST_ROOT/adopted.info" && grep -q "^working: *$proj\$" "$TEST_ROOT/adopted.info" || { echo "the record is not the program's" >&2; cat "$TEST_ROOT/adopted.info" >&2; return 1; }
+  # home again, in that folder
+  "$HOLD_BIN" send lt 'pwd -P' -k Enter || return 1
+  "$HOLD_BIN" wait lt --regex "^$proj\$" --timeout 8000 >/dev/null || { echo "the new home is not where the old one was" >&2; "$HOLD_BIN" peek lt >&2; return 1; }
+  # the program ends: its caretaker shell is hung up, the exit code unknown
+  "$HOLD_BIN" end "$name" >/dev/null 2>"$TEST_ROOT/end.err" || return 1
+  if grep -q escaped "$TEST_ROOT/end.err"; then echo "the caretaker was called an escapee" >&2; return 1; fi
+  for i in $(seq 1 30); do out_has "Exited (?).* $name\$" "$HOLD_BIN" list all && break; sleep 0.2; done
+  out_has "Exited (?).* $name\$" "$HOLD_BIN" list all || { "$HOLD_BIN" list all >&2; return 1; }
+  # exit leaves the layer
+  "$HOLD_BIN" send lt 'exit' -k Enter || return 1
+  "$HOLD_BIN" wait lt --regex '^LAYER-RC=0$' --timeout 8000 >/dev/null || { echo "exit did not leave the layer" >&2; "$HOLD_BIN" peek lt >&2; return 1; }
+  for name in $("$HOLD_BIN" list | tail -n +2 | awk '{print $NF}'); do "$HOLD_BIN" end "$name" >/dev/null 2>&1 || true; done
 }
 
 # kill -9 cannot be caught, so a guard child gives the terminal back: its
@@ -6211,12 +6265,11 @@ test_lead_key_commands_and_cancel() {
 # or headless. --chat-key is refused: chat belongs to no process.
 test_shell_is_a_call() {
   local rc args
-  "$HOLD_BIN" -dt --size 80 24 --name term -- "$HOLD_REAL_BIN" shell --name work --size 70 20 /bin/sh -c 'echo "ARGS:$0:$1:$2"; while IFS= read -r l; do echo "typed:$l"; done' zero --name -d </dev/null >/dev/null || return 1
-  "$HOLD_BIN" wait work --match 'ARGS:zero:--name:-d' --timeout 8000 >/dev/null || { "$HOLD_BIN" peek work >&2; return 1; }
-  out_has '"shell": true' "$HOLD_BIN" inspect work || { "$HOLD_BIN" inspect work >&2; return 1; }
-  if "$HOLD_BIN" inspect work | grep -q '"chat": true'; then echo "a shell carries chat" >&2; return 1; fi
-  BACKMUX_ID= BACKMUX_NAME= "$HOLD_BIN" msg work 'echo at the prompt' >/dev/null 2>&1 || return 1
-  "$HOLD_BIN" wait work --regex '^typed:echo at the prompt$' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek work >&2; return 1; }
+  # the shell and its own arguments, after backmux's: --name and -d are the shell's
+  "$HOLD_BIN" -dt --size 80 24 --name term -- "$HOLD_REAL_BIN" shell --size 70 20 /bin/sh -c 'echo "ARGS:$0:$1:$2"; while IFS= read -r l; do echo "typed:$l"; done' zero --name -d </dev/null >/dev/null || return 1
+  "$HOLD_BIN" wait term --match 'ARGS:zero:--name:-d' --timeout 8000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  # home is the person's: not a row in list
+  [ "$("$HOLD_BIN" list all | tail -n +2 | wc -l)" -eq 1 ] || { echo "home is listed" >&2; "$HOLD_BIN" list all >&2; return 1; }
   for args in "shell -d" "shell --restart always" "shell --no-such-option" "shell --chat-key ctrl-g"; do
     set +e
     # shellcheck disable=SC2086
@@ -6226,11 +6279,11 @@ test_shell_is_a_call() {
   done
   grep -q 'chat belongs to no process' "$TEST_ROOT/shell.out" || { cat "$TEST_ROOT/shell.out" >&2; return 1; }
   set +e
-  "$HOLD_BIN" shell --name headless /bin/sh </dev/null >/dev/null 2>"$TEST_ROOT/shell.err"; rc=$?
+  "$HOLD_BIN" shell /bin/sh </dev/null >/dev/null 2>"$TEST_ROOT/shell.err"; rc=$?
   set -e
   [ "$rc" -eq 1 ] && grep -q 'needs a terminal' "$TEST_ROOT/shell.err" || { echo "backmux shell without a terminal exited $rc" >&2; return 1; }
-  ! out_has ' headless$' "$HOLD_BIN" list all -a || { echo "a headless shell left a process" >&2; return 1; }
-  "$HOLD_BIN" end work term >/dev/null 2>&1 || true
+  [ "$("$HOLD_BIN" list all | tail -n +2 | wc -l)" -eq 1 ] || { echo "a headless shell left a process" >&2; return 1; }
+  "$HOLD_BIN" end term >/dev/null 2>&1 || true
 }
 
 # A process's settings: working is the launch folder and where recall starts it
@@ -6601,9 +6654,9 @@ test_nested_attach_detaches_innermost_first() {
   local t launch
   "$HOLD_BIN" -dt --name inner -- /bin/sh -c 'echo INNER-UP; while :; do sleep 1; done' </dev/null >/dev/null || return 1
   "$HOLD_BIN" wait inner --match INNER-UP --timeout 8000 || return 1
-  # around it: a backmux shell, then a plain -it process
-  for t in sh it; do
-    if [ "$t" = sh ]; then launch="shell --name around-$t /bin/sh"; else launch="-it --name around-$t -- /bin/sh"; fi
+  # around it: a plain -it process (backmux shell's home is the layer test's)
+  for t in it; do
+    launch="-it --name around-$t -- /bin/sh"
     # shellcheck disable=SC2086
     "$HOLD_BIN" -dt --size 100 24 --name "term-$t" -- "$HOLD_REAL_BIN" $launch </dev/null >/dev/null || return 1
     wait_call "around-$t" || return 1
@@ -6921,12 +6974,13 @@ run_test "an invalid size starts nothing and replaces nothing" test_invalid_size
 run_test "panes: Ctrl-P Ctrl-A puts a process beside; one pane is plain attach again" test_panes_attach_beside_and_hand_back
 run_test "kill -9 of the client: a guard gives the terminal back" test_kill_9_gives_the_terminal_back
 run_test "the attach list holds only living processes" test_attach_list_only_living
+run_test "backmux shell: home adopts the program in front, or starts a shell, and stays" test_shell_layer_adopts_and_stays_home
 run_test "detach says so, one pane at a time; a split is clean; left panes named at the left" test_detach_says_so_and_split_is_clean
 run_test "a launch on a terminal is inline: the screen stays, chat is no eraser" test_inline_launch_keeps_the_screen
 run_test "panes: four to a window; Ctrl-P Ctrl-S/G/M/F/J/W; backmux swap by name" test_panes_windows_and_swap
 run_test "chat is the person's: raw or with a header, replies come back, it follows them" test_chat_is_the_persons
 run_test "the lead key; Ctrl-P Ctrl-P is one Ctrl-P, others cancel; hold Ctrl-Space for the keys" test_lead_key_commands_and_cancel
-run_test "backmux shell is a process: no chat, messages raw, never headless" test_shell_is_a_call
+run_test "backmux shell takes its shell's arguments, is not listed, never runs headless" test_shell_is_a_call
 run_test "settings: working, program, args, name; recall, delete, purge all" test_settings_recall_delete_purge_all
 run_test "the verbs say how it runs; run and start are Docker's spellings" test_verbs_and_docker_spellings
 run_test "backmux -it exits as its command did and leaves its last screen" test_tty_foreground_exit_status_and_last_screen
