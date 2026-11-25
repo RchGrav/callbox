@@ -457,3 +457,164 @@ int hold_proc_parent_and_name(pid_t pid, pid_t *ppid_out, char *name, size_t n) 
     return 0;
 #endif
 }
+
+
+/* ---- what a running process is (backmux shell's adoption) ---------------- */
+
+/* A process's argument and environment block is at most this big: the
+ * kernel's own limit (ARG_MAX) is 2 MiB on Linux and 1 MiB on macOS. */
+#define PROC_BLOCK_MAX (4u << 20)
+
+/* n NUL-terminated strings from buf[0..len) into a NULL-terminated array. */
+static char **split_nul_strings(const char *buf, size_t len, int max, int *count) {
+    int n = 0;
+    for (size_t i = 0; i < len && n < max; n++) i += strnlen(buf + i, len - i) + 1;
+    char **v = calloc((size_t)n + 1, sizeof(*v));
+    if (!v) return NULL;
+    size_t i = 0;
+    for (int k = 0; k < n; k++) {
+        size_t sl = strnlen(buf + i, len - i);
+        v[k] = strndup(buf + i, sl);
+        if (!v[k]) {
+            for (int j = 0; j < k; j++) free(v[j]);
+            free(v);
+            return NULL;
+        }
+        i += sl + 1;
+    }
+    *count = n;
+    return v;
+}
+
+static void free_strings(char **v, int n) {
+    if (!v) return;
+    for (int i = 0; i < n; i++) free(v[i]);
+    free(v);
+}
+
+void hold_proc_launch_free(struct hold_proc_launch *l) {
+    if (!l) return;
+    free_strings(l->argv, l->argc);
+    free_strings(l->envp, l->envc);
+    l->argv = l->envp = NULL;
+    l->argc = l->envc = 0;
+}
+
+#if defined(__APPLE__)
+int hold_proc_launch_read(pid_t pid, struct hold_proc_launch *out) {
+    memset(out, 0, sizeof(*out));
+    if (pid <= 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (proc_pidpath(pid, out->exe, sizeof(out->exe)) <= 0) return -1;
+    struct proc_vnodepathinfo vpi;
+    if (proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &vpi, sizeof(vpi)) != (int)sizeof(vpi)) return -1;
+    snprintf(out->cwd, sizeof(out->cwd), "%s", vpi.pvi_cdir.vip_path);
+    /* KERN_PROCARGS2: int argc, the exec path, NUL padding, argv[argc],
+     * then the environment. */
+    int mib[3] = {CTL_KERN, KERN_ARGMAX, 0};
+    int argmax = 0;
+    size_t sz = sizeof(argmax);
+    if (sysctl(mib, 2, &argmax, &sz, NULL, 0) != 0 || argmax <= 0) return -1;
+    if ((unsigned)argmax > PROC_BLOCK_MAX) argmax = (int)PROC_BLOCK_MAX;
+    char *buf = malloc((size_t)argmax);
+    if (!buf) return -1;
+    mib[0] = CTL_KERN, mib[1] = KERN_PROCARGS2, mib[2] = pid;
+    sz = (size_t)argmax;
+    if (sysctl(mib, 3, buf, &sz, NULL, 0) != 0 || sz < sizeof(int)) {
+        free(buf);
+        return -1;
+    }
+    int argc = 0;
+    memcpy(&argc, buf, sizeof(argc));
+    size_t i = sizeof(int);
+    i += strnlen(buf + i, sz - i);    /* the exec path */
+    while (i < sz && buf[i] == '\0') i++; /* its padding */
+    int got = 0;
+    out->argv = split_nul_strings(buf + i, sz - i, argc, &got);
+    if (!out->argv || got != argc) {
+        free_strings(out->argv, got);
+        out->argv = NULL;
+        free(buf);
+        errno = EIO;
+        return -1;
+    }
+    out->argc = argc;
+    for (int k = 0; k < argc; k++) i += strlen(out->argv[k]) + 1;
+    /* the environment runs to the first empty string */
+    size_t env_end = i;
+    while (env_end < sz && buf[env_end] != '\0') env_end += strnlen(buf + env_end, sz - env_end) + 1;
+    out->envp = split_nul_strings(buf + i, env_end - i, 1 << 20, &out->envc);
+    free(buf);
+    if (!out->envp) {
+        hold_proc_launch_free(out);
+        return -1;
+    }
+    return 0;
+}
+#else
+/* A whole /proc/<pid>/<what> file (cmdline, environ): they report size 0. */
+static char *proc_read_block(pid_t pid, const char *what, size_t *len) {
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%ld/%s", (long)pid, what);
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return NULL;
+    size_t cap = 4096, n = 0;
+    char *buf = malloc(cap);
+    while (buf) {
+        if (n == cap) {
+            if (cap >= PROC_BLOCK_MAX) break;
+            char *more = realloc(buf, cap * 2);
+            if (!more) {
+                free(buf);
+                buf = NULL;
+                break;
+            }
+            buf = more, cap *= 2;
+        }
+        ssize_t k = read(fd, buf + n, cap - n);
+        if (k < 0 && errno == EINTR) continue;
+        if (k <= 0) break;
+        n += (size_t)k;
+    }
+    close(fd);
+    *len = n;
+    return buf;
+}
+
+int hold_proc_launch_read(pid_t pid, struct hold_proc_launch *out) {
+    memset(out, 0, sizeof(*out));
+    if (pid <= 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%ld/exe", (long)pid);
+    ssize_t k = readlink(path, out->exe, sizeof(out->exe) - 1);
+    if (k <= 0) return -1;
+    out->exe[k] = '\0';
+    snprintf(path, sizeof(path), "/proc/%ld/cwd", (long)pid);
+    k = readlink(path, out->cwd, sizeof(out->cwd) - 1);
+    if (k <= 0) return -1;
+    out->cwd[k] = '\0';
+    size_t len = 0;
+    char *buf = proc_read_block(pid, "cmdline", &len);
+    if (!buf) return -1;
+    out->argv = split_nul_strings(buf, len, 1 << 20, &out->argc);
+    free(buf);
+    if (!out->argv || out->argc == 0) {
+        hold_proc_launch_free(out);
+        errno = ESRCH; /* a zombie, or a kernel thread: nothing to relaunch */
+        return -1;
+    }
+    buf = proc_read_block(pid, "environ", &len);
+    out->envp = buf ? split_nul_strings(buf, len, 1 << 20, &out->envc) : calloc(1, sizeof(char *));
+    free(buf);
+    if (!out->envp) {
+        hold_proc_launch_free(out);
+        return -1;
+    }
+    return 0;
+}
+#endif

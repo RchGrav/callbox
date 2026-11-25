@@ -133,6 +133,62 @@ backmux 1.0.0-dedbeef
 - **Wrong-kind targets (open):** `tail` on a `detach` process reads its log;
   `attach` on a `server` says to use `tail`. To be decided.
 
+## backmux shell: you, not a process
+
+`backmux shell` is not "a shell running in backmux". It is backmux living in
+the person's terminal: their home, the ring zero every pane and every detach
+comes back to. Plain backmux is unchanged beside it: `backmux call foo`
+still runs foo, and `Ctrl-P Ctrl-Q` still detaches it. Why: the shell layer
+is the person's ground floor; programs are what come and go above it.
+(Why the old guarded shell is not enough: it adopted one program and then
+left, and its adopted runs had no broker of their own at first. Brokers per
+process are what make a layer that stays possible.)
+
+- **The home shell has no name and is not in `backmux list`;** the person
+  does. Peeking the person's name shows their active pane: the home shell
+  when that is the pane, or whatever process is in it. `msg` to the person
+  still goes to their chat. Why: an agent looking at "Rich" wants what Rich
+  is looking at; the home shell alone is not a thing anyone targets.
+- **A program started from the home shell gets its own name** once it has
+  run for a second (codex becomes elegant_monkey), shown in the corner and
+  peekable by that name. When it ends on its own, the name goes with it.
+  Why: what runs in a pane is what agents and the person talk about; a
+  second keeps `ls` and `git status` from flashing names or touching the
+  ledger.
+- **Backmux sees the launch itself:** it holds the home PTY's master, and a
+  program starting in the foreground is that PTY's foreground process group
+  changing (`TIOCGPGRP`). What the program is - executable, arguments,
+  working folder, environment - is read from the process (`/proc`, libproc),
+  not from what was typed. Why: backmux is the layer; it depends on no shell
+  hook, no rewritten command line, no preload library - only the PTY and the
+  process table, which it owns. The record is then exact even for an alias
+  or a `cd x && codex`, and `recall` relaunches the real thing.
+- **`Ctrl-P Ctrl-Q` in a pane:**
+  - the home shell at its prompt: an ordinary new shell is detached in the
+    current folder with the person's environment; the person stays home.
+    Four presses, four background shells. Why: with nothing to detach,
+    "detach" means "give me another one of these, running on its own".
+  - a program started from the home shell: the session forks. The program
+    keeps the home PTY and its broker for good (its record: its own
+    command line and folder, never `bash`); the shell that launched it
+    stays with it as caretaker and is hung up when it ends. A new home
+    shell and broker start at once, in the same folder with the person's
+    environment; the pane shows it, or vanishes if home already shows in
+    another pane. Why: a running program can never leave the terminal it
+    started on (its input and output are that PTY for life; moving them
+    takes ptrace, Linux-only and often blocked), so it is home that moves.
+  - an attached process: it detaches; the pane becomes the home shell if
+    home shows nowhere else, and vanishes otherwise. Why: home is always one
+    keystroke away, never duplicated.
+- **The new home shell is fresh:** same folder, same environment, the
+  person's rc files run as always. What lived only in the old shell's memory
+  (variables set by hand without `export`, aliases typed in that session,
+  unsaved history) stays with the old one. Why: no process can copy
+  another's memory, and backmux uses no hook that could carry it over; the
+  cost is paid only when a program launched from home is detached.
+- **`exit` in the home shell ends the session.** Why: it is the person's
+  shell; leaving it is leaving.
+
 ## Docker aliases (`help aliases` only)
 
 The Docker words live on their own page and map to native verbs. Why: mixing
@@ -255,8 +311,8 @@ Every command is `Ctrl-P` then `Ctrl-<letter>`. Why: one shape to learn.
   with `hold Ctrl-Space: help`;** never the command. Why: the name is what
   `msg`, `attach` and every agent take, and the only thing the person cannot
   otherwise find out; the command is what they just typed.
-- **Moving the mouse into a pane shows its name for 2 seconds.** Why: with
-  four panes, which one is which is the question every time.
+- **A name shows when a pane arrives or gets focus, not on hover.** Why:
+  moving the mouse across panes flashed names nobody asked for.
 - **Holding `Ctrl-Space` shows every pane's name** with the keys.
 - **A pane in the left column has its name at its top left; the others at
   their top right.** Why: names sit at the screen's outer edges, clear of

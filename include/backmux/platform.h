@@ -25,6 +25,22 @@ int hold_count_session_escapees(pid_t sid, pid_t expected_pgid);
 int hold_read_proc_stat_tokens(pid_t pid, char *state_out, uint64_t *starttime_out);
 /* A process's parent pid and short name (at most 15 characters). */
 int hold_proc_parent_and_name(pid_t pid, pid_t *ppid_out, char *name, size_t n);
+
+/* What a running process is, read from the process itself - not from what
+ * was typed: its executable, arguments, working folder and environment.
+ * backmux shell records a program it did not launch this way, so an alias
+ * or a `cd x && codex` is recorded as what really runs. Linux reads /proc;
+ * macOS asks libproc and sysctl (KERN_PROCARGS2). Same user only. */
+struct hold_proc_launch {
+    char exe[HOLD_PATH_MAX];
+    char cwd[HOLD_PATH_MAX];
+    char **argv; /* argc strings, NULL-terminated */
+    int argc;
+    char **envp; /* envc strings, NULL-terminated */
+    int envc;
+};
+int hold_proc_launch_read(pid_t pid, struct hold_proc_launch *out);
+void hold_proc_launch_free(struct hold_proc_launch *l);
 int hold_read_proc_exe(pid_t pid, uint64_t *dev, uint64_t *ino);
 bool hold_leader_present(pid_t pid);
 int hold_group_exists(pid_t pgid);
