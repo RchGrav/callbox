@@ -59,6 +59,19 @@ static void tilde(const char *path, char *out, size_t n) {
         snprintf(out, n, "%s", path);
 }
 
+/* The corner note, cut to fit the terminal: the folder loses its start
+ * ("…/scratchpad/proj"), never the name - the broker draws no label wider
+ * than the screen, so a long folder would have hidden the whole note. */
+static void fit_note(char *note, size_t n, const char *lead, const char *where) {
+    struct winsize ws;
+    int cols = ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0 ? ws.ws_col : 80;
+    int room = cols - 4 - (int)strlen(lead); /* the label's padding, a margin */
+    int wl = (int)strlen(where);
+    if (room >= wl) snprintf(note, n, "%s%s", lead, where);
+    else if (room > 4) snprintf(note, n, "%s...%s", lead, where + wl - (room - 3));
+    else snprintf(note, n, "%s", lead);
+}
+
 /* A new ordinary shell, detached, in folder: backmux detach -- SHELL, run
  * as its own launch (the same path as typing it). Its name, from the
  * launch's "name: X" line, goes in name. */
@@ -210,13 +223,16 @@ int hold_cmd_shell_layer(const struct hold_invocation *inv, const struct hold_st
             char reply[128];
             if (read_reply(sock, "adopt", reply, sizeof(reply)) != 0) return rc;
             if (!strcmp(reply, "none")) {
-                char name[ALIAS_MAX_LEN + 1], where[HOLD_PATH_MAX], note[HOLD_PATH_MAX + ALIAS_MAX_LEN + 64];
+                char name[ALIAS_MAX_LEN + 1], where[HOLD_PATH_MAX], lead[ALIAS_MAX_LEN + 64];
+                char note[HOLD_PATH_MAX + ALIAS_MAX_LEN + 64], req[sizeof(note) + 8];
                 tilde(folder, where, sizeof(where));
                 if (spawn_shell(folder, shell, name, sizeof(name)) == 0)
-                    snprintf(note, sizeof(note), "note started %s in %s", name, where);
+                    snprintf(lead, sizeof(lead), "started %s in ", name);
                 else
-                    snprintf(note, sizeof(note), "note could not start a shell in %s", where);
-                (void)read_reply(sock, note, reply, sizeof(reply));
+                    snprintf(lead, sizeof(lead), "could not start a shell in ");
+                fit_note(note, sizeof(note), lead, where);
+                snprintf(req, sizeof(req), "note %s", note);
+                (void)read_reply(sock, req, reply, sizeof(reply));
                 rc = reattach(inv, store, sock);
                 continue;
             }
