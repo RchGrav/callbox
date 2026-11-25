@@ -38,10 +38,19 @@ struct hold_start_options {
     const char *existing_run_name;
     int64_t existing_created_unix_ns;
     const char *existing_created_at;
+    /* backmux shell's home: no name, not listed; the person's chat name
+     * goes in the record instead (the corner shows it). */
+    bool home;
+    /* Where the launch writes the id it made (ID_STR_LEN + 1), if not NULL:
+     * the shell layer needs to find its home again. */
+    char *out_id;
 };
 int hold_perform_start_options(const struct hold_invocation *inv,
                                  const struct hold_store *store,
                                  const struct hold_start_options *opts);
+/* backmux shell: the layer in the person's terminal (runtime/home.c). */
+int hold_cmd_shell_layer(const struct hold_invocation *inv, const struct hold_store *store,
+                         struct hold_start_options *opts);
 /* list is Backmux's scoped ledger: which stores it draws from depends on the
  * requested scope, resolved against the caller's privilege. */
 enum hold_list_scope {

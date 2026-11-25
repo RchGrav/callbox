@@ -752,12 +752,19 @@ static int attach_once(const char *sock_path) {
     return rc;
 }
 
+static char g_last_sock[HOLD_PATH_MAX];
+
+const char *hold_console_last_sock(void) {
+    return g_last_sock;
+}
+
 int hold_run_native_console(const char *sock_path) {
     char cur[HOLD_PATH_MAX];
     snprintf(cur, sizeof(cur), "%s", sock_path);
     g_attached_name[0] = '\0';
     for (;;) {
         int rc = attach_once(cur);
+        snprintf(g_last_sock, sizeof(g_last_sock), "%s", cur);
         if (!g_mux_cmd) return rc;
         /* Panes or a floating window were asked for: the compositor takes the
          * terminal. With one pane left and nothing floating it hands back the

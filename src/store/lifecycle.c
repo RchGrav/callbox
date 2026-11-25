@@ -239,14 +239,22 @@ int hold_mark_run_finished(const struct hold_store *store, const char *id, int s
         r = cur;
     }
     /* Not this run's record (the previous run's, before this launcher writes
-     * its own): stamping it would put that run back over this one. */
-    if (pid > 0 && r.pid != pid) {
+     * its own): stamping it would put that run back over this one. An
+     * adopted record carries the adopted program's pid, not the shell the
+     * broker reaps; it is this run's all the same. */
+    if (pid > 0 && r.pid != pid && !r.adopted) {
         hold_store_unlock(lock_fd);
         hold_free_run_record(&r);
         errno = EAGAIN;
         return -1;
     }
     apply_exit(&r, status);
+    if (r.adopted) {
+        /* the status is the caretaker shell's, hung up: not the program's,
+         * whose exit only that shell saw */
+        r.has_exit_code = r.has_term_signal = false;
+        r.exit_code = r.term_signal = 0;
+    }
     int argc = r.recipe.argc;
     char **argv = r.recipe.argv;
     if (argc <= 0 || !argv) {

@@ -21,6 +21,9 @@
 
 const struct hold_record_field hold_record_fields[] = {
     F("saved", RF_BOOL, 0, saved),               /* backmux save/rename: protected from sweeps */
+    F("home", RF_BOOL, 0, home),                 /* backmux shell's home: unnamed, unlisted; absent = false */
+    F("adopted", RF_BOOL, 0, adopted),           /* adopted from a home shell: exit code unknown */
+    SH("person", 0, person, has_person),         /* a home's person: their chat name */
     F("auto_remove", RF_BOOL, 0, auto_remove),    /* --rm; absent = false */
     F("pid_ns", RF_U64, 0, pid_ns),               /* launching PID namespace; absent = 0 = unknown */
     F("liveness_lock", RF_BOOL, 0, liveness_lock), /* lifetime lock on the log; absent = false */

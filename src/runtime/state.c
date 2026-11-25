@@ -12,6 +12,9 @@ static bool target_group_gone(const struct hold_run_record *r);
 
 void hold_report_session_escapees(const struct hold_run_record *r) {
     int escaped = hold_count_session_escapees(r->sid, r->pgid);
+    /* An adopted program's session is led by the shell that started it,
+     * kept as its caretaker by design: not an escapee. */
+    if (r->adopted && escaped > 0 && r->sid > 1 && kill(r->sid, 0) == 0) escaped--;
     if (escaped > 0) {
         fprintf(stderr,
                 "backmux: warning: %d process(es) escaped process-group %ld but remain in session %ld\n",

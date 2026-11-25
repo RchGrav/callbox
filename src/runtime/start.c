@@ -816,7 +816,8 @@ int hold_perform_start_options(const struct hold_invocation *inv,
             launch_die(&u, "backmux: failed to generate id");
         }
         u.reserved = true;
-        int name_rc = hold_generate_run_name_for_id(store, id, opts->run_name, run_name);
+        /* A home has no name: it is the person, who has one already. */
+        int name_rc = opts->home ? 0 : hold_generate_run_name_for_id(store, id, opts->run_name, run_name);
         if (name_rc != 0) {
             launch_undo(&u);
             return name_rc;
@@ -1058,6 +1059,11 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     r.log_start = run_log_start;
     r.recipe.mode_chat = opts->chat || opts->user_mode;
     r.recipe.mode_shell = opts->shell;
+    if (opts->home) {
+        r.home = true;
+        r.has_person = hold_person_chat_name(store, NULL, r.person, sizeof(r.person)) == 0 && r.person[0];
+    }
+    if (opts->out_id) snprintf(opts->out_id, ID_STR_LEN + 1, "%s", id);
     r.recipe.mode_agent = opts->agent;
     /* The folder it started in is where recall starts it again ("same path
      * and args"), unless its working setting was unset - then recall runs

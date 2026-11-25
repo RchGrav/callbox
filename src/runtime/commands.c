@@ -123,7 +123,8 @@ static enum run_state after_attach(const struct hold_invocation *inv, const stru
                       label, label);
     /* A detach says so, in one line: inline, the screen stays as it was,
      * and without the line nothing shows that anything happened. */
-    else if (state == STATE_RUNNING && !closed && hold_console_was_detached(NULL)) {
+    /* (A home says nothing: the shell layer says what the detach did.) */
+    else if (state == STATE_RUNNING && !closed && hold_console_was_detached(NULL) && !r->home) {
         const char *names = "";
         (void)hold_console_was_detached(&names);
         hold_sig_note(inv, "backmux: detached %s\n", names[0] ? names : label);

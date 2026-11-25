@@ -80,6 +80,17 @@ struct hold_run_record {
     bool has_created_at;
     bool has_console;
     bool saved;
+    /* backmux shell's home shell: the person's, not a process anyone names -
+     * no name, not in list, not found by name. */
+    bool home;
+    /* A program backmux did not launch, adopted from a home shell's PTY: its
+     * identity is the program's, but its parent is the shell that started
+     * it, so its exit code is never seen - it ends as "Exited (?)". */
+    bool adopted;
+    /* A home's person: their chat name, which is what the corner shows and
+     * what peeking the person resolves through. */
+    char person[ALIAS_MAX_LEN + 1];
+    bool has_person;
     bool auto_remove; /* --rm: removed as soon as it ends */
     int64_t log_start; /* where this run's output starts in the log (redials append) */
     uint64_t pid_ns;  /* Linux: the launching PID namespace (inode of /proc/self/ns/pid); 0 = unknown */

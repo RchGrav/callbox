@@ -909,7 +909,10 @@ int hold_cli_main(int argc, char **argv) {
                                                                 interactive_stdin, cmd_argc, cmd_argv);
         opts.shell = shell_mode;
         opts.agent = launch_verb && !strcmp(launch_verb, "agent");
-        int rc = hold_perform_start_options(&inv, &start_store, &opts);
+        /* backmux shell is the layer in the person's terminal, not a process:
+         * its home shell, and what Ctrl-P Ctrl-Q in it does (runtime/home.c) */
+        int rc = shell_mode ? hold_cmd_shell_layer(&inv, &start_store, &opts)
+                            : hold_perform_start_options(&inv, &start_store, &opts);
         free_run_options(&run);
         return rc;
     }

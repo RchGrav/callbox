@@ -86,6 +86,15 @@ struct broker {
     int logfd;
     pid_t target; /* >0: our held child (waited, SIGKILLed on cleanup) */
     pid_t program_pid; /* the program's pid, kept after it is reaped: whose exit to stamp */
+    /* backmux shell's home, its foreground program adopted: that program's
+     * process group. When it is gone, the shell that started it (our child,
+     * kept as caretaker) is hung up, and this broker ends as usual. */
+    pid_t adopted_pgid;
+    bool adopted_hung;
+    /* One line for the corner on the next attach instead of the name ("started
+     * NAME in FOLDER"): said there, not printed into the person's prompt
+     * line, where the shell would not know of it. */
+    char note[ALIAS_MAX_LEN + HOLD_PATH_MAX];
     bool eof_echo;       /* a typed end of input's echo is still to be taken out */
     size_t eof_echo_got; /* how much of it the output has matched so far */
     uid_t owner_uid;
@@ -396,7 +405,7 @@ struct attach_client {
      * the name over it, not as raw bytes: a program that redraws its whole
      * screen on attach (vim does, after the resize) would wipe the name
      * the moment it appeared. */
-    char name_label[ALIAS_MAX_LEN + 32];
+    char name_label[ALIAS_MAX_LEN + HOLD_PATH_MAX + 32];
     bool name_dirty;
     int64_t name_frame_ms;
     unsigned char pending[16384];
@@ -1261,6 +1270,44 @@ static int64_t msgs_due_in(const struct broker *b) {
     return due < 0 ? 0 : due;
 }
 
+/* backmux shell: Ctrl-P Ctrl-Q in the home pane. Which program holds the
+ * terminal is the PTY's foreground process group, read from the master we
+ * hold - no help from the shell. "none": the shell itself is at its prompt.
+ * "job PGID": from now on this broker is that program's; it watches the
+ * group and, once it is gone, hangs up the shell that started it. (A running
+ * program cannot leave the terminal it started on, so it keeps this PTY and
+ * this broker; the person gets a new home.) Only the record's owner asks:
+ * the same peer checks as every control request. */
+static void handle_adopt(struct broker *b, struct control_client *c) {
+    if (!b->ep.pty || b->target <= 0 || b->program_pid <= 0) {
+        control_replyf(c, "error not a shell on a terminal\n");
+        return;
+    }
+    if (b->adopted_pgid > 0) {
+        control_replyf(c, "job %ld\n", (long)b->adopted_pgid);
+        return;
+    }
+    pid_t fg = tcgetpgrp(b->ep.in_fd);
+    pid_t shell_pg = getpgid(b->program_pid);
+    if (fg <= 0 || fg == shell_pg || hold_group_exists(fg) != 1) {
+        control_replyf(c, "none\n");
+        return;
+    }
+    b->adopted_pgid = fg;
+    b->adopted_hung = false;
+    control_replyf(c, "job %ld\n", (long)fg);
+}
+
+/* The adopted program's group is gone: hang up its caretaker shell (it was
+ * waiting for that program at its prompt), so this broker ends with it. */
+static void check_adopted(struct broker *b) {
+    if (b->adopted_pgid <= 0 || b->adopted_hung || b->target <= 0) return;
+    if (hold_group_exists(b->adopted_pgid) != 0) return;
+    b->adopted_hung = true;
+    (void)kill(b->program_pid, SIGHUP);
+    (void)kill(b->program_pid, SIGCONT);
+}
+
 static void dispatch_control(struct broker *b, struct control_client *c) {
     char *req = (char *)c->buf + 4;
     char *nl = strchr(req, '\n');
@@ -1275,6 +1322,12 @@ static void dispatch_control(struct broker *b, struct control_client *c) {
     else if (!strcmp(req, "signal")) handle_signal(b, c, args);
     else if (!strcmp(req, "msg")) handle_msg(b, c, args, rest);
     else if (!strcmp(req, "nested")) handle_nested(b, c, args);
+    else if (!strcmp(req, "adopt")) handle_adopt(b, c);
+    else if (!strcmp(req, "note")) {
+        snprintf(b->note, sizeof(b->note), "%s", args);
+        b->note[hold_strip_controls(b->note, strlen(b->note))] = '\0';
+        control_replyf(c, "ok\n");
+    }
     else if (!strcmp(req, "wait")) {
         handle_wait(c, args);
         if (c->fd >= 0) check_wait(b, c, now_ms());
@@ -1562,8 +1615,12 @@ static void show_name(struct broker *b, struct attach_client *c) {
     /* The name, and the key to everything else: the name is what msg,
      * attach and every agent take, and holding Ctrl-Space for help is the
      * one key nobody could guess. Never the command: it is what the person just typed. */
-    char label[ALIAS_MAX_LEN + 32];
-    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " %s  hold Ctrl-Space: help ", r.name);
+    char label[ALIAS_MAX_LEN + HOLD_PATH_MAX + 32];
+    if (b->note[0]) {
+        snprintf(label, sizeof(label), " %s ", b->note);
+        b->note[0] = '\0';
+    } else if (r.home && r.has_person) snprintf(label, sizeof(label), " %s  hold Ctrl-Space: help ", r.person);
+    else if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " %s  hold Ctrl-Space: help ", r.name);
     else {
         char display[ID_DISPLAY_HEX_LEN + 1];
         hold_run_id_display(r.id, display);
@@ -1680,6 +1737,9 @@ static void broker_serve(struct broker *b) {
             }
         }
 
+        /* an adopted program is looked for every 250 ms: nothing else
+         * says when a group that is not our child has gone */
+        if (b->adopted_pgid > 0 && !b->adopted_hung && timeout > 250) timeout = 250;
         int pr = poll(pfds, nfds, (int)timeout);
         if (pr < 0) {
             if (errno == EINTR) {
@@ -1687,6 +1747,7 @@ static void broker_serve(struct broker *b) {
             }
             break;
         }
+        check_adopted(b);
         /* Nothing happened: the exit check below uses this. (A backmux shell's
          * own timers do not count as the program stirring.) */
         bool quiet = pr == 0;

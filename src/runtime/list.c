@@ -148,6 +148,8 @@ static int collect_private_cb(const char *id, const char *path, struct hold_run_
         fprintf(stderr, "backmux: warning: skipping corrupt record %s.json\n", id);
         return 0;
     }
+    /* A backmux shell's home is the person, not a process: never a row. */
+    if (r->home) return 0;
     if (w->name_filter && (!r->has_name || strcmp(r->name, w->name_filter) != 0)) return 0;
     enum run_state st = hold_eval_state(r, w->boot_id);
     /* Unknown stays: a call this shell cannot see (another PID namespace)

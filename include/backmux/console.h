@@ -165,6 +165,9 @@ bool hold_console_was_refused(pid_t *by);
 /* Whether it found no console to connect to: the call's output had already
  * ended. Returns 3 and prints nothing then, as above. */
 bool hold_console_was_gone(void);
+/* The console the last attach ended on (a split may have handed another
+ * process back to plain attach); "" before any. */
+const char *hold_console_last_sock(void);
 /* The person detached; names are the panes let go ("" for the process alone). */
 bool hold_console_was_detached(const char **names);
 void hold_console_note_detached(const char *name);
