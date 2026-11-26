@@ -1,19 +1,20 @@
 usage: backmux attach <target> [--detach-keys KEYS]
 
 Pick a running process back up in this terminal: a PTY process (backmux <cmd>,
--it, -dt) or one placed with -i. Detach again with Ctrl-P Ctrl-Q. (console is an
-alias of attach.)
+-it, -dt) or one placed with -i. Detach again with Ctrl-Space q. (console is
+an alias of attach.)
 
 Without a terminal (piped), attach sends its input and then keeps showing the
 process's output until the process ends; it does not end the process's input, so
 a -di process can be fed again by the next attach. To drive a process from a
 script, backmux send, peek, and wait are usually what you want.
 
-Ctrl-P is a lead key: it waits for the next key, with no time limit. Ctrl-Q
-after it detaches; Ctrl-P again sends one Ctrl-P to the program; any other key
-sends both through, so nothing typed is lost. --detach-keys KEYS changes the
-keys for this attach (ctrl-a,ctrl-d; one key, such as ctrl-], detaches at
-once).
+Ctrl-Space is the prefix: it waits for the next key, with no time limit. q
+after it detaches; Ctrl-Space again sends one Ctrl-Space to the program;
+Ctrl-Space ? lists the other keys; any key that is not one of them is
+dropped, with the prefix. --detach-keys KEYS changes the keys for this attach
+(ctrl-a,ctrl-d; one key, such as ctrl-], detaches at once); with other keys
+than the prefix and q, a key that is not one sends both through.
 
 One terminal has a process at a time: a second attach is told who has it.
 Attached from inside another process (a backmux shell, say), the detach keys let

@@ -627,7 +627,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     }
     bool restart_enabled = restart_policy_is_enabled(restart_policy);
     /* -i without -t: the program runs on pipes under a broker that relays its
-     * input, so the program never holds the person's terminal, Ctrl-P Ctrl-Q
+     * input, so the program never holds the person's terminal, Ctrl-Space q
      * can detach, and backmux attach can reconnect. (--restart's supervisor
      * still hands its workers stdin directly.) */
     bool pipe_mode = interactive_stdin && !console_mode && !restart_enabled;
@@ -667,7 +667,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         unsigned char keys[8];
         if (hold_console_get_detach_keys(keys, sizeof(keys)) != 2) {
             fprintf(stderr, "backmux: error: a backmux shell's --detach-keys are two keys: the lead key, then the key that "
-                            "detaches (the default is ctrl-p,ctrl-q)\n");
+                            "detaches (the default is ctrl-space,q)\n");
             return HOLD_EXIT_USAGE;
         }
         console_options.lead_key = keys[0];
@@ -1253,7 +1253,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
             if (tail_rc == 0) tail_rc = foreground_exit_status(store, r.id);
         }
         if (opts->auto_remove && hold_call_still_running(store, r.id)) {
-            /* Detached (Ctrl-P Ctrl-Q) or interrupted while it runs on: it
+            /* Detached (Ctrl-Space q) or interrupted while it runs on: it
              * is removed when it ends, as a -d --rm call is. */
             spawn_auto_remove_watcher(store, &r);
         } else if (opts->auto_remove) {

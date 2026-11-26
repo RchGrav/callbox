@@ -468,7 +468,7 @@ int hold_tail_log_until_exit(const struct hold_run_record *r, bool from_end, boo
 /* ---- following a call you launched ---------------------------------------
  * A plain call launched in the foreground: backmux follows its log, and the
  * keys mean what they mean everywhere you are on a call - Ctrl-C goes to the
- * program, Ctrl-P Ctrl-Q leaves it running. At a terminal the keys are read
+ * program, Ctrl-Space q leaves it running. At a terminal the keys are read
  * one by one (output is untouched); without one, a SIGINT sent to backmux is
  * passed on, as docker run's sig-proxy does. */
 

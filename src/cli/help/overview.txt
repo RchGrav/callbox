@@ -22,9 +22,9 @@
  backmux set <name|id> <param>=<value>  edit profiles, args, start paths, name
  backmux unset <name|id> <param>        clear a profile setting, mode, arg, etc
 
- Ctrl-P Ctrl-Q detach process with durable handle, full reattach control or end
- Ctrl-P Ctrl-T recall floating user chat window after it has been dismissed
- hold Ctrl-Space the rest of the control keys to control backmux
+ Ctrl-Space q  detach process with durable handle, full reattach control or end
+ Ctrl-Space c  recall floating user chat window after it has been dismissed
+ Ctrl-Space ?  the rest of the control keys to control backmux
 
  backmux help aliases                   container aliases (100% less container)
  backmux help agents                    orchestration and tui debugging details

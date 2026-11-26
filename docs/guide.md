@@ -20,7 +20,7 @@ shows one command's syntax and options.
   call has a name, an ID, and a log. A TTY process, a `-i` process, and a process
   placed with `-w`, `--rm`, or `--restart` also record their exit code.
 - **While attached**, Ctrl-C goes to the
-  program, Ctrl-P Ctrl-Q detaches and leaves it running (`backmux attach`
+  program, Ctrl-Space q detaches and leaves it running (`backmux attach`
   brings it back).
 - **Look** with `backmux peek`: the screen as text, with `--ruler` coordinates,
   as `--json` state, or as an `--image` PNG.
@@ -318,7 +318,7 @@ backmux shell                          # your $SHELL (or: backmux shell zsh -l)
 backmux -dt --name helper -- claude    # an agent, placed the ordinary way
 ```
 
-Press **Ctrl-P Ctrl-T**, pick `helper`, type, Enter. Your message arrives in the
+Press **Ctrl-Space c**, pick `helper`, type, Enter. Your message arrives in the
 agent's prompt from your shell's process, so the agent answers with a plain
 `backmux msg` — it needs to know nothing about the window — and the reply lands
 in chat, never at your prompt.
@@ -335,13 +335,12 @@ in chat, never at your prompt.
   (only that one): "what am I looking at?" becomes one keystroke.
 - A message that could not be delivered says so, and why. A sender outside
   Backmux with an assigned inbox name can receive your reply in that inbox.
-- **Ctrl-P Ctrl-Q** detaches; `backmux attach NAME` brings the shell back with the
+- **Ctrl-Space q** detaches; `backmux attach NAME` brings the shell back with the
   window and its conversations as you left them.
-- **Ctrl-P is the one lead key**, because Ctrl-P Ctrl-Q is Docker's detach
-  sequence (`--detach-keys` changes it). It waits for the key after it for as long
-  as you like, with what it offers shown in the corner. Press it twice to
-  send a Ctrl-P to your shell; follow it with anything else and both keys go
-  through.
+- **Ctrl-Space is the one prefix key** (`--detach-keys` changes the detach
+  keys). It waits for the key after it for as long as you like; Ctrl-Space ?
+  lists what may follow. Press it twice to send a Ctrl-Space to your shell;
+  follow it with a key that is not one of backmux's and both are dropped.
 
 The window is drawn *over* your shell, not into it: there is one screen (the
 one `backmux peek` reads) with the window composited on top for your terminal
@@ -541,7 +540,7 @@ send, wait, msg, and attach all work.
 **What happens if my agent's shell is killed?** Detached processes and their
 helpers run in separate sessions, so ending the launching command's process
 group does not end them. An attached launch handles termination differently:
-it forwards SIGTERM to its program. Ctrl-P Ctrl-Q or a terminal hangup
+it forwards SIGTERM to its program. Ctrl-Space q or a terminal hangup
 (SIGHUP) detaches and leaves the process running. See [launch behavior](launcher.md).
 
 **Why "backmux"?** A process box is where you place a process and walk away while

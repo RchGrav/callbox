@@ -13,7 +13,7 @@ Every process runs in its own session, so it outlives the shell that started it 
 - **`-it`:** the same attached PTY without the chat window: a message for the process is typed into the program, as for any process. Why: a program run with `-it` (an agent, say) must get its messages; the window is for the switchless launch and `backmux shell`.
 - **`-i` (no `-t`):** the program runs on pipes under a broker that relays your input, so it never holds your terminal. backmux shows its output, edits each typed line itself, and turns Ctrl-D into end of input. Piped input streams in and ends with EOF.
 - **Foreground plain process (`-w`, `--restart`, `--tail <cmd>`):** prints nothing of its own; it follows the log, then exits with the process's exit status.
-- **Keys, in every mode you are on a process:** Ctrl-C goes to the program; Ctrl-P Ctrl-Q detaches and leaves it running, with a note saying how to pick it up again.
+- **Keys, in every mode you are on a process:** Ctrl-C goes to the program; Ctrl-Space q detaches and leaves it running, with a note saying how to pick it up again.
 
 This is `docker run`'s output dialect ([Docker parity](docker-familiarity-contract.md)).
 
@@ -121,7 +121,7 @@ stateDiagram-v2
     Spawned --> Recorded: all writes succeed
     Recorded --> [*]: -d prints ID
     Recorded --> Following: foreground
-    Following --> [*]: process ends, or Ctrl-P Ctrl-Q detaches
+    Following --> [*]: process ends, or Ctrl-Space q detaches
     Refused --> [*]
     CleanedUp --> [*]
     RolledBack --> [*]
@@ -135,7 +135,7 @@ A plain process (no `-t`, no `-i`) has stdin on `/dev/null`, and its stdout and 
 
 A program starts with default Ctrl-C and Ctrl-\ handling whatever backmux inherited: a shell starts background jobs with SIGINT and SIGQUIT ignored, and a signal ignored at start cannot even be trapped.
 
-A plain foreground start writes the record first, then follows the log from its beginning (`hold_follow_launched_call`, on the one client loop in `console/client.c`). At a terminal, keys are read one at a time with output untouched: Ctrl-C is passed to the program after the same identity checks as `backmux end`, and Ctrl-P Ctrl-Q stops following and leaves it running. Without a terminal, a SIGINT sent to backmux is passed on, as `docker run`'s sig-proxy does. The log is polled every 100 ms; about once a second backmux checks whether the process still runs, and when it ends it drains the log once more.
+A plain foreground start writes the record first, then follows the log from its beginning (`hold_follow_launched_call`, on the one client loop in `console/client.c`). At a terminal, keys are read one at a time with output untouched: Ctrl-C is passed to the program after the same identity checks as `backmux end`, and Ctrl-Space q stops following and leaves it running. Without a terminal, a SIGINT sent to backmux is passed on, as `docker run`'s sig-proxy does. The log is polled every 100 ms; about once a second backmux checks whether the process still runs, and when it ends it drains the log once more.
 
 An attached launch (user mode or `-i`) passes a SIGTERM it is sent on to its program, as `docker run`'s sig-proxy does, so `timeout 8 backmux foo` does not leave `foo` behind; a SIGHUP (the terminal went away) only detaches, since backmux keeps programs running. When its reader goes away (`backmux foo | head`), backmux says the process keeps running and ends as a writer to a closed pipe does (141). Each run records where its output starts in the shared log (`log_start`), so when a process was over before its launch could attach, backmux prints that run's output and not the earlier runs'.
 
@@ -145,7 +145,7 @@ With `--rm`, a foreground start removes the process when it ends. If you detach 
 
 `backmux <id|name>` places a recorded process again. Redial happens only when the command is a single word, with no `--` and no `--name`. The word matches by ID prefix or by name, in your own store first, then (as root) in the system store. A word that is none of these, and no program on PATH either, may be the start of exactly one process's name or verb (`backmux hel` for helper, `backmux li` for list); several fits are listed and nothing runs (exit 6). That order keeps every word that meant something before meaning the same thing.
 
-The redial runs the recorded recipe under the same process ID and appends to the same log. It reuses the recorded argv, environment, mode, size, restart policy, and name. A redial runs in the mode the process first ran in, unless it names a mode itself. A `backmux shell` process comes back as a shell. A process that is still running is not started again: there is nothing to start, and the reason to type its name is to get back to it. backmux attaches to it if it has a console (Ctrl-P Ctrl-Q leaves again), and otherwise follows its log until it ends (Ctrl-C stops following). With an explicit `-d`, it prints the process's id and says it is already running (exit 0). A word that matches more than one process lists them (exit 6).
+The redial runs the recorded recipe under the same process ID and appends to the same log. It reuses the recorded argv, environment, mode, size, restart policy, and name. A redial runs in the mode the process first ran in, unless it names a mode itself. A `backmux shell` process comes back as a shell. A process that is still running is not started again: there is nothing to start, and the reason to type its name is to get back to it. backmux attaches to it if it has a console (Ctrl-Space q leaves again), and otherwise follows its log until it ends (Ctrl-C stops following). With an explicit `-d`, it prints the process's id and says it is already running (exit 0). A word that matches more than one process lists them (exit 6).
 
 ## Implementation map
 

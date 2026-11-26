@@ -108,10 +108,10 @@ int hold_term_detach_feed(struct hold_term_detach *d, unsigned char c,
                 d->command = c;
                 *completed = 3;
             }
-            /* not a command: cancelled, both keys dropped. Why: with seven
-             * commands a wrong second key is almost always a mistyped one,
-             * and passing it on would hit the program with a stray Ctrl-P
-             * (previous command in a shell, completion in vim) and more. */
+            /* not a command: cancelled, both keys dropped. Why: with a
+             * handful of commands a wrong second key is almost always a
+             * mistyped one, and passing it on would hit the program with a
+             * stray prefix and a letter it never meant to get. */
             return 0;
         }
     }

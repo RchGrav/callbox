@@ -1,6 +1,6 @@
 usage: backmux call [--name NAME] [options] <program> [<args>...]
 
-Run a terminal program attached, on a PTY, under a name. Ctrl-P Ctrl-Q
+Run a terminal program attached, on a PTY, under a name. Ctrl-Space q
 detaches; it keeps running, and backmux attach NAME picks it back up.
 
 Messages to it (backmux msg NAME TEXT, or chat) arrive raw: exactly the text,

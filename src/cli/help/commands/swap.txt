@@ -6,4 +6,4 @@ processes' names or ids: whoever runs it may not see that screen, so there
 are no letters or numbers to guess at. Run from inside a pane it acts on that
 terminal; from anywhere else, on the one terminal showing panes.
 
-In the terminal itself, Ctrl-P Ctrl-S swaps the panes on the screen.
+In the terminal itself, Ctrl-Space s swaps the panes on the screen.

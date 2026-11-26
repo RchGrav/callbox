@@ -4,9 +4,9 @@
 
 > **The model changed in backmux.** Nothing has chat and nothing has splits.
 > `backmux shell` is your shell on a PTY under a name, like any process. Chat
-> belongs to the person: `Ctrl-P Ctrl-T` brings it up over whatever they
+> belongs to the person: `Ctrl-Space c` brings it up over whatever they
 > are attached to, under their chat name, and it follows them to whichever
-> terminal opens it last. Panes come only from `Ctrl-P Ctrl-A`, which puts
+> terminal opens it last. Panes come only from `Ctrl-Space p a`, which puts
 > another running TTY process beside the one on screen. Both are drawn by the
 > attach client's compositor (`src/console/mux.c`), never by a process's
 > broker, so no process carries a display mode. The design, with the reason for
@@ -28,7 +28,7 @@ refused, and so is starting one without a terminal on stdin and stdout.
 `--chat-key` apply. A shell's `--detach-keys` must be exactly two keys (the
 lead key, then the detach key), because its broker reads them itself;
 `--chat-key` is pressed after the lead key, so it cannot be either of them.
-`Ctrl-P Ctrl-Q` detaches; `backmux attach <name>` picks the
+`Ctrl-Space q` detaches; `backmux attach <name>` picks the
 shell back up with the chat window, its conversations, and an unsent draft
 as they were; `backmux <name>` redials an ended shell as a shell.
 
@@ -111,14 +111,14 @@ display shows the screen clipped or padded until the window is next resized.
 Everything the attached terminal sends passes through one router
 (`chat_input` in `src/console/chat.c`).
 
-- **The lead key** (`Ctrl-P`, the first of the detach keys) is the only key
+- **The lead key** (`Ctrl-Space`, the first of the detach keys) is the only key
   backmux takes, and it only waits: the next key says what it meant, with no
   time limit (not everyone types fast, and Docker's lead key is untimed
-  too; `Ctrl-P Ctrl-P` is the quick way to send one through), and the corner (or the window, when it is up) shows what it
-  offers meanwhile. `Ctrl-Q` detaches. `Ctrl-T` (`--chat-key ctrl-g` picks
+  too; `Ctrl-Space Ctrl-Space` is the quick way to send one through), and the corner (or the window, when it is up) shows what it
+  offers meanwhile. `q` detaches. `c` (`--chat-key ctrl-g` picks
   another) opens chat, or moves the keyboard between chat and the shell
-  while the window stays up. While the shell has the keyboard, `Ctrl-P`
-  again sends one `Ctrl-P` to the shell, and any other key sends both
+  while the window stays up. While the shell has the keyboard, `Ctrl-Space`
+  again sends one `Ctrl-Space` to the shell, and any other key sends both
   through, in order. While chat has it, the lead key is dropped and the
   other key goes to chat. A mouse report is not an
   answer: it is dealt with and the lead key goes on waiting. The broker
@@ -128,9 +128,9 @@ Everything the attached terminal sends passes through one router
   shell.
 - **On-screen help.** What just happened and the key that undoes it are
   shown where the eye is, for a few seconds: the process's own name on attach
-  (`crucial_phantom | Ctrl-P Ctrl-T: chat`; the name is what others message
-  and reply to, and the command just typed needs no repeating), `chat hidden | Ctrl-P Ctrl-T: bring it back` when the
-  window closes, `Ctrl-P Ctrl-T: chat | typing in the shell` in the window
+  (`crucial_phantom | Ctrl-Space c: chat`; the name is what others message
+  and reply to, and the command just typed needs no repeating), `chat hidden | Ctrl-Space c: bring it back` when the
+  window closes, `Ctrl-Space c: chat | typing in the shell` in the window
   when the keyboard is handed over. Like the window, none of it reaches the
   shell, its screen, or its log.
 - **While the shell has the keyboard**, its bytes pass as typed. With no

@@ -27,7 +27,6 @@
 #define CHAT_MIN_H 6
 #define CHAT_INPUT_ROWS 3
 #define CHAT_ESC_MS 40        /* an Esc with nothing after it is the Esc key */
-#define CHAT_HINT_MS 6000     /* the corner hint after a terminal attaches */
 #define CHAT_NOTICE_MS 5000
 #define CHAT_SEND_LIMIT_MS 90000
 #define CHAT_PICK_REFRESH_MS 1000
@@ -132,8 +131,6 @@ struct chat {
     char notice[160]; /* a line in the window: why something did not happen, or a tip */
     bool notice_tip;
     int64_t notice_until_ms;
-    char hint[CHAT_LABEL_LEN + 64]; /* a tip in the corner while the window is hidden; holds the call's name */
-    int64_t hint_until_ms;
 
     struct outbound out[CHAT_MAX_OUTBOUND];
     uint32_t serial;
@@ -173,12 +170,15 @@ static void set_notice(struct chat *c, const char *fmt, ...) {
     c->dirty = true;
 }
 
-/* A control key as a person reads it: 0x10 -> "Ctrl-P". */
+/* A key as a person reads it: 0x10 -> "Ctrl-P", NUL -> "Ctrl-Space", a
+ * printable key as itself. */
 static void key_name(unsigned char key, char out[12]) {
-    snprintf(out, 12, "Ctrl-%c", key | 0x40);
+    if (key == 0) snprintf(out, 12, "Ctrl-Space");
+    else if (key < 0x20) snprintf(out, 12, "Ctrl-%c", key | 0x40);
+    else snprintf(out, 12, "%c", key);
 }
 
-/* The two keys that reach chat: "Ctrl-P Ctrl-T". */
+/* The two keys that reach chat: "Ctrl-Space c". */
 static void chat_keys(const struct chat *c, char out[24]) {
     char lead[12], key[12];
     key_name(c->host.lead, lead);
@@ -188,9 +188,10 @@ static void chat_keys(const struct chat *c, char out[24]) {
 
 /* On-screen help, shown at the moment it is useful and gone a few seconds
  * later: what just happened, and the key that undoes it. `what` goes before
- * the key's name, `then` after it. In the corner while the window is hidden;
- * as a line in the window while it is up. Like everything drawn here, it
- * never reaches the shell, its screen, or its log. */
+ * the key's name, `then` after it, as a line in the window while it is up;
+ * nothing while it is hidden (no corner pop-ups: they cover the programs).
+ * Like everything drawn here, it never reaches the shell, its screen, or
+ * its log. */
 static void set_tip(struct chat *c, const char *what, const char *then) {
     char key[24];
     chat_keys(c, key);
@@ -199,9 +200,6 @@ static void set_tip(struct chat *c, const char *what, const char *then) {
         snprintf(c->notice, sizeof(c->notice), "%s: %s | %s", key, then, what);
         c->notice_tip = true;
         c->notice_until_ms = c->now + CHAT_NOTICE_MS;
-    } else {
-        snprintf(c->hint, sizeof(c->hint), " %s | %s: %s ", what, key, then);
-        c->hint_until_ms = c->now + CHAT_HINT_MS;
     }
     c->dirty = true;
 }
@@ -950,6 +948,14 @@ static void hide(struct chat *c) {
     set_tip(c, "chat hidden", "bring it back");
 }
 
+/* The Esc key in chat. In the compositor it does nothing: chat is left
+ * only with the prefix then c, the key that opened it. Why: Esc is the
+ * key every mode leaves by, and typing in chat is not a mode to fall out
+ * of by accident with a half-written message. Elsewhere it hides chat. */
+static void esc_key(struct chat *c) {
+    if (!c->host.app_pointer) hide(c);
+}
+
 /* Who the keyboard is for, while the window is up. Handing it to the shell
  * says so in the window: the title bar dims, but that alone is easy to miss,
  * and typing into the wrong one is the mistake this window invites. */
@@ -1336,7 +1342,7 @@ static size_t consume(struct chat *c, const unsigned char *p, size_t n) {
         }
         if (p[1] == 0x1b) { /* Esc, then the start of something else */
             if (!c->focused) to_shell(c, p, 1);
-            else hide(c);
+            else esc_key(c);
             return 1;
         }
         /* Alt with a key */
@@ -1404,15 +1410,11 @@ static void pending_expired(struct chat *c) {
     lead_was_typed(c); /* an Esc (or half a sequence) after the lead key: both were typed */
     if (c->pasting) paste_text(c, c->pend, c->pend_len);
     else if (!c->focused) to_shell(c, c->pend, c->pend_len); /* a lone Esc, or half a sequence: the shell's */
-    else if (c->pend_len == 1 && c->pend[0] == 0x1b) hide(c); /* the Esc key */
+    else if (c->pend_len == 1 && c->pend[0] == 0x1b) esc_key(c); /* the Esc key */
     c->pend_len = 0;
 }
 
 /* ---- timers --------------------------------------------------------------------------------- */
-
-static bool hint_showing(const struct chat *c, int64_t now) {
-    return !c->visible && c->hint[0] && now < c->hint_until_ms;
-}
 
 int64_t chat_due_in(const struct chat *c, int64_t now) {
     int64_t due = INT64_MAX, d;
@@ -1422,10 +1424,6 @@ int64_t chat_due_in(const struct chat *c, int64_t now) {
     }
     if (c->pasting) {
         d = c->input_ms + 1000 - now;
-        if (d < due) due = d;
-    }
-    if (c->attached && hint_showing(c, now)) {
-        d = c->hint_until_ms - now;
         if (d < due) due = d;
     }
     if (c->notice[0]) {
@@ -1448,10 +1446,6 @@ void chat_tick(struct chat *c, int64_t now) {
         c->dirty = true;
     }
     if (c->pasting && now - c->input_ms >= 1000) c->pasting = false; /* the end marker never came */
-    if (c->hint[0] && now >= c->hint_until_ms) {
-        c->hint[0] = '\0';
-        c->dirty = true;
-    }
     if (c->notice[0] && now >= c->notice_until_ms) {
         c->notice[0] = '\0';
         c->dirty = true;
@@ -1663,13 +1657,14 @@ static void draw_window(struct chat *c) {
 
     if (L.footer >= 0) {
         int u = put(c, L.footer, c->x + 1, c->w - 4, c->include_screen ? "[x] screen" : "[ ] screen", c->include_screen ? &ST_BODY : &ST_DIM);
-        put(c, L.footer, c->x + 1 + u, c->w - 4 - u, "  ^S \xc2\xb7 Tab: to \xc2\xb7 Esc: hide", &ST_DIM);
+        put(c, L.footer, c->x + 1 + u, c->w - 4 - u,
+            c->host.app_pointer ? "  ^S \xc2\xb7 Tab: to" : "  ^S \xc2\xb7 Tab: to \xc2\xb7 Esc: hide", &ST_DIM);
         comp_put(c->comp, L.footer, c->x + c->w - 1, 0x25e2, &ST_DIM); /* the corner to resize by */
     }
 }
 
 /* With chat hidden: what is unread, or (just after attaching) how to open it. */
-static void draw_badge(struct chat *c, int64_t now) {
+static void draw_badge(struct chat *c) {
     char text[CHAT_LABEL_LEN + 96] = "", key[24], menu[96];
     int unread = total_unread(c, NULL);
     chat_keys(c, key);
@@ -1687,8 +1682,6 @@ static void draw_badge(struct chat *c, int64_t now) {
             }
         if (senders == 1) snprintf(text, sizeof(text), " chat: %d new from %.40s | %s ", unread, from->label, key);
         else snprintf(text, sizeof(text), " chat: %d new | %s ", unread, key);
-    } else if (hint_showing(c, now)) {
-        snprintf(text, sizeof(text), "%s", c->hint);
     }
     if (!text[0]) return;
     int len = (int)strlen(text);
@@ -1716,7 +1709,7 @@ int chat_render(struct chat *c, int64_t now, char **buf, size_t *len, size_t *ca
         draw_window(c);
         c->badge_col = -1;
     } else {
-        draw_badge(c, now);
+        draw_badge(c);
     }
 
     struct comp_want want;
@@ -1894,8 +1887,10 @@ void chat_draw(struct chat *c, struct compositor *comp, int64_t now, struct comp
         refit(c);
         draw_window(c);
         c->badge_col = -1;
+    } else if (c->host.app_pointer) {
+        c->badge_col = -1; /* the compositor says what is unread, in a pane's footer */
     } else {
-        draw_badge(c, now);
+        draw_badge(c);
     }
     if (c->visible && c->focused) {
         want->bracketed_paste = true; /* a paste arrives whole, never as keys */
@@ -1915,6 +1910,10 @@ bool chat_visible(const struct chat *c) {
     return c->visible;
 }
 
+int chat_unread(const struct chat *c) {
+    return total_unread(c, NULL);
+}
+
 /* The conversation with a call on show, without taking the keyboard: the
  * person moved to that call's pane. */
 void chat_show_call(struct chat *c, const char *call_id, const char *label) {
@@ -1927,5 +1926,6 @@ void chat_show_call(struct chat *c, const char *call_id, const char *label) {
  * hint. The compositor keeps the screen until it has nothing, so nothing of
  * chat is left behind when it hands the terminal back. */
 bool chat_on_screen(const struct chat *c, int64_t now) {
-    return c->visible || c->grab != GRAB_NONE || hint_showing(c, now) || total_unread(c, NULL) > 0;
+    (void)now;
+    return c->visible || c->grab != GRAB_NONE || (!c->host.app_pointer && total_unread(c, NULL) > 0);
 }

@@ -50,13 +50,13 @@ The screen shows `HELLO`. `send` types into the running program; `wait`
 checks its visible output. For a color image with cursor coordinates, use
 `backmux peek demo --image demo.png`.
 
-Join the program with `backmux attach demo`. Press **Ctrl-P, then Ctrl-Q**
+Join the program with `backmux attach demo`. Press **Ctrl-Space, then q**
 to detach and leave it running. An agent can still inspect the screen and
 send input while you are attached.
 
-While attached, **Ctrl-P Ctrl-A** brings another running process in beside this
-one, as a pane; **Ctrl-P Ctrl-T** opens your chat over whatever you are
-looking at; holding **Ctrl-Space** lists the rest. Nothing splits unless you ask:
+While attached, **Ctrl-Space p a** brings another running process in beside this
+one, as a pane; **Ctrl-Space c** opens your chat over whatever you are
+looking at; **Ctrl-Space ?** lists the rest. Nothing splits unless you ask:
 one process on one screen is exactly what it always was.
 
 When finished:

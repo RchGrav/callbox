@@ -20,9 +20,9 @@ int hold_console_set_detach_keys(const unsigned char *keys, size_t len);
  * terminal to ask). chat: a backmux shell - the broker composites the display
  * for whoever attaches (the shell's screen under the chat window, see
  * chat.c) and takes backmux msg into the chat inbox instead of typing it. */
-#define HOLD_LEAD_KEY_DEFAULT 0x10   /* Ctrl-P */
-#define HOLD_DETACH_KEY_DEFAULT 0x11 /* Ctrl-Q */
-#define HOLD_CHAT_KEY_DEFAULT 0x14   /* Ctrl-T */
+#define HOLD_LEAD_KEY_DEFAULT 0x00   /* Ctrl-Space (NUL): the prefix */
+#define HOLD_DETACH_KEY_DEFAULT 'q'  /* the prefix then q detaches */
+#define HOLD_CHAT_KEY_DEFAULT 'c'    /* the prefix then c: chat */
 struct hold_console_options {
     unsigned short rows, cols;
     /* A fresh launch on the person's terminal starts inline: the screen
@@ -39,7 +39,7 @@ struct hold_console_options {
      * detach or to open chat. 0 = the default. */
     unsigned char lead_key, detach_key, chat_key;
 };
-/* The detach keys in force for this process (--detach-keys, else Ctrl-P
+/* The detach keys in force for this process (--detach-keys, else Ctrl-Space
  * Ctrl-Q): copies up to cap of them, returns how many there are. */
 size_t hold_console_get_detach_keys(unsigned char *out, size_t cap);
 /* The call about to be attached reads the lead key itself (a backmux shell):
@@ -132,22 +132,23 @@ struct hold_client {
     int (*on_input_end)(void *ctx);
     int (*on_resize)(void *ctx, const struct winsize *ws);
     int (*on_command)(void *ctx, unsigned char key); /* the lead key, then a command key */
-    int64_t (*due_in)(void *ctx);  /* ms until on_timer is wanted, <0 never */
-    int (*on_timer)(void *ctx);
+    /* the keys read after a command that stopped the loop (the rest of
+     * that read): whoever takes over has them */
+    void (*on_rest)(void *ctx, const unsigned char *bytes, size_t n);
     bool want_sigint;
     void *ctx;
 };
 enum hold_client_end hold_client_run(const struct hold_client *c);
 
 /* The attach client: connect to a call's console socket and bridge the
- * terminal until the detach chord (Ctrl-P Ctrl-Q by default) or the call ends.
+ * terminal until the detach chord (Ctrl-Space q by default) or the call ends.
  * Alone on the screen it passes the call's output straight through, as
- * always; the lead key then a pane or floating-window key (Ctrl-P Ctrl-A,
+ * always; the lead key then a pane or floating-window key (Ctrl-Space p a,
  * Ctrl-T, Ctrl-H, Ctrl-N) hands the terminal to the compositor (mux.c),
  * which hands it back when one pane is left and nothing floats. */
 int hold_run_native_console(const char *sock_path);
 /* What the compositor needs, set by whoever attaches: the store whose TTY
- * calls Ctrl-P Ctrl-A lists and chat reaches, and the person's chat name
+ * calls Ctrl-Space p a lists and chat reaches, and the person's chat name
  * (their inbox). Unset (NULL): the keys are ignored, as before. */
 void hold_console_set_mux(const struct hold_store *store, const char *chat_name);
 /* The console of the call this process runs inside (BACKMUX_ID), when it

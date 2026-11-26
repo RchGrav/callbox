@@ -57,7 +57,7 @@ UNDERSTAND WHERE A MESSAGE GOES
   the program and Enter submits it: with the agent setting on, behind a
   header naming the sender and how to reply; without it, raw, as if typed.
   backmux set/unset NAME agent switch it from the next message. A message
-  to a person goes to their chat (Ctrl-P Ctrl-T), by their chat name.
+  to a person goes to their chat (Ctrl-Space c), by their chat name.
   server processes have no input console and refuse messages. Backmux delivers
   input; it does not manage a harness's work queue.
 

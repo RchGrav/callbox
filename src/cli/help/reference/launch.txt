@@ -59,12 +59,12 @@ SET UP THE PROGRAM
 
 CONTROL AN ATTACHED CALL
   Ctrl-C           send the interrupt to the program
-  Ctrl-P Ctrl-Q    detach; the process keeps running
+  Ctrl-Space q     detach; the process keeps running
   Ctrl-D           end pipe input with -i
   --detach-keys KEYS
-                   change detach keys (default ctrl-p,ctrl-q); one key such
+                   change detach keys (default ctrl-space,q); one key such
                    as ctrl-] detaches immediately. Panes and chat need the
-                   two-key form: Ctrl-P, then a key (hold Ctrl-Space lists
+                   default keys: Ctrl-Space, then a key (Ctrl-Space ? lists
                    them).
   -f, --tail NAME  follow a process's new log output, without attaching or
                    redial; Ctrl-C stops following, leaving it running

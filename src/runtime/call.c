@@ -265,7 +265,7 @@ int hold_cmd_redial(const struct hold_invocation *inv,
     *redialed = true;
     /* Still running: there is nothing to start, and the reason to type its
      * name is to get back to it - so go there, the way it can be reached:
-     * its console (attach; Ctrl-P Ctrl-Q leaves again), or else its log
+     * its console (attach; Ctrl-Space q leaves again), or else its log
      * (followed until it ends; Ctrl-C stops following). An explicit -d
      * means "in the background": it is, so say which call and return. */
     struct hold_run_record cur;

@@ -8,7 +8,7 @@ session flags - runs on a pseudo-terminal owned by its **console broker**:
 <cmd>` leaves it running in the background, and `backmux attach <target>`
 picks it back up later (`console` is an alias). A process placed with `-i` (no
 `-t`) has a broker too, holding its input pipe instead of a PTY (see [Programs
-on pipes](#programs-on-pipes)). `Ctrl-P Ctrl-Q` detaches without stopping the
+on pipes](#programs-on-pipes)). `Ctrl-Space q` detaches without stopping the
 process; `--detach-keys` changes the sequence.
 
 The broker is forked per process and lives exactly as long as the process. It owns
@@ -24,7 +24,7 @@ listener cannot impersonate the broker. The broker:
 - serves one attach client at a time, plus short-lived control clients and
   the registrations of nested attaches (below). A second attach is told
   where the console is held: `backmux: web is already attached in another
-  terminal (pid N). Detach it there: Ctrl-P Ctrl-Q.`, or `...from inside the
+  terminal (pid N). Detach it there: Ctrl-Space q.`, or `...from inside the
   call X...` when the holder runs inside another process;
 - repaints a newly attached terminal from the live screen (cells, colors,
   input modes, cursor), so an idle reattach shows the real current state;
@@ -34,12 +34,14 @@ listener cannot impersonate the broker. The broker:
 
 ### Letting go
 
-`Ctrl-P Ctrl-Q` is read by the attach client, which sends a detach frame;
-the broker answers by closing the connection. `Ctrl-P` is a lead key: it is
-held until the next key arrives, with no timer: not everyone types fast, and Docker
-and similar tools leave the lead key untimed too. `Ctrl-Q` then detaches,
-`Ctrl-P` again sends one `Ctrl-P` to the program (the quick way through), and any other key sends
-both through. (A `backmux shell`'s broker reads these keys itself, so it can
+`Ctrl-Space q` is read by the attach client, which sends a detach frame;
+the broker answers by closing the connection. `Ctrl-Space` is the prefix: it
+is held until the next key arrives, with no timer: not everyone types fast,
+and Docker and similar tools leave the lead key untimed too. `q` then
+detaches, `Ctrl-Space` again sends one `Ctrl-Space` to the program (the quick
+way through), one of the compositor's keys hands the terminal to it (with
+whatever was typed after), and any other key is dropped with the prefix.
+With other `--detach-keys`, any other key sends both through. (A `backmux shell`'s broker reads these keys itself, so it can
 show what the lead key offers while it waits; see [shell.md](shell.md).)
 
 Ctrl-C means one thing wherever you are on a process: it goes to the program. On
@@ -134,7 +136,7 @@ broker copies into the log and the headless screen (reading `\n` as `\r\n`,
 as a PTY would, so `peek` and `wait --match` work). Why a broker for a
 program without a PTY: so the program never holds your terminal (handed your
 terminal directly, it would keep reading your keystrokes after you left), so
-Ctrl-P Ctrl-Q can detach it, and so `backmux attach` can reconnect its input
+Ctrl-Space q can detach it, and so `backmux attach` can reconnect its input
 and output later. `-di` starts it in the background with its input open.
 
 The attach client for such a process keeps your terminal's lines and scrollback

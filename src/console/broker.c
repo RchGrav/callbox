@@ -390,26 +390,13 @@ struct attach_client {
     bool needs_repaint;
     bool stream;       /* not a terminal: output as a stream, never a repaint */
     bool no_terminal;  /* nothing on the client's side answers terminal queries */
-    bool name_shown;   /* the corner name was drawn for this client */
-    int64_t name_until_ms; /* when to take it down again (0 = not up) */
-    /* While the name is up, output is sent as repaints of the screen with
-     * the name over it, not as raw bytes: a program that redraws its whole
-     * screen on attach (vim does, after the resize) would wipe the name
-     * the moment it appeared. */
-    char name_label[ALIAS_MAX_LEN + 32];
-    bool name_dirty;
-    int64_t name_frame_ms;
     unsigned char pending[16384];
     size_t pending_len;
 };
 
 static bool forward_detach(struct broker *b);
 
-static int repaint_raw(struct broker *b, struct attach_client *c, const char *label);
-static int name_cells(struct broker *b, struct attach_client *c, bool draw);
 static void drop_attach(struct broker *b, struct attach_client *c) {
-    /* The name still up in its corner: the screen without it goes first. */
-    if (c->fd >= 0 && c->name_until_ms) (void)(c->stream ? name_cells(b, c, false) : repaint_raw(b, c, NULL));
     if (c->fd >= 0) {
         if (c->output != c->fd) close(c->output);
         close(c->fd);
@@ -564,29 +551,10 @@ static int replay_attach(struct broker *b, struct attach_client *c) {
     return rc;
 }
 
-/* The screen as a repaint for a raw attach client; with label, that text is
- * drawn in reverse video at the right end of the top row (show_name). */
-static int repaint_raw(struct broker *b, struct attach_client *c, const char *label) {
+/* The screen as a repaint for a raw attach client. */
+static int repaint_raw(struct broker *b, struct attach_client *c) {
     struct hold_snapshot snap;
     if (take_snapshot(b, &snap) != 0) return -1;
-    size_t ll = label ? strlen(label) : 0;
-    if (ll > 0 && snap.cells && snap.rows > 0 && snap.cols > ll) {
-        int start = (int)snap.cols - (int)ll;
-        struct hold_cell *row = snap.cells;
-        if (start > 0 && row[start - 1].width == 2) { /* a wide char cut in half: blank it */
-            memset(&row[start - 1], 0, sizeof(row[0]));
-            row[start - 1].width = 1;
-            row[start - 1].flags = HOLD_CELL_FG_DEFAULT | HOLD_CELL_BG_DEFAULT;
-        }
-        for (size_t i = 0; i < ll; i++) {
-            struct hold_cell *cell = &row[start + (int)i];
-            memset(cell, 0, sizeof(*cell));
-            cell->ch[0] = (unsigned char)label[i];
-            cell->width = 1;
-            cell->attrs = HOLD_ATTR_REVERSE;
-            cell->flags = HOLD_CELL_FG_DEFAULT | HOLD_CELL_BG_DEFAULT;
-        }
-    }
     char *buf = NULL;
     size_t len = 0, cap = 0;
     int rc = hold_snapshot_repaint(&snap, &buf, &len, &cap);
@@ -605,7 +573,7 @@ static int repaint_attach(struct broker *b, struct attach_client *c) {
         chat_attached(b->chat, rows, cols, now);
         return send_frame(b, c, now);
     }
-    return repaint_raw(b, c, NULL);
+    return repaint_raw(b, c);
 }
 
 /* ---- control clients: one request, one reply ---------------------------- */
@@ -1454,7 +1422,6 @@ static void reap_target(struct broker *b, bool block) {
  * free for the newcomer. */
 static bool console_taken(struct broker *b, struct attach_client *cl) {
     if (cl->fd < 0) return false;
-    if (cl->name_until_ms) (void)repaint_raw(b, cl, NULL);
     if (cl->output != cl->fd) close(cl->output);
     close(cl->fd);
     if (b->chat) chat_detached(b->chat);
@@ -1507,78 +1474,6 @@ static void sniff_timeout(struct broker *b, struct control_client *c, struct att
     cl->needs_repaint = true;
     c->fd = -1;
     drop_control(c);
-}
-
-/* A terminal that attaches to a program's raw screen (-it, or backmux attach)
- * sees the call's name in the top-right corner for chat-tip time, then the
- * screen as the program drew it. Why: with several calls running, whoever
- * started or joined this one could not tell which name was theirs - the
- * name msg, peek and attach take. The name is written into a copy of the
- * screen and sent as a repaint, and a repaint of the screen itself takes it
- * down (also when the client goes first): the program is never asked to
- * redraw, and the terminal's saved cursor is never touched. (Drawing it
- * between ESC 7 and ESC 8 overwrote the cursor the alternate screen had
- * saved, so leaving it put the shell's output in the wrong place.) A backmux
- * shell or user-mode call has its own tip in the chat window. */
-#define BROKER_NAME_MS 5000
-
-/* The name for an inline client (a stream with a terminal): only its own
- * cells are touched - drawn at the right end of the top row, or given back
- * what the screen holds there - and the cursor is put back where the
- * program left it. Why not a repaint: inline, the rows above where the
- * launch began are the person's own, and a repaint would wipe them. */
-static int name_cells(struct broker *b, struct attach_client *c, bool draw) {
-    struct hold_snapshot snap;
-    if (take_snapshot(b, &snap) != 0) return -1;
-    size_t ll = strlen(c->name_label);
-    int rc = 0;
-    if (snap.cells && snap.rows > 0 && snap.cols > ll) {
-        int start = (int)snap.cols - (int)ll;
-        char out[ALIAS_MAX_LEN * 4 + 160];
-        int k = snprintf(out, sizeof(out), "\033[1;%dH", start + 1);
-        if (draw) {
-            k += snprintf(out + k, sizeof(out) - (size_t)k, "\033[0;7m%s\033[0m", c->name_label);
-        } else {
-            k += snprintf(out + k, sizeof(out) - (size_t)k, "\033[0m");
-            for (size_t i = 0; i < ll && k + 8 < (int)sizeof(out); i++) {
-                const struct hold_cell *cell = &snap.cells[(size_t)start + i];
-                uint32_t cp = cell->ch[0] && cell->width ? cell->ch[0] : ' ';
-                k += (int)hold_utf8_encode(cp, out + k, sizeof(out) - (size_t)k);
-            }
-        }
-        k += snprintf(out + k, sizeof(out) - (size_t)k, "\033[%u;%uH", snap.cursor_row + 1u, snap.cursor_col + 1u);
-        rc = write_all_wait(c->output, out, (size_t)k);
-    }
-    hold_snapshot_free(&snap);
-    return rc;
-}
-
-static void show_name(struct broker *b, struct attach_client *c) {
-    c->name_shown = true;
-    if (b->chat || !b->ep.pty || c->no_terminal || !b->store) return;
-    struct hold_run_record r;
-    char path[HOLD_PATH_MAX];
-    if (hold_load_record_by_id(b->store->record_dir, b->run_id, &r, path, sizeof(path)) != 0) return;
-    /* The name, and the key to everything else: the name is what msg,
-     * attach and every agent take, and holding Ctrl-Space for help is the
-     * one key nobody could guess. Never the command: it is what the person just typed. */
-    char label[ALIAS_MAX_LEN + 32];
-    if (r.has_name && r.name[0]) snprintf(label, sizeof(label), " %s  hold Ctrl-Space: help ", r.name);
-    else {
-        char display[ID_DISPLAY_HEX_LEN + 1];
-        hold_run_id_display(r.id, display);
-        snprintf(label, sizeof(label), " %s  hold Ctrl-Space: help ", display);
-    }
-    hold_free_run_record(&r);
-    snprintf(c->name_label, sizeof(c->name_label), "%s", label);
-    if (c->stream) { /* inline: the name's own cells only */
-        if (name_cells(b, c, true) == 0 && c->fd >= 0) c->name_until_ms = now_ms() + BROKER_NAME_MS;
-        return;
-    }
-    if (repaint_raw(b, c, label) == 0 && c->fd >= 0) {
-        c->name_until_ms = now_ms() + BROKER_NAME_MS;
-        c->name_frame_ms = now_ms();
-    }
 }
 
 /* b->target is our child: waitpid lifecycle, killed on cleanup. Never returns. */
@@ -1639,11 +1534,6 @@ static void broker_serve(struct broker *b) {
         int64_t timeout = 1000;
         int64_t msg_due = msgs_due_in(b);
         if (msg_due < timeout) timeout = msg_due;
-        if (cl.fd >= 0 && cl.name_until_ms) {
-            int64_t due = cl.name_until_ms - now;
-            if (cl.name_dirty && cl.name_frame_ms + BROKER_FRAME_MS - now < due) due = cl.name_frame_ms + BROKER_FRAME_MS - now;
-            if (due < timeout) timeout = due < 0 ? 0 : due;
-        }
         for (int i = 0; i < BROKER_MAX_CONTROL; i++) {
             ctl_idx[i] = -1;
             if (ctl[i].fd < 0) continue;
@@ -1806,18 +1696,9 @@ static void broker_serve(struct broker *b) {
                 drop_attach(b, &cl);
             }
         }
-        if (cl.fd >= 0 && cl.name_until_ms && now_ms() >= cl.name_until_ms) {
-            cl.name_until_ms = 0;
-            if (cl.stream) { /* inline: the name's cells get back what is there */
-                if (name_cells(b, &cl, false) != 0) drop_attach(b, &cl);
-            } else {
-                cl.needs_repaint = true; /* the screen as the program drew it: the name is gone */
-            }
-        }
         if (cl.fd >= 0 && cl.needs_repaint && cl.decided) {
             cl.needs_repaint = false;
             if (repaint_attach(b, &cl) != 0) drop_attach(b, &cl);
-            else if (!cl.name_shown) show_name(b, &cl);
         }
 
         if (inq_idx >= 0 && (pfds[inq_idx].revents & (POLLOUT | POLLERR | POLLHUP | POLLNVAL))) flush_program_input(b);
@@ -1828,60 +1709,8 @@ static void broker_serve(struct broker *b) {
             if (n > 0) {
                 b->output_seq += (uint64_t)n;
                 b->last_output_ms = now_ms();
-                /* While the name is up, the program's screen switches split
-                 * the feed: the screen it leaves is repainted without the
-                 * name, the switch goes through as it came, and the name is
-                 * drawn again on the screen it is now on - nothing of the
-                 * name is left behind on the other one. */
-                bool split = !b->chat && cl.fd >= 0 && cl.name_until_ms && b->ep.pty;
-                size_t fed = 0;
-                if (split && cl.stream) {
-                    /* inline: the output goes through as it came; around a
-                     * screen switch the name is lifted from the screen being
-                     * left, and after it all, drawn again on top */
-                    static const char *const sw[] = {"\033[?1049h", "\033[?1049l", "\033[?1047h",
-                                                      "\033[?1047l", "\033[?47h",    "\033[?47l"};
-                    bool ok = true;
-                    for (ssize_t i = 0; i < n && ok; i++) {
-                        if (buf[i] != '\033') continue;
-                        for (size_t k = 0; k < sizeof(sw) / sizeof(sw[0]); k++) {
-                            size_t l = strlen(sw[k]);
-                            if ((size_t)(n - i) < l || memcmp(buf + i, sw[k], l) != 0) continue;
-                            feed_screen(b, buf + fed, (size_t)i - fed);
-                            ok = write_all_wait(cl.output, buf + fed, (size_t)i - fed) == 0 && name_cells(b, &cl, false) == 0;
-                            fed = (size_t)i;
-                            break;
-                        }
-                    }
-                    feed_screen(b, buf + fed, (size_t)n - fed);
-                    if (ok) ok = write_all_wait(cl.output, buf + fed, (size_t)n - fed) == 0 && name_cells(b, &cl, true) == 0;
-                    if (!ok) drop_attach(b, &cl);
-                    fed = (size_t)n;
-                    goto forwarded;
-                }
-                if (split) {
-                    static const char *const sw[] = {"\033[?1049h", "\033[?1049l", "\033[?1047h",
-                                                      "\033[?1047l", "\033[?47h",    "\033[?47l"};
-                    for (ssize_t i = 0; i < n && cl.fd >= 0; i++) {
-                        if (buf[i] != '\033') continue;
-                        for (size_t k = 0; k < sizeof(sw) / sizeof(sw[0]); k++) {
-                            size_t l = strlen(sw[k]);
-                            if ((size_t)(n - i) < l || memcmp(buf + i, sw[k], l) != 0) continue;
-                            feed_screen(b, buf + fed, (size_t)i - fed);
-                            if (repaint_raw(b, &cl, NULL) != 0 || write_all_wait(cl.output, sw[k], l) != 0)
-                                drop_attach(b, &cl);
-                            feed_screen(b, sw[k], l);
-                            fed = (size_t)i + l;
-                            cl.name_dirty = true;
-                            break;
-                        }
-                    }
-                }
-                feed_screen(b, buf + fed, (size_t)n - fed);
-                if (0) {
-                forwarded:
-                    if (cl.fd >= 0 && !cl.no_terminal) hold_screen_discard_output(b->screen);
-                } else if (b->chat) {
+                feed_screen(b, buf, (size_t)n);
+                if (b->chat) {
                     /* A backmux shell's terminal is drawn from the screen, never
                      * from these bytes, so it cannot answer the program's
                      * queries: the screen always does. */
@@ -1892,9 +1721,7 @@ static void broker_serve(struct broker *b) {
                     else flush_screen_output(b);
                     /* Before the repaint, the client gets nothing: the repaint
                      * already includes these bytes. */
-                    if (cl.fd >= 0 && cl.name_until_ms) {
-                        cl.name_dirty = true; /* sent as a repaint with the name over it */
-                    } else if (cl.fd >= 0 && !cl.needs_repaint && write_all_wait(cl.output, buf, (size_t)n) != 0) {
+                    if (cl.fd >= 0 && !cl.needs_repaint && write_all_wait(cl.output, buf, (size_t)n) != 0) {
                         drop_attach(b, &cl);
                     }
                 }
@@ -1914,11 +1741,6 @@ static void broker_serve(struct broker *b) {
         if (cl.fd >= 0 && cl.needs_repaint && cl.decided) {
             cl.needs_repaint = false;
             if (repaint_attach(b, &cl) != 0) drop_attach(b, &cl);
-        }
-        if (cl.fd >= 0 && cl.name_until_ms && cl.name_dirty && now - cl.name_frame_ms >= BROKER_FRAME_MS) {
-            cl.name_dirty = false;
-            cl.name_frame_ms = now;
-            if (repaint_raw(b, &cl, cl.name_label) != 0) drop_attach(b, &cl);
         }
         if (b->chat && cl.fd >= 0 && cl.decided && !cl.needs_repaint && chat_wants_frame(b->chat) &&
             now - b->frame_ms >= BROKER_FRAME_MS && send_frame(b, &cl, now) != 0) {

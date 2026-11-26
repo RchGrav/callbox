@@ -140,12 +140,14 @@ void chat_draw(struct chat *c, struct compositor *comp, int64_t now, struct comp
 void chat_ready(struct chat *c, int rows, int cols, int64_t now);
 /* The focused pane changed: its screen is what Ctrl-S sends. */
 void chat_set_screen(struct chat *c, struct hold_screen *screen, const char *name);
-/* The chat key (Ctrl-P Ctrl-T): open chat, or hand the keyboard between
+/* The chat key (the prefix then c): open chat, or hand the keyboard between
  * chat and the program. chat_open_on: open it on a call's conversation. */
 void chat_toggle(struct chat *c);
 void chat_open_on(struct chat *c, const char *call_id, const char *label);
 void chat_put_away(struct chat *c);
 bool chat_visible(const struct chat *c);
+/* How many messages are unread, across every conversation. */
+int chat_unread(const struct chat *c);
 bool chat_on_screen(const struct chat *c, int64_t now);
 /* The person moved to a call's pane: its conversation on show, if chat is
  * up, without taking the keyboard. */

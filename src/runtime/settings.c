@@ -496,7 +496,7 @@ int hold_cmd_swap_action(const struct hold_invocation *inv,
         if (seen[i].has_here) pick = i;
     if (pick < 0 && nseen == 1) pick = 0;
     if (pick < 0) {
-        fprintf(stderr, nseen == 0 ? "backmux: no terminal is showing panes (Ctrl-P Ctrl-A makes them)\n"
+        fprintf(stderr, nseen == 0 ? "backmux: no terminal is showing panes (Ctrl-Space p a makes them)\n"
                                    : "backmux: several terminals show panes; run backmux swap from a pane in the one you mean\n");
         return 1;
     }

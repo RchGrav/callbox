@@ -232,7 +232,7 @@ names it and saves it (naming a process says you want to keep it), and
 
 `backmux shell` is the one launch meant for a person rather than a script:
 the shell runs on a PTY like any `-it` process, and its broker draws a chat
-window over it for talking to the agents placed with `-dt` (Ctrl-P Ctrl-T
+window over it for talking to the agents placed with `-dt` (Ctrl-Space c
 opens it). Nothing new carries the words — the window sends an ordinary
 `backmux msg` from the shell's process and shows the ordinary `backmux msg`
 replies — and the launch command, not the program's name, decides that

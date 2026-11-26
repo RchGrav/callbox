@@ -49,7 +49,7 @@ typedef size_t (*hold_term_pump_filter)(void *ctx, const char *in, size_t n, cha
 ssize_t hold_term_pump_master_filtered(int master, int logfd, char *buf, size_t n,
                                        hold_term_pump_filter filter, void *ctx);
 
-/* THE detach-key FSM (Ctrl-P Ctrl-Q by default). The first key is a lead
+/* THE detach-key FSM (Ctrl-Space q by default). The first key is a lead
  * key: it is held back until the next key says what it meant, however long
  * that takes - there is no timer, so a slow second key still works, and a
  * person can stop to think. The rest of the chord detaches (*completed
@@ -65,7 +65,7 @@ struct hold_term_detach {
     unsigned char pending[HOLD_TERM_DETACH_MAX_KEYS];
     size_t pending_len;
     unsigned char intr; /* 0 = none; else this byte reports *completed = 2 */
-    /* Command keys after the lead key (backmux's Ctrl-P Ctrl-<letter>):
+    /* Command keys after the lead key (backmux's Ctrl-Space then a letter):
      * one reports *completed = 3 with it in command. With commands set, any
      * other key after the lead key cancels - both are dropped - and an
      * escape sequence (a mouse report) passes through while the lead key

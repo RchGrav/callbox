@@ -50,7 +50,7 @@ FINISH OR HAND OVER
 
   For your app, replace vi and its inputs with your reproduction steps.
   If it already runs in Backmux, use its name. A person can join a running
-  terminal with backmux attach NAME; Ctrl-P Ctrl-Q leaves it running.
+  terminal with backmux attach NAME; Ctrl-Space q leaves it running.
   Backmux cannot adopt a process that was started outside it.
 
 WHEN A SCREEN IS MISLEADING

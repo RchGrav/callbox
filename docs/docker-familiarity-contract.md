@@ -26,7 +26,7 @@ runs host processes, not containers, and has no daemon.
     --rm            remove the process's record and log after it ends
     --restart       no | always | unless-stopped | on-failure[:N]; not
                     with -t
-    --detach-keys   detach sequence for a PTY attach (default ctrl-p,ctrl-q)
+    --detach-keys   detach sequence for a PTY attach (default ctrl-space,q)
 ```
 
 Value flags also take `--flag=value`. Flags come before the command; every
@@ -51,7 +51,7 @@ agents name what they want (`-d`, `-dt`, `-dw`, `-i`).
 
 The keys are Docker's, in every mode you are on a process: Ctrl-C goes to the
 program (Docker's sig-proxy; without a terminal, a SIGINT sent to backmux is
-passed on), and `Ctrl-P Ctrl-Q` detaches, leaving it running. Docker's detach
+passed on), and `Ctrl-Space q` detaches, leaving it running. Docker's detach
 keys need a TTY; backmux reads keys itself, so they also detach `-i` processes
 and plain foreground processes (`-w`). Following a log (`logs -f`, `tail`,
 `--tail`) is not being on a process: Ctrl-C stops following, as `docker logs -f`

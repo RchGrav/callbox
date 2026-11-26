@@ -129,7 +129,8 @@ void hold_console_set_attached_name(const char *name);
  * *handed_back with the console to show plainly when one pane is left and
  * nothing floats. */
 int hold_mux_run(const struct hold_store *store, const char *chat_name, const char *first_sock,
-                 unsigned char command, char *handback, size_t n, bool *handed_back);
+                 unsigned char command, const unsigned char *rest, size_t rest_len, char *handback, size_t n,
+                 bool *handed_back);
 /* After an attach was refused with EBUSY over FIFOs: the pid that has the
  * console, 0 if the broker did not say. */
 pid_t hold_fifo_busy_holder(void);

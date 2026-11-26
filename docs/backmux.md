@@ -6,8 +6,8 @@ a time, and simple tiling. Every line below carries its reason; anything that
 cannot state one does not go in.
 
 **The model: nothing has chat and nothing has splits.** Chat is free
-floating: `Ctrl-P Ctrl-T` brings it up over whatever you are attached to, and
-it belongs to you, not to any process. Splits exist only because `Ctrl-P Ctrl-A`
+floating: `Ctrl-Space c` brings it up over whatever you are attached to, and
+it belongs to you, not to any process. Splits exist only because `Ctrl-Space p a`
 attached a second process beside the first. No launch verb, `shell` included,
 carries either. Why: chat and splits are things a person does, not
 properties of a program; tying them to a kind of process (as callbox's chat
@@ -16,7 +16,7 @@ shell did) made people pick a mode up front to get them.
 **Muxing is optional, and nothing muxes by default.** Every process works
 exactly as it does now: one program, the whole terminal, attach and detach as
 today, and programs are started from the command line as now. Panes appear
-only when someone asks for a second one: `Ctrl-P Ctrl-A` brings another
+only when someone asks for a second one: `Ctrl-Space p a` brings another
 running process in beside the one they are attached to. Closing back to one pane
 is the old screen again. Why: the tool earns its name by making splits simple
 and powerful for those who want them, without making anyone who does not
@@ -50,9 +50,9 @@ backmux 1.0.0-dedbeef
  backmux set <name|id> <param>=<value>  edit profiles, args, start paths, name
  backmux unset <name|id> <param>        clear a profile setting, mode, arg, etc
 
- Ctrl-P Ctrl-Q detach process with durable handle, full reattach control or end
- Ctrl-P Ctrl-T recall floating user chat window after it has been dismissed
- Ctrl-P Ctrl-H the rest of the control keys to control backmux
+ Ctrl-Space q  detach process with durable handle, full reattach control or end
+ Ctrl-Space c  recall floating user chat window after it has been dismissed
+ Ctrl-Space ?  the rest of the control keys to control backmux
 
  backmux help aliases                   container aliases (100% less container)
  backmux help agents                    orchestration and tui debugging details
@@ -159,50 +159,80 @@ Docker get a translation, everyone else never sees it.
 
 ## Keys
 
-Every command is `Ctrl-P` then `Ctrl-<letter>`. Why: one shape to learn.
+Every command is the prefix, `Ctrl-Space`, then one key. Why: one shape to
+learn, and a prefix no shell or editor needs held back (Emacs and readline
+only tap `Ctrl-Space` to set a mark, and the prefix twice still sends one).
+The old prefix, `Ctrl-P`, is a shell's previous-command key, and its
+`Ctrl-<letter>` second keys ran out and collided with other keys' bytes
+(`Ctrl-M` is Enter, `Ctrl-J` a newline).
 
-| Key | Does |
+| After `Ctrl-Space` | Does |
 |---|---|
-| `Ctrl-P Ctrl-Q` | detach the active pane; the last one leaves the terminal |
-| `Ctrl-P Ctrl-T` | chat |
-| `Ctrl-P Ctrl-A` | attach a running process beside this one |
-| `Ctrl-P Ctrl-S` | swap panes: each pane shows `A: name`; two letters swap two |
-| `Ctrl-P Ctrl-G` | go to window: press its number |
-| `Ctrl-P Ctrl-M` | move the active pane to another window: press a number; you stay |
-| `Ctrl-P Ctrl-F` | toggle the active pane full screen |
-| `Ctrl-P Ctrl-J` | jump by name: the panes of this terminal, with their windows |
-| `Ctrl-P Ctrl-W` | the next window with panes (shown bottom right when there is more than one) |
-| hold `Ctrl-Space` | the keys and every pane's name, until let go |
+| `q` | detach the active pane; the last one leaves the terminal |
+| `c` | chat: open it with the keyboard; again, while typing in it, put it away |
+| `s` | swap: two letters swap two panes; a letter and a number send a pane to that tab |
+| `z` | the active pane full screen, or back |
+| `f` | footers on or off |
+| `n` | rename the active pane's process (asked in its footer) |
+| `;` | save the active pane's process, asking for its name first |
+| `\` | lock the active pane, or unlock it |
+| `w` | spread: every tab used before any splits |
+| `a` | alphabetize: the panes in name order, in the places they had |
+| `d` | densify: four to a tab from the first |
+| `p` `t` `r` `m` | pane, tab, resize, move mode |
+| `?` | the keys |
+| `Ctrl-Space` | one `Ctrl-Space` to the program |
 
-- **Help is not a key: hold `Ctrl-Space`.** From the key's first repeat
-  the keys and the names show; letting go takes them away. Why: they are
-  wanted for a glance, not as a window to close, and holding `Ctrl-Space`
-  is never an accident, so there is nothing to wait out. Terminals report no key release, so
-  "let go" is the key's auto-repeat stopping (repeats come every 30-92 ms;
-  150 ms without one is let go). A tap is the program's: a second
-  `Ctrl-Space` within 700 ms (key repeat starts at 250-660 ms) makes it a
-  hold and every one is swallowed; otherwise the tap goes through once that
-  is clear. `Ctrl-Space` was chosen because nothing holds it: Emacs and
-  readline only tap it, to set a mark.
-- **Help lists the keys and nothing else.** Why: a mode says what it wants
-  when it is entered ("Move to window: press a number"), and what is on
-  screen already (the window indicator) need not be repeated.
-- **`Ctrl-P` waits for the second key, with no time limit.** Why: not
-  everyone types fast. `Ctrl-P Ctrl-P` sends one `Ctrl-P` to the program.
-- **`Ctrl-P` then any key that is not a command cancels; both keys are
+- **`q` detaches.** Why: Docker's detach is `Ctrl-P Ctrl-Q`, and `d` is
+  densify.
+- **The prefix waits for the next key, with no time limit.** Why: not
+  everyone types fast.
+- **The prefix then a key that is not a command cancels; both keys are
   dropped.** Why: a wrong second key is almost always a mistyped command,
-  and passing it on would hit the program with a stray `Ctrl-P` (previous
-  command in a shell, completion in vim) plus a random key.
-- **A mouse event is not the second key;** it is handled and the lead key
+  and passing it on would hit the program with a stray prefix and a letter
+  it never meant to get.
+- **A mouse event is not the second key;** it is handled and the prefix
   goes on waiting. Why: moving the mouse should never answer a key prompt.
-- **`Ctrl-M` is Enter's byte,** so `Ctrl-P Enter` also moves a pane.
-  Nothing else uses `Ctrl-P Enter`. `Ctrl-I` (Tab) and `Ctrl-[` (Esc) stay
-  unused: the terminal sends the same bytes as those keys.
+- **`?` shows the keys, on request only, and any key puts them away.** In a
+  mode, `?` shows that mode's keys. Why: keys shown unasked cover the
+  programs; holding `Ctrl-Space` for help (the earlier design) swallowed
+  every repeated `Ctrl-Space` a program wanted, and needed timers to guess
+  when the key was let go.
+- **Modes keep the keyboard until Esc or Enter.** `p` pane (arrows or
+  `h j k l` move between panes, `a` attach a running process, `g` jump to a
+  pane by name, `z` full screen), `t` tab (`1`-`9` go there, Left/Right the
+  previous or next), `r` resize (arrows or `h j k l` grow the active pane
+  that way, Shift-arrows or `H J K L` shrink it from that side, `=` even),
+  `m` move (arrows swap with the pane that way, `1`-`9` send it to that
+  tab). A number in tab or move mode finishes the job and leaves the mode.
+  Why: moving around takes several presses, and the prefix before each
+  would be tiring; the resize letters are Zellij's.
+- **`Alt`-arrows move between panes without the prefix,** when there is a
+  pane that way and the active pane is not locked; otherwise they are the
+  program's. Why: moving between panes is the most common thing done, and
+  a program still gets `Alt`-arrows wherever there is nowhere to move.
+  (Stock macOS Terminal sends `Option`-Left/Right as `Esc b` / `Esc f`;
+  there they move only with "Use Option as Meta" on.)
+- **A locked pane gives its program the keys backmux takes without the
+  prefix** (the `Alt`-arrows). The prefix still works there, and twice
+  still sends one. Why: one pane may run something that wants those keys
+  (tmux, another backmux, an editor) while the others keep them; the lock
+  says so in the pane's footer and nowhere else.
+- **Rename and save ask in the active pane's footer:** Enter gives the
+  name (the one it has is a fine answer), Esc gives up. Rename also saves,
+  as `backmux rename` does; save renames first when the name was changed.
+  Why: one line where the pane is, and a name is what a profile is known by.
+- **Chat is left only with the prefix then `c`.** Esc stays a key for
+  writing in it. Why: chat is not a mode to fall out of with half a message
+  written.
+- **`Ctrl-Space` is `ctrl-space` to `--detach-keys`** (also `ctrl-@`); the
+  default is `ctrl-space,q`.
 
 ## Floating windows
 
-- **One floating window at a time; Esc closes it.** Why: one rule to
-  remember, and nothing piles up over the work.
+- **One floating window at a time.** Esc closes the attach list and the
+  names list; chat is left with the prefix then `c` (see Keys). Why: one
+  rule to remember, and nothing piles up over the work.
 - **Floating windows are pinned to nothing.** They sit over the whole
   screen and move freely across split lines; no pane or window owns them.
   Why: chat is the person's, not any program's, so it goes where the
@@ -226,7 +256,7 @@ Every command is `Ctrl-P` then `Ctrl-<letter>`. Why: one shape to learn.
 ```
 1 pane         2 panes          3 panes          4 panes
 ┌────────┐     ┌────┬────┐      ┌────┬────┐      ┌────┬────┐
-│   A    │     │ B  │ A  │      │ B  │ A  │      │ B  │ A  │
+│   A    │     │ A  │ B  │      │ A  │ B  │      │ A  │ B  │
 │        │     │    │    │      ├────┤    │      ├────┼────┤
 │        │     │    │    │      │ C  │    │      │ C  │ D  │
 └────────┘     └────┴────┘      └────┴────┘      └────┴────┘
@@ -234,33 +264,45 @@ Every command is `Ctrl-P` then `Ctrl-<letter>`. Why: one shape to learn.
 
 - **One pane is the default and is today's screen exactly.** Why: muxing
   is opt-in.
-- **Placement is automatic:** the second pane takes the left, the third the
-  bottom of the left column, the fourth the bottom of the right column.
-  Why: a terminal has three to four times more columns than rows; rows are
-  the scarce resource, and left/right first keeps the full height longest.
-- **Four panes to a window, ten windows to a terminal,** on the number keys
-  1-9 and 0. A window may be empty; `Ctrl-P Ctrl-W` skips empty ones. A new
-  pane joins the window on screen when it has room, else the first that
-  does. Why: past four, panes are too small to use; ten is what the number
-  keys reach.
-- **Letters are for the screen, names for everyone else.** `Ctrl-P Ctrl-S`
-  puts `A: name` on each pane on screen; `backmux swap` takes names or ids
-  only. Why: a shell or an agent cannot see which screen a letter would
-  mean, and a terminal running several windows cannot guess.
+- **Placement is automatic: A left, B right, C under A, D under B.** Why:
+  reading order, so the first pane stays where it was and each new one
+  lands where the eye goes next; and a terminal has three to four times
+  more columns than rows, so left/right first keeps the full height
+  longest. Resize mode moves the lines between them, nothing else.
+- **Four panes to a tab, nine tabs to a terminal,** on the number keys 1-9.
+  A tab may be empty. A new pane joins the tab on screen when it has room,
+  else the first that does. Why: past four, panes are too small to use;
+  nine is what the number keys reach without 0, which reads as "none".
+- **Letters run on across tabs:** A-D are tab 1's places, E-H tab 2's, and
+  so on to Z. In swap, a letter past a tab's panes means that tab: the pane
+  goes there. Why: one alphabet for every place, so going past four panes
+  needs no other key; a number sends a pane to any tab.
+- **Letters are for the screen, names for everyone else.** `backmux swap`
+  takes names or ids only. Why: a shell or an agent cannot see which screen
+  a letter would mean.
+- **Rearranging:** `w` spreads (12 panes: every tab used, the first three
+  split left and right), `d` densifies (12 fill tabs 1-3), `a` puts them in
+  name order in the places they had. Focus stays with the pane it was on.
+  Why: panes arrive in whatever order they were attached; these put them
+  back into an order with one key.
 - **Click a pane to move to it.** Why: the mouse is already there.
 
-## Names
+## Footers
 
-- **Every launch and attach shows the process's name in the upper corner,
-  with `hold Ctrl-Space: help`;** never the command. Why: the name is what
-  `msg`, `attach` and every agent take, and the only thing the person cannot
-  otherwise find out; the command is what they just typed.
-- **Moving the mouse into a pane shows its name for 2 seconds.** Why: with
-  four panes, which one is which is the question every time.
-- **Holding `Ctrl-Space` shows every pane's name** with the keys.
-- **A pane in the left column has its name at its top left; the others at
-  their top right.** Why: names sit at the screen's outer edges, clear of
-  help and the other floating windows, which open in the middle.
+- **Every pane has a footer row: its letter, its name, and its status**
+  (`LOCKED`, the mode on, `FULL`, unread chat, the last notice, a name being
+  asked for). `f` turns footers off and on, for the terminal. Why: status
+  in one steady place per pane, never things popping up in corners; the
+  name is what `msg`, `attach` and every agent take.
+- **Footers show only while more than one pane is attached.** Why: one pane
+  goes back to plain attach, and a row taken and given back would make its
+  program redraw twice for nothing.
+- **With footers off, a footer shows only while it is needed** (swap's
+  letters, a name being asked for, a notice), over the pane's last row.
+- **No corner labels:** no name on attach, on arrival or on focus, no mode
+  name, no tab count, no lock note. Why: they covered the programs and were
+  not wanted; the footer holds all of it, and `backmux list` names
+  everything running.
 
 ## Underneath
 

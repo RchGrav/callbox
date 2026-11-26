@@ -21,7 +21,7 @@ START THE TWO AGENTS
   The agent setting is what makes each message arrive with a header naming
   the sender and how to reply; without it a message arrives as typed text.
   Complete any login or trust prompt before assigning work; backmux attach
-  reviewer lets you operate it yourself, and Ctrl-P Ctrl-A there puts lead
+  reviewer lets you operate it yourself, and Ctrl-Space p a there puts lead
   beside it.
 
 ASSIGN WORK AND CHECK PROGRESS

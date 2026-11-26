@@ -14,11 +14,11 @@ OPEN YOUR AGENT AND APP
     backmux call --name app ./my-tui
 
   Check that coder is ready for a prompt before starting the app. The app
-  runs on your terminal. Press Ctrl-P Ctrl-A and choose coder: it joins as a
+  runs on your terminal. Press Ctrl-Space p a and choose coder: it joins as a
   pane beside the app, so you watch both. Click a pane to type in it.
 
 DESCRIBE AND REPRODUCE THE ISSUE
-  Press Ctrl-P Ctrl-T to open your chat, then Tab to choose coder. For
+  Press Ctrl-Space c to open your chat, then Tab to choose coder. For
   example:
 
     In process app, Down skips a menu item. Reproduce it with peek and send,
@@ -57,7 +57,7 @@ JOIN AN APP YOUR AGENT ALREADY STARTED
 
     backmux attach app
 
-  Ctrl-P Ctrl-Q detaches and leaves it running. Only one interactive attach
+  Ctrl-Space q detaches and leaves it running. Only one interactive attach
   is allowed at a time; peek, send, and resize still work while you are
   attached.
 

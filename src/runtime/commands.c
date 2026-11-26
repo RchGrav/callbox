@@ -38,13 +38,13 @@ void hold_note_attached_elsewhere(const char *label, pid_t by, const struct hold
     for (int i = 0; i < 2 && o.sid > 0 && !o.label[0]; i++)
         if (stores[i] && stores[i]->record_dir[0]) (void)hold_for_each_record(stores[i]->record_dir, match_session, &o);
     if (o.label[0])
-        fprintf(stderr, "backmux: %s is already attached, from inside the process %s (pid %ld). Detach it there: Ctrl-P Ctrl-Q.\n",
+        fprintf(stderr, "backmux: %s is already attached, from inside the process %s (pid %ld). Detach it there: Ctrl-Space q.\n",
                 label, o.label, (long)by);
     else if (by > 0)
-        fprintf(stderr, "backmux: %s is already attached in another terminal (pid %ld). Detach it there: Ctrl-P Ctrl-Q.\n",
+        fprintf(stderr, "backmux: %s is already attached in another terminal (pid %ld). Detach it there: Ctrl-Space q.\n",
                 label, (long)by);
     else
-        fprintf(stderr, "backmux: %s is already attached in another terminal. Detach it there: Ctrl-P Ctrl-Q.\n", label);
+        fprintf(stderr, "backmux: %s is already attached in another terminal. Detach it there: Ctrl-Space q.\n", label);
 }
 
 bool hold_call_still_running(const struct hold_store *store, const char *id) {

@@ -53,7 +53,7 @@ bool hold_call_records_exit(const struct hold_run_record *r);
 int hold_tail_log_until_exit(const struct hold_run_record *r, bool from_end, bool follow_until_exit);
 int hold_print_run_log(const struct hold_run_record *r);
 /* Follow a plain call this process just launched (or redialed) in the
- * foreground: Ctrl-C goes to the program, Ctrl-P Ctrl-Q leaves it running. */
+ * foreground: Ctrl-C goes to the program, Ctrl-Space q leaves it running. */
 int hold_follow_launched_call(const struct hold_invocation *inv, const struct hold_run_record *r, const char *label);
 void hold_rollback_spawned_group(pid_t pid, pid_t pgid);
 bool hold_wait_target_group_gone(const struct hold_run_record *r, int timeout_ms);

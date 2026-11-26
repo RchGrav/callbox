@@ -141,9 +141,14 @@ static int parse_restart_delay_arg(const char *arg, int *out) {
     return 0;
 }
 
-/* One detach-key token: a literal byte, ^X, or ctrl-x / ctrl-X. */
+/* One detach-key token: a literal byte, ^X, ctrl-x / ctrl-X, or ctrl-space
+ * (NUL, the default prefix, by the name people know it by). */
 static int detach_key_token_value(const char *token, size_t len, unsigned char *out) {
     if (!token || len == 0 || !out) return -1;
+    if (len == 10 && !strncasecmp(token, "ctrl-space", 10)) {
+        *out = 0x00;
+        return 0;
+    }
     if (len == 1) {
         *out = (unsigned char)token[0];
         return 0;
@@ -321,9 +326,9 @@ static int apply_run_value_opt(enum run_opt_id id, const char *value, struct cli
         return configure_detach_keys_option(value);
     case OPT_CHAT_KEY:
         /* Chat is no longer part of a call: it floats over whatever you are
-         * attached to, on Ctrl-P Ctrl-T, so a call has no chat key to set. */
+         * attached to, on Ctrl-Space c, so a call has no chat key to set. */
         (void)value;
-        fprintf(stderr, "backmux: error: --chat-key is gone: chat belongs to no process; Ctrl-P Ctrl-T opens it anywhere\n");
+        fprintf(stderr, "backmux: error: --chat-key is gone: chat belongs to no process; Ctrl-Space c opens it anywhere\n");
         return HOLD_EXIT_USAGE;
     case OPT_RESTART:
         return parse_restart_policy_arg(value, run->restart_policy);
@@ -894,7 +899,7 @@ int hold_cli_main(int argc, char **argv) {
         /* A program placed with no verb and no session flags is a call:
          * attached on a PTY, as backmux call does. No call carries chat or
          * splits any more - chat floats over whatever you are attached to
-         * (Ctrl-P Ctrl-T) and panes come from Ctrl-P Ctrl-A - so nothing
+         * (Ctrl-Space c) and panes come from Ctrl-Space p a - so nothing
          * here asks for them. */
         bool restart_asked = run.restart_policy[0] && strcmp(run.restart_policy, "no") != 0;
         bool bare = !run.detach && !run.interactive && !run.tty && !console_mode && !run.tail_flag && !run.wait &&
