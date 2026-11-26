@@ -1,8 +1,8 @@
-backmux help messaging - exchange messages from any harness
+backmux help messaging - send messages and receive replies
 
-Use this to hand off work and receive reports across terminal agents.
-Anything that can run a command can send a message. A receiving agent needs
-an input-enabled process; a sender outside Backmux receives replies in an inbox.
+Send work to a terminal agent through its input console and receive reports
+in a managed process or inbox. The sender needs command execution access;
+the receiving agent needs a terminal or pipe-input console.
 
 PREPARE A RECEIVER
   This example uses an installed, configured Codex harness:
@@ -53,17 +53,18 @@ WAIT FOR A REPLY OR FOLLOW THE CONVERSATION
   text before treating a message as the answer to a particular task.
 
 UNDERSTAND WHERE A MESSAGE GOES
-  Inside a TTY process (call, agent, detach, shell), a message is typed into
-  the program and Enter submits it: with the agent setting on, behind a
-  header naming the sender and how to reply; without it, raw, as if typed.
-  backmux set/unset NAME agent switch it from the next message. A message
-  to a person goes to their chat (Ctrl-Space c), by their chat name.
+  Terminal and pipe-input processes receive message text as program input,
+  followed by Enter by default. The agent setting adds a sender/reply header;
+  without it, no header is added. set NAME agent and unset NAME agent change
+  the format for subsequent messages. Address messages to a person by their
+  chat name; the messages appear in their chat window (Ctrl-Space c).
   server processes have no input console and refuse messages. Backmux delivers
   input; it does not manage a harness's work queue.
 
   An outside inbox is created on first send, not by monitor. Its name
   expires after an hour without use; individual messages expire one hour
-  after delivery. No timeout means keep waiting. Timeout exits 7.
+  after delivery. With no timeout, wait for a message or inbox expiry.
+  A timeout exits 7; inbox expiry exits 8.
   backmux wait is different: it waits for a process's screen or process exit.
 
   When the reviewer is no longer needed: backmux end reviewer, then

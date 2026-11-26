@@ -11,23 +11,20 @@
 
 #include <regex.h>
 
-/* The console broker: owns a call's PTY master, captures every output byte to
- * the indexed log, and keeps a headless terminal (the screen layer) in step
- * with it. Clients reach it over the call's private Unix socket:
+/* The console broker owns a process's PTY master or input/output pipes,
+ * records output, and maintains the headless screen model. Clients use a
+ * private Unix-domain socket or the FIFO transport:
  *
- *   - one attach client at a time (backmux attach / backmux -it): framed or raw
- *     terminal bridge, repainted from the live screen when it connects;
- *   - any number of control clients (backmux peek / send / wait / resize): one
- *     length-prefixed request, one length-prefixed reply, then close.
+ *   - one attach client at a time; a newer attach replaces the current one;
+ *   - up to BROKER_MAX_CONTROL connection slots for control requests,
+ *     pending connection classification, and nested-attach registration.
  *
- * When the target exits, the final screen is written beside the log so the
- * last frame stays inspectable after the socket is gone.
+ * The broker saves the final screen when output closes, then updates its
+ * exit metadata after reaping the program.
  *
- * A backmux shell (options->chat) differs in two ways, both confined to the
- * `b->chat` branches below: its attach client is sent composed frames (the
- * screen with the chat window over it, see overlay.h) instead of the PTY's
- * raw bytes, and a message for it goes to the chat inbox instead of being
- * typed. Every other call runs the paths it always did. */
+ * With options->chat, the broker also draws chat and delivers messages to
+ * that window. Fresh CLI launches instead use compositor-hosted chat
+ * (mux.c); the broker's chat path remains conditional on this option. */
 
 #define BROKER_MAX_CONTROL 64
 #define BROKER_WRITE_TIMEOUT_MS 5000
@@ -39,7 +36,7 @@
 #define BROKER_MAX_MSGS 16
 /* backmux msg loop guard: at most this many deliveries per receiver per minute. */
 #define BROKER_MSG_RATE 20
-/* A sender that messages the instant it starts may beat its call's record,
+/* A sender that messages the instant it starts may beat its process's record,
  * and the header's name comes from that record: wait this long for it. */
 #define BROKER_MSG_SENDER_GRACE_MS 2000
 /* A backmux shell's display is redrawn at most this often: output that arrives
@@ -108,8 +105,8 @@ struct broker {
         size_t len;
         bool submit;
         bool has_claim;
-        bool operator; /* the claim is an operator's name (a sender outside any call), not a call */
-        char claim[ALIAS_MAX_LEN + ID_STR_LEN + 1]; /* the sender's call: its BACKMUX_ID */
+        bool operator; /* the claim is an operator's name (a sender outside any process), not a process */
+        char claim[ALIAS_MAX_LEN + ID_STR_LEN + 1]; /* the sender's process: its BACKMUX_ID */
         int64_t start_ms;
         struct control_client *waiter; /* reply here if still the same client */
         uint64_t waiter_gen;
@@ -117,7 +114,7 @@ struct broker {
     int64_t sent_ms[BROKER_MSG_RATE];
     int sent_idx;
     uint32_t msg_count; /* feeds each message's id */
-    struct chat *chat;  /* a backmux shell's chat and compositor; NULL for every other call */
+    struct chat *chat;  /* optional broker-hosted chat (options->chat) */
     off_t log_start;    /* where this run's output starts in the log */
     /* A program on pipes: input waiting for room in its stdin pipe. The
      * broker never blocks on that pipe - its one loop also drains the
@@ -200,7 +197,7 @@ static int write_all_wait(int fd, const void *buf, size_t n) {
     return 0;
 }
 
-/* Who may use the console: root, the call's owner, or the user a sudo
+/* Who may use the console: root, the process's owner, or the user a sudo
  * launch names. The socket learns the uid from peer credentials, the FIFO
  * console from who owns the client's private FIFOs. */
 static bool uid_allowed(const struct broker *b, uid_t uid) {
@@ -255,7 +252,7 @@ static int program_write(struct broker *b, const void *buf, size_t n) {
         size_t cap = b->inq_cap ? b->inq_cap : 16384;
         while (cap < b->inq_len + n) cap *= 2;
         unsigned char *p = realloc(b->inq, cap);
-        if (!p) return 0; /* out of memory: this input is lost, the call goes on */
+        if (!p) return 0; /* out of memory: this input is lost, the process goes on */
         b->inq = p;
         b->inq_cap = cap;
     }
@@ -402,7 +399,7 @@ static void drop_attach(struct broker *b, struct attach_client *c) {
         close(c->fd);
         if (b->chat) chat_detached(b->chat);
         /* Nobody is looking at this terminal any more: an attach client
-         * running in it would hold its own call's console unseen, with no
+         * running in it would hold its own process's console unseen, with no
          * way for its keys to reach it. It lets go too. */
         (void)forward_detach(b);
     }
@@ -673,8 +670,8 @@ static const char *kv_get(const char *line, const char *key) {
     return NULL;
 }
 
-/* "nested keys=<hex>": an attach client running in this call's terminal (it
- * must be in our program's session) is attached to some other call. The
+/* "nested keys=<hex>": an attach client running in this process's terminal (it
+ * must be in our program's session) is attached to some other process. The
  * connection is kept, unanswered, until that client goes. */
 static void handle_nested(struct broker *b, struct control_client *c, const char *args) {
     const char *v = kv_get(args, "keys");
@@ -693,7 +690,7 @@ static void handle_nested(struct broker *b, struct control_client *c, const char
 
 /* An attach client nested in this terminal, and at the front of it (in the
  * PTY's foreground process group, so what is typed is its to read): type
- * its detach keys, and it detaches from the call it is attached to. False
+ * its detach keys, and it detaches from the process it is attached to. False
  * when there is none. */
 static bool forward_detach(struct broker *b) {
     /* Nesting needs a terminal to be nested in: only a PTY has a front. */
@@ -715,7 +712,7 @@ static void handle_peek(struct broker *b, struct control_client *c, const char *
     const char *alt = strstr(args, "alt=1");
     if (alt) {
         if (!b->last_alt) {
-            control_replyf(c, "error the program has not left a full-screen (alternate) screen yet\n");
+            control_replyf(c, "error no completed alternate-screen snapshot is available\n");
             return;
         }
         control_reply(c, "ok\n", b->last_alt, b->last_alt_len);
@@ -787,7 +784,7 @@ static void handle_send(struct broker *b, struct control_client *c, char *ops) {
             b->mouse_col = (uint16_t)(col < 0 ? 0 : col);
             flush_screen_output(b);
         } else if (*line) {
-            control_replyf(c, "error unknown send op '%s'\n", line);
+            control_replyf(c, "error unknown send operation '%s'\n", line);
             return;
         }
         line = nl ? nl + 1 : NULL;
@@ -883,7 +880,7 @@ static void handle_wait(struct control_client *c, const char *args) {
             if (rc != 0) {
                 char err[128];
                 regerror(rc, &w->re, err, sizeof(err));
-                control_replyf(c, "error bad regex: %s\n", err);
+                control_replyf(c, "error invalid regular expression: %s\n", err);
                 return;
             }
             w->re_ok = true;
@@ -956,16 +953,16 @@ static int match_record_name(const char *id, const char *path, struct hold_run_r
     return 0;
 }
 
-/* Who is speaking: the sender's call (its BACKMUX_ID, or a name), named as
- * its record names it now - so a renamed call is shown, and answered, by its
+/* Who is speaking: the sender's process (its BACKMUX_ID, or a name), named as
+ * its record names it now - so a renamed process is shown, and answered, by its
  * new name. Not a proof: anything that can reach this console runs as the
  * console's user (the socket admits no one else), and could as well type
  * any text with backmux send. Why no more than that: the session and
  * ancestry check this replaced guarded only against the user's own
  * processes, cost every agent a longer header and a verify step, and read
- * as "safe" when it meant only "from". 1 found, -1 no record (yet: a call
+ * as "safe" when it meant only "from". 1 found, -1 no record (yet: a process
  * that messages the moment it starts can beat its own record write), 0 not
- * one call. */
+ * one process. */
 static int resolve_sender(const struct broker *b, const char *claim, char *label, size_t n, char id[ID_STR_LEN]) {
     label[0] = '\0';
     id[0] = '\0';
@@ -1022,7 +1019,7 @@ static void handle_msg(struct broker *b, struct control_client *c, const char *a
         if (vl > 0 && vl < sizeof(m->claim)) {
             memcpy(m->claim, v, vl);
             m->claim[vl] = '\0';
-            /* Only an id or a call name counts as a claim: anything else
+            /* Only an id or a process name counts as a claim: anything else
              * (spaces, newlines, control bytes) would end up in the .msgs
              * log and the typed header, where it could forge a line. */
             ssize_t cl = hex_decode(m->claim);
@@ -1031,8 +1028,8 @@ static void handle_msg(struct broker *b, struct control_client *c, const char *a
             if (!m->has_claim) m->claim[0] = '\0';
         }
     }
-    /* op=1: the sender runs outside any call and its replies go to an inbox
-     * under this name (runtime/inbox.c). Only a call name's shape is taken:
+    /* op=1: the sender runs outside any process and its replies go to an inbox
+     * under this name (runtime/inbox.c). Only a process name's shape is taken:
      * the header shows it and a reply addresses it. */
     m->operator = m->has_claim && (v = kv_get(args, "op")) && *v == '1' && hold_valid_alias(m->claim);
     m->text = malloc((size_t)blen + 1);
@@ -1054,7 +1051,7 @@ static void handle_msg(struct broker *b, struct control_client *c, const char *a
 }
 
 /* A short id per delivered message: the first 6 hex digits of a hash of the
- * call, the time, a counter, and the text (unique within one call's log). */
+ * process, the time, a counter, and the text (unique within one process's log). */
 static void make_msg_id(struct broker *b, const struct pending_msg *m, char out[7]) {
     struct sha256_ctx h;
     unsigned char d[32];
@@ -1070,7 +1067,7 @@ static void make_msg_id(struct broker *b, const struct pending_msg *m, char out[
     snprintf(out, 7, "%02x%02x%02x", d[0], d[1], d[2]);
 }
 
-/* A root broker serving a call in a user's store (sudo from that user's
+/* A root broker serving a process in a user's store (sudo from that user's
  * home) gives the files it creates beside the log the log's owner, so the
  * user can still read them (backmux peek, backmux msg --received). */
 static void own_like_log(const struct broker *b, int fd) {
@@ -1080,8 +1077,8 @@ static void own_like_log(const struct broker *b, int fd) {
 }
 
 /* <id>.msgs beside <id>.log: one line per delivered message, "ID UNIXTIME
- * FROMCALL SENDER HEXTEXT" - the call's message history (backmux msg
- * --received). FROMCALL is 1 when the sender is a call; the field is where an
+ * FROMCALL SENDER HEXTEXT" - the process's message history (backmux msg
+ * --received). FROMCALL is 1 when the sender is a process; the field is where an
  * older backmux put its verified flag, so logs from before read the same. */
 static void record_received(const struct broker *b, const char *id, bool from_call, const char *label,
                             const char *text, size_t len) {
@@ -1122,7 +1119,7 @@ static void msg_done(struct pending_msg *m, const char *id) {
     memset(m, 0, sizeof(*m));
 }
 
-/* Whether this call's messages arrive formatted for an agent (backmux agent,
+/* Whether this process's messages arrive formatted for an agent (backmux agent,
  * or backmux set NAME agent). Read from the record at every delivery, so set
  * and unset take effect from the next message with no relaunch. Unreadable
  * record: formatted, as messages always were - a header never hurts an agent,
@@ -1140,14 +1137,14 @@ static bool agent_mode(const struct broker *b) {
 /* Type a queued message: bracketed paste when the program asked for it, else
  * newlines flattened so it cannot submit early; then Enter. The header says
  * who sent it and how to reply - addressing, nothing more (see
- * resolve_sender). FROM is the sender call's name, or NULL when the message
- * came from outside any call backmux knows. */
+ * resolve_sender). FROM is the sender process's name, or NULL when the message
+ * came from outside any process backmux knows. */
 static void deliver_msg(struct broker *b, struct pending_msg *m, const char *from, const char *sender_id) {
     char id[7], header[400];
     make_msg_id(b, m, id);
     if (b->chat) {
         /* A backmux shell: the message goes to the chat inbox, filed under the
-         * call that sent it. It is shown, never typed: nothing a sender writes
+         * process that sent it. It is shown, never typed: nothing a sender writes
          * reaches the shell's input. */
         record_received(b, id, from != NULL, from ? from : "", m->text, m->len);
         chat_inbound(b->chat, from ? sender_id : NULL, from, m->operator, m->text, m->len);
@@ -1412,14 +1409,9 @@ static void reap_target(struct broker *b, bool block) {
     }
 }
 
-/* Another client wants the console: it takes it. The one that had it lets
- * go, silently; the call runs on. Why the newer attach wins: the person
- * asking for the call here is almost always the one attached there, in a
- * window they left open (or a pane they now want in another terminal), and
- * sending them to find it and detach first is the annoying part. Unlike a
- * detach, the call's terminal is still being looked at, so an attach nested
- * inside the call is not told to let go. Returns false: the console is
- * free for the newcomer. */
+/* A newer attach replaces the current client without stopping the program.
+ * Keep nested attaches active: the terminal still has an attached client.
+ * Returns false after releasing the previous connection. */
 static bool console_taken(struct broker *b, struct attach_client *cl) {
     if (cl->fd < 0) return false;
     if (cl->output != cl->fd) close(cl->output);
@@ -1779,7 +1771,7 @@ static void broker_serve(struct broker *b) {
     if (b->target_done && !target_marked && b->store && b->run_id && *b->run_id) {
         /* The exit stamp must not be lost to the launch race: retry until the
          * parent's record exists. rc 1 means the record was purged while the
-         * call was exiting — that removal is final, do not resurrect it. */
+         * process was exiting — that removal is final, do not resurrect it. */
         for (int i = 0; i < 50; i++) {
             int mark_rc = hold_mark_run_finished(b->store, b->run_id, b->target_status, b->program_pid);
             if (mark_rc == 0 || mark_rc == 1) break;
@@ -1799,8 +1791,8 @@ static void broker_serve(struct broker *b) {
         if (ctl[i].fd < 0) continue;
         if (ctl[i].phase == CTL_WAITING) check_wait(b, &ctl[i], now);
         /* A connection not yet known to be control may be an attach client
-         * arriving as the call ends: a control reply would be printed as
-         * the program's output. Closing it says the call is over. */
+         * arriving as the process ends: a control reply would be printed as
+         * the program's output. Closing it says the process is over. */
         else if (ctl[i].phase != CTL_SNIFF) control_replyf(&ctl[i], "error the process has ended\n");
         if (ctl[i].fd >= 0) drop_control(&ctl[i]);
     }

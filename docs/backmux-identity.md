@@ -1,255 +1,139 @@
-# Backmux — identity
+# Backmux product model
 
-Status: normative. This document sits above
-[docker-familiarity-contract.md](docker-familiarity-contract.md), which governs flag
-behavior and table output only. `backmux help <verb>` is the reference for
-every flag; this page orients.
+[Docs index](index.md) | [Glossary](glossary.md) | [Interactive controls](backmux.md)
 
-## The name
+Backmux manages named process groups on the host. It records how each program
+was launched, captures its output, and checks process identity before sending
+signals. Terminal processes also have a screen that people and agents can
+inspect and control. Messaging connects managed processes and named inboxes.
 
-A process box is where you place a process and walk away while it goes on, where
-you reach someone else on the line, and a terminal you walk up to and
-operate. Those are the tool's three jobs:
+The command definitions in `src/cli/main.c` and `src/cli/specs.c`, the runtime
+handlers, and the console input handlers define the implemented behavior.
+This page summarizes that behavior; `backmux help COMMAND` describes each
+command's syntax and options.
 
-- keeping a program running after the shell that started it is gone, with a
-  durable record, identity checks before any signal, and an exit code for CI
-  (from a foreground, `-dw`, `--rm`, `--restart`, or TTY process; a plain `-d`
-  call leaves no process behind to record one);
-- messaging between agents, with the sender's name and how to reply;
-- a headless screen for every TTY process that scripts and agents read and
-  type into (`peek`, `send`, `wait`, `resize`, `msg`).
+## Objects and names
 
-The telephone vocabulary follows from it: processes, redial, attach to pick the
-line back up, caller ID.
+| Term | Meaning |
+| --- | --- |
+| Managed process | A program and its managed process group, identified by a Backmux process ID and name. Its record can remain after the program exits. |
+| Process record | Stored launch settings, identity information, and recorded status. |
+| Saved profile | A process record protected from ordinary purge operations by `save` or `rename`. |
+| Terminal process | A managed process running on a pseudoterminal (PTY), with a console broker and a headless terminal screen. |
+| Pane | An attached view of a terminal process within the compositor. |
+| Window | A numbered group of up to four panes. One terminal can contain nine windows. |
+| Chat window | The person's messaging interface, drawn over the attached panes. |
+| Inbox | A named message destination for a sender outside a managed process, including the person's chat identity. |
 
-More than nohup, less than systemd.
+Use **PID** for an operating-system process identifier and **Backmux process
+ID** for the 64-character hexadecimal record identifier. A name, full ID,
+or supported unique prefix selects a process; see `backmux help targets`.
+Names remain reserved until the record is removed. Renaming changes the name
+without changing the Backmux process ID.
 
-The unit backmux manages is a **process**: one held process group. You place a
-process, list your processes, look at its screen, type into it, pick it back up,
-end it, save the ones worth keeping. "Run" and "container" do not appear in
-the vocabulary.
+## Launch a program
 
-## The shape: one binary
+| Command | Terminal and attachment | Message delivery |
+| --- | --- | --- |
+| `backmux call PROGRAM [ARGS...]` | PTY, attached | Message text is typed into the program. |
+| `backmux agent PROGRAM [ARGS...]` | PTY, attached | Typed text includes a sender and reply-command header. |
+| `backmux detach PROGRAM [ARGS...]` | PTY, detached | Typed text; use `set NAME agent` to enable the header. |
+| `backmux server PROGRAM [ARGS...]` | Background process with a log, without a console | No interactive message input. |
+| `backmux server -w PROGRAM [ARGS...]` | As above, with an exit waiter | The waiter records the program's exit status. |
+| `backmux shell [SHELL [ARGS...]]` | PTY, attached | Typed text, as for `call`; chat has a separate inbox identity. |
 
-One binary, small enough to code-review in an afternoon, statically linked
-on Linux and dynamically on macOS. It holds the lean core plus the screen
-layer: vendored libvterm (`third_party/libvterm`) and an embedded subset of
-Unifont and Noto Emoji glyphs (`src/screen/font_data.h`, licenses in
-`third_party/`). Each process's output is one plain log file, readable without
-backmux's help; `backmux logs` prints it, and the screen of a TTY process is
-what `peek` shows.
+All launch commands accept `--name NAME` before the program. Arguments after
+the program belong to that program. `call`, `agent`, `server`, and `detach`
+select the launch mode; do not combine them with conflicting session flags.
 
-## The surface
+The bare form `backmux PROGRAM [ARGS...]` defaults to an attached PTY.
+`backmux run` accepts the same launch syntax. The supported flag forms
+(`-it`, `-dt`, `-d`, `-dw`, and pipe-input `-i`) remain available;
+`backmux help aliases` and `backmux help launch` describe them.
 
-`backmux` is already a verb. There is no `run` command: `backmux run` starts
-a program named `run`.
+A plain `server` or `-d` launch leaves no Backmux supervisor to record its
+exit code. `server -w` or `-dw` keeps a waiter. A console broker or restart
+supervisor records the exit for the modes it manages. `wait NAME` prints
+the recorded exit code, or `-1` when the process ended without one.
 
-```sh
-# place a process (backmux help launch)
-backmux <cmd> [args...]          # user mode: attached on a PTY, messages to chat
-backmux -it <cmd> [args...]      # attached on a PTY, no chat window: messages typed in
-backmux -i <cmd> [args...]       # attached, your input relayed on a pipe (no PTY)
-backmux -d <cmd> [args...]       # detached: print the 64-hex process id
-backmux -dw <cmd> [args...]      #  ...and keep a waiter that records the exit code
-backmux -dt <cmd> [args...]      # detached on a PTY: a screen to drive
-backmux -dt --size C R <cmd>     #  ...of that size
-backmux shell [shell args...]    # your shell, with a chat window to your agents
-backmux <id|name>                # redial: place a recorded process again
+## Inspect and control a process
 
-# drive a TTY process
-backmux peek <target>            # the screen: text, --json, or --image PNG
-backmux send <target> TEXT       # type and press keys (-k, --paste, --mouse)
-backmux wait <target>            # until --idle, --match, --regex, or exit
-backmux resize <target> C R      # change its terminal size (SIGWINCH)
-backmux msg <target> TEXT        # message an agent; --received lists its history
+| Task | Commands |
+| --- | --- |
+| List processes | `list` shows running and unknown-state processes in the selected scope; `list all` includes stopped records. |
+| Inspect a record | `info NAME` shows readable details and environment variable names; `inspect NAME` prints the JSON record, including recorded values. |
+| Read output | `logs NAME` reads captured output; `tail NAME` follows new output from a running process. |
+| Inspect a screen | `peek NAME`, `peek NAME --json`, `peek NAME --image FILE` |
+| Provide input | `send NAME` supports text, keys, paste, and mouse events; `msg NAME TEXT` delivers a message. |
+| Wait for a result | `wait NAME` waits for exit; screen conditions include `--match`, `--regex`, and `--idle`. |
+| Resize a terminal | `resize NAME COLS ROWS` |
+| Attach interactively | `attach NAME`; the default detach sequence is Ctrl-Space, then q. |
+| Stop a process | `end NAME` sends SIGTERM, waits up to five seconds, then revalidates and sends SIGKILL if needed. `kill NAME` sends SIGKILL immediately. |
+| Relaunch a stopped process | `recall NAME` reuses its record, name, launch settings, and log. |
 
-# receive replies outside a process
-backmux inbox [NAME]             # read retained inbox history
-backmux inbox [NAME] --wait      # return one unread message, waiting if needed
-backmux monitor [NAME]           # follow unread and new messages until stopped
+Only one interactive client attaches to a process at a time. A new attach
+replaces the previous client without stopping the program. Independent
+`peek`, `send`, and other control requests remain available while attached.
+A pipe-input process also has a broker and can be attached; a plain server
+has logs but no screen or input console.
 
-# manage processes
-backmux list                     # your ledger: your processes, live and past
-backmux ps                       # the Docker view: running processes
-backmux attach <target>          # pick the process back up (console is an alias)
-backmux logs <target> [-f] [-n N]  # captured output
-backmux tail <target>            # a running process's output from now on
-backmux inspect <target>         # the record as JSON
-backmux ports <target>           # listening sockets of its process group
-backmux stats <target>           # CPU, memory, and process count
-backmux end <target>...          # TERM, then KILL after 5 s (stop is an alias)
-backmux kill <target>...         # KILL now
-backmux save <target>            # protect from purge
-backmux rename <target> <name>   # name a process; naming it also saves it
-backmux purge [<target>]         # the removal verb (rm, prune, drop are aliases)
-backmux config get|set|unset detach-size [C R]
-```
+`ports` and `stats` inspect process groups through Linux `/proc`. On macOS,
+`ports` has no socket results and `stats` reports zero usage values.
 
-A target is a process id, a leading id prefix, a process name, or a unique name prefix
-(`backmux help targets`). Exit codes are listed in `backmux help scripting`.
+## Process settings and saved profiles
 
-What the short lines leave out:
+`set` and `unset` edit the record of a running or stopped process:
 
-- **Launch flags** come before the command: `--name`, `-e`/`--env-file`,
-  `--rm`, `--restart` (not with `-t`), `--restart-delay`, `--detach-keys`,
-  `--quiet`, and `--` before a command that looks like a flag or a verb.
-- **Size of a detached TTY process:** `--size`, else the saved `detach-size`,
-  else the invoking terminal's size, else 80x24. The launcher samples the
-  terminal itself, because the broker runs with no terminal to ask.
-- **Redial** reuses the process's id, name, and log, and honors the recorded
-  session mode: a user-mode process (and a shell) comes back attached with
-  chat, a `-i` recipe comes back on pipes, a detached recipe detaches, and a
-  plain foreground recipe streams. A running process is not redialed.
-- **`logs`** prints the raw captured bytes: plain text for a plain process, the
-  raw terminal stream (escape sequences included) for a TTY process. For a TTY
-  process's screen, use `peek`.
-- **`wait`** with no condition waits for the process to end and prints its exit
-  code, or `-1` for a plain `-d` process, which records none. It exits 7 on a
-  timeout and 8 when the process ends before a screen condition holds.
-- **`attach`** exits 0 when you detach (the process still runs), 8 when the
-  call has ended (before or while you were on it), 3 when refused (attached
-  elsewhere), and 10 when the process has no console - so a script that
-  attached knows what it came back to.
-- **`msg`** reaches a running terminal or pipe-input process. The receiver is told who sent it
-  (the sender's `$BACKMUX_ID`, shown as that process's name) and how to reply -
-  addressing, not proof, since anything running as the user could type the
-  same text with `send`. Sending to a process prints the delivery ID on stdout,
-  and `msg --received [ID]` is the receiving process's message history.
-  Delivery to processes is capped at 20 messages a minute per receiver.
-- **Outside senders** get an inbox name on their first `msg`. Replies to
-  that name are stored, without a delivery ID on stdout. `inbox --wait`
-  returns one unread message; `monitor` (also `inbox --monitor`) follows
-  unread and new messages. `msg --wait-reply` waits for the first new inbox
-  message from any sender, without request correlation. These commands
-  share unread progress. See `backmux help messaging` for the workflow.
-- **`inspect`** prints the stored record as a one-element JSON array, as
-  `docker inspect` does: id, name, state, pids, times, argv, mode, and
-  `log_path`. `state` is the evaluated state; a differing stored value is
-  kept as `recorded_state`. A running process also gets `Stdio`, where fds
-  0/1/2 point now.
-- **`ports` and `stats`** read the process group from `/proc`, so your own
-  processes need no root. They work on Linux only; on macOS `ports` lists
-  nothing and `stats` reports zeros. `ports` lists listening TCP and bound
-  UDP sockets.
-- **`end` and `kill`** take several targets, and `--print` prints the
-  equivalent `kill` command instead of sending a signal. Each target is
-  acted on alone, as `docker stop a b c` does: one that does not resolve is
-  reported and the rest are still ended; the exit code is the worst. (A
-  mistyped name among several used to end none of them.)
-- **Names** that are backmux verbs (`list`, `logs`, ...) are refused at
-  `--name` and `rename`: the verb always wins at the top level, so such a
-  call could never be redialed by name. Processes named so before keep their
-  names. A name taken by another process or active inbox in the same store
-  exits 11. Outside inboxes are addressed by their complete names.
-- **`save`** has no inverse; `backmux purge <target> --force` removes a
-  saved process.
+| Setting | Effect | `unset` result |
+| --- | --- | --- |
+| `agent` | Include the sender and reply-command header from the next delivered message. | Deliver message text without the header. |
+| `working=DIR` | Use this working directory on the next launch. | Use the working directory of the next recall invocation. |
+| `program=PROGRAM` | Change the executable for the next launch. | Rejected; a program is required. |
+| `args=ARGS` or `args -- ARG...` | Change arguments for the next launch. The `args=...` form splits on spaces and tabs; `args --` preserves shell argument boundaries. | Launch without arguments. |
+| `name=NAME` | Rename the record immediately and save it. The running program's existing environment does not change. | Rejected; the record retains a name. |
 
-### Purge
+`save NAME` protects a record from ordinary cleanup. `rename NAME NEWNAME`
+also saves it. `delete NAME` removes a stopped record, including a saved
+profile; it refuses a process confirmed to be running. `purge NAME --force` can stop and
+remove a running process or remove a saved record.
 
-`backmux purge` is the one removal verb. With no target it sweeps ended
-processes; `-a` includes stale ones. `-u` sweeps your personal store (the
-default); `-s` sweeps the global store and, for a normal user, re-execs once
-through `sudo` so `sudo` can prompt for the password. A target removes one
-process. With a target, `--force` removes it even when saved or live (a live
-call is ended first); in a sweep, `--force` only includes stale processes, like
-`-a`, and never removes saved or live ones.
+`purge` without a target removes eligible stopped, unsaved records.
+`purge all` also stops unsaved running processes before removing their
+records. Saved profiles are excluded from both sweeps. These are different
+operations: positional `all` is not the same as the `-a` scope/state option.
+See `backmux help purge` for scope flags and stale or unknown states.
 
-Purging a saved process without `--force` refuses safely (exit 2) and repeats
-the command the user meant, ready to copy:
+## List scope
 
-```text
-$ backmux purge happy_tiger
-backmux: 'happy_tiger' is saved — purging a saved process requires --force
-  backmux purge happy_tiger --force
-```
+`list` includes a USER column and has explicit store selection. A normal
+user's default scope is their own store; root's default is the system store.
+`-u` selects the user's store, `-s` selects the system store, and `-a` selects
+both (root also enumerates other users' stores). Positional `all` includes
+stopped records, independently of store selection. A name filter includes
+matching stopped records unless `--live` is given.
 
-## ps speaks Docker; list speaks Backmux
+`ps` is the Docker-style view: a normal user sees their own processes and
+redacted system entries; root sees the system store. `ps -a` includes stopped
+records. It omits the USER column and does not accept `list`'s scope flags.
 
-There are two listings, and they answer different questions.
+Root-managed records expose only their public projection to normal users.
+Private command and owner fields appear as `hidden`. Public ports reflect
+root's last refresh during `list` or `ps`, so they can lag behind the process.
+See [Store](store.md) and [Docker-style syntax](docker-familiarity-contract.md).
 
-**`ps` is the Docker mirror.** Docker has no user/system split, so `ps`
-takes no scope flags and has no USER column. It shows running processes across
-the scopes you can see: a normal user sees their own processes in full and the
-global (root-managed) processes redacted; root sees the global processes. Other
-users' personal processes never appear in `ps`. `backmux ps -a` adds the ended
-ones, as Docker's `-a` does. It renders Docker's columns minus IMAGE, which
-backmux has no analogue for:
+## Chat, panes, and help
 
-```text
-PROCESS ID   COMMAND   CREATED   STATUS   PORTS   NAMES
-```
+Interactive terminal controls use Ctrl-Space followed by a command key.
+Ctrl-Space p enters Pane Navigation; `a` there opens the attach picker.
+Ctrl-Space c opens the person's chat window over the attached process.
+Chat uses its own inbox name; it is not the shell process's message receiver.
 
-**`list` is Backmux's scoped ledger.** The ledger of past processes is the
-product, so `list` defaults to your whole personal ledger, live *and* past,
-and adds a USER column in Docker's IMAGE slot (second, after PROCESS ID):
+Ctrl-Space ? shows the command help. Within Pane Navigation, Window
+Navigation, Pane Resizing, or Pane Placement, `?` shows the relevant controls.
+The [interactive reference](backmux.md) lists the implemented shortcuts.
+The [shell and chat guide](shell.md) covers messaging and display behavior.
 
-```text
-PROCESS ID   USER   COMMAND   CREATED   STATUS   PORTS   NAMES
-```
-
-The scope flags belong entirely to `list`:
-
-- **`backmux list`** (a normal user) — your processes, live and past.
-- **`backmux list -a`/`--all`** — your ledger plus every global process,
-  redacted.
-- **`backmux list -s`/`--system`** — the global processes only, none of yours.
-- **`backmux list -u`/`--user`** — your personal processes only, even under sudo
-  (the invoking user's store, never root's).
-- **`sudo backmux list`** (root) — the global processes only, authoritative.
-  `sudo backmux list -a` also walks every user's store under
-  `/home/*/.local/state/backmux` (`/Users/*/…` on macOS, where homes live),
-  and the USER column names each owner.
-- **`-l`/`--live`** narrows any of these to running processes.
-
-A process a user is not entitled to read shows the literal `hidden` in its USER
-and COMMAND cells, not `-`. `-` reads as *none*; `hidden` reads as *exists,
-but not yours to see*, which is the truth.
-
-The PORTS a user sees for a global process come from the public index. Only
-root can observe a root-managed process's process group, so root refreshes each
-live global process's observed ports (listening TCP and bound UDP only, never
-outbound connections) into its public entry whenever root runs `list` or
-`ps`. The column is therefore eventually consistent: a port that opened a
-moment ago appears the next time root lists.
-
-Docker flags backmux cannot honor (`-p`, `-P`, `-v`, `--privileged`,
-`--cap-add`, `--cap-drop`) are rejected with exit 1 and a note, never
-accepted and ignored, so a script never believes they took effect.
-
-Docker parity otherwise applies at the **flag level** (`-d`, `-i`, `-t`,
-`-e`, `--env-file`, `--name`, `--rm`, `--restart`, `--detach-keys`) and at
-the **output level**: both tables render Docker's look — content-sized
-columns, 12-hex short ids, `2 days ago`, `Exited (0) 2 days ago`, names
-always present. Verbs are Backmux-native.
-
-## Saved processes are recipes
-
-A process record is a launch recipe: `save` protects it from purge, `rename`
-names it and saves it (naming a process says you want to keep it), and
-`backmux <name>` redials it.
-
-## A person's shell is a process too
-
-`backmux shell` is the one launch meant for a person rather than a script:
-the shell runs on a PTY like any `-it` process, and its broker draws a chat
-window over it for talking to the agents placed with `-dt` (Ctrl-Space c
-opens it). Nothing new carries the words — the window sends an ordinary
-`backmux msg` from the shell's process and shows the ordinary `backmux msg`
-replies — and the launch command, not the program's name, decides that
-messages for this process are shown in chat instead of typed at a prompt.
-[shell.md](shell.md) has the mechanism.
-
-## Screens, not guesses
-
-A TTY process's broker keeps an exact headless terminal, so nothing about the
-screen is inferred: `backmux peek` reads it, `backmux inspect` reports where
-fds 0/1/2 point, and redirected stdio stays purposeful, not a failure.
-
-## The plumbing it rests on
-
-Hash-derived 64-hex process ids with generated `adjective_noun` names; the raw
-log file (a plain process's program writes it directly, a TTY process's broker
-writes the PTY stream); the console broker, which keeps a headless screen
-(see [screen.md](screen.md)); the process record store, where redial reuses a
-process's id and appends to its log; end/kill escalation with target
-revalidation. [SPEC.md](SPEC.md) has the on-disk invariants.
+At the CLI, `backmux help` groups commands by task, `help COMMAND` gives
+usage details, task guides explain workflows, and `help all` assembles the
+complete reference. `backmux manual` prints the complete reference followed by the worked
+examples.

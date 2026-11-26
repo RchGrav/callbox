@@ -1,10 +1,11 @@
 usage: backmux resize <target> <cols> <rows>   (or <cols>x<rows>)
 
-Resize a running TTY process's terminal to <cols> <rows> (or <cols>x<rows>),
-each 1-1000. The program receives SIGWINCH, and the screen backmux peek shows
-reflows with it. To start a process at a size, place it with --size <cols>
-<rows>; backmux config set detach-size saves a default for detached TTY
-processes.
+Set a running terminal process's dimensions. Columns and rows must each be
+1-1000. The terminal size and screen model are updated, and the terminal's
+foreground process group receives SIGWINCH when its dimensions change.
 
-For a -i pipe-input process, only the screen model changes: the program has no
-terminal to resize or SIGWINCH to receive.
+For a pipe-input process (-i without -t), only the screen model changes;
+there is no terminal to resize or terminal foreground group to signal.
+
+Example: backmux resize app 100 30
+Use --size at launch or config set detach-size for new detached terminals.

@@ -1,48 +1,55 @@
-backmux help scripting - exit codes, stdout, and stderr
+backmux help scripting - stdout, stderr, timeouts, and exit codes
 
-stdout is for machine data. Human banners, confirmations, warnings, and
-errors go to stderr; --quiet suppresses normal human status.
+Commands write results to stdout and status notes or errors to stderr.
+--quiet suppresses normal status notes. Program output follows its launch
+mode; terminal output can contain escape sequences and merged stdout/stderr.
 
-  id=$(backmux -d <cmd...>)       capture the bare 64-hex process id
-  id=$(backmux -dw <cmd...>)      ...and record its exit code for backmux wait
-  backmux end --print <id>        print kill -TERM -- -<pgid>
-  backmux kill --print <id>       print kill -KILL -- -<pgid>
+  id=$(backmux -d PROGRAM)        capture the full Backmux process ID
+  id=$(backmux -dw PROGRAM)       also retain the program's eventual exit code
+  backmux end --print "$id"       print a SIGTERM command without executing it
+  backmux kill --print "$id"      print a SIGKILL command without executing it
 
 Exit codes:
-  0  success (includes known name with nothing to do)
-  1  usage error (unknown option, bad value, wrong number of arguments), or a
-     failure with no code of its own
-  2  refused for safety
-  3  permission denied, unavailable console, or storage/security failure
-  4  signal delivery failed
-  5  no matching process or inbox, or an invalid target id or name
-  6  more than one process (or verb) matches: they are listed; be more exact
-  7  wait, inbox --wait, monitor, or msg --wait-reply timed out
-     (send --wait: input was sent; the program did not go quiet in time)
-  8  the process ended: before the wait condition held (send --wait: after the
-     input was sent), or (attach) before or while you were on it; attach
-     exits 0 when you detach, 3 if refused or unreachable; an inbox can expire
-     while waiting
-  9  send --mouse: the program has mouse reporting off (not delivered)
-  10 the process has no terminal screen or console (placed without -t / -i)
-  11 the requested name is taken by a process or active inbox
-  126 the command was found but cannot be run; 127 command not found
+  0    success, including a known process with no applicable action
+  1    usage error or a failure without a more specific code
+  2    action refused after identity or safety checks
+  3    permission, console-access, or storage/security failure
+  4    signal delivery failed
+  5    no matching process or inbox, or invalid target syntax
+  6    ambiguous command or process target
+  7    wait, send --wait, inbox --wait, monitor, or reply wait timed out
+  8    process ended or its console closed before a screen condition held;
+       attach target ended; or an inbox expired while waiting
+  9    send --mouse: mouse reporting disabled; mouse event not delivered
+  10   target has no screen or input console
+  11   requested name already belongs to a process or active inbox
+  126  executable found but cannot be run
+  127  executable not found
 
-With several targets (end a b c), each is acted on alone: the ones that
-resolve are ended, the rest reported, and the exit code is the worst.
-backmux msg to a process prints its delivery ID. Sending to an outside inbox
-does not print an ID. --wait-reply then prints the first new inbox message,
-from any sender. inbox and monitor print [HH:MM from NAME] TEXT; messages
-can span multiple lines. Status notes and the first inbox name go to stderr.
+These are management-command statuses. A foreground launch propagates the
+program's exit status when it finishes; detaching returns control while the
+program continues. attach returns 0 on detachment and 3 on access failure.
 
-An exit-only backmux wait returns 0 on success and prints the program's
-exit code. Capture that value to propagate a job's result; use -dw to keep
-it, since plain -d has no exit record and wait prints -1.
-If another environment cannot determine whether the process ended, its status
-is Unknown. wait keeps waiting for evidence or --timeout; Unknown is not an
-exit code. Console commands can still reach a broker whose process is not
-visible here.
+For end or kill with multiple targets, each target is handled independently.
+The command reports failures and returns the highest resulting exit status.
 
-Screen wait and send durations accept milliseconds or ms/s/m suffixes.
+MESSAGE OUTPUT
+msg to a process prints its delivery ID. A send to an outside inbox prints
+no ID. --wait-reply prints the first new inbox message, from any sender.
+inbox and monitor print [HH:MM from NAME] TEXT; message text may span lines.
+The first generated inbox name and status notes go to stderr.
+
+JOB RESULTS
+An exit-only wait returns 0 when it observes exit and prints the recorded
+program exit code separately. Capture that value to propagate a job's result.
+Use -dw for background jobs that need an exit code; plain -d records none
+and wait prints -1.
+
+Unknown is a process state, not an exit code. wait continues until evidence
+of exit or its timeout. Console commands can reach a broker even when its
+program is not visible in the caller's process namespace.
+
+TIMEOUTS
+Screen waits and send durations accept milliseconds or ms, s, m suffixes.
 Inbox, monitor, and msg reply timeouts accept whole milliseconds only.
---timeout 0 means no timeout; defaults differ by command.
+--timeout 0 disables the timeout. Defaults differ by command; see its help.

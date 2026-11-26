@@ -1,7 +1,7 @@
-/* cli/specs.c — command_specs[] and the flag engine that runs off it.
+/* cli/specs.c - command metadata, shared option parsing, and help lookup.
  *
- * One row per spelled verb: aliases are rows whose canon names the dispatch
- * verb they fold onto. The table owns arity, shared flags, and error usage.
+ * Each accepted command has a row; aliases name their canonical dispatch
+ * command. The table defines arity, shared options, and error usage.
  * Commands with value options parse their own arguments. Help prose lives
  * in src/cli/help; this table selects each command's page and assembles the
  * complete reference so aliases and less-common commands stay discoverable. */
@@ -13,23 +13,23 @@
 #include "backmux/core.h"
 #include "backmux/help_text.h"
 
-/* Per-command flag mask: which owned flags a verb consumes. */
+/* Shared options accepted by each command. */
 enum {
     SPEC_ALL       = 1 << 0, /* --all; -a is accepted wherever --all is */
-    SPEC_LIVE      = 1 << 1, /* -l/--live, list's running-only filter */
+    SPEC_LIVE      = 1 << 1, /* -l/--live: running and Unknown list records */
     SPEC_SCOPE     = 1 << 2, /* -s/--system and -u/--user store scope */
     SPEC_FORCE     = 1 << 3, /* --force (purge family) */
     SPEC_PRINT     = 1 << 4, /* --print (end/stop/kill) */
     SPEC_NOSTREAM  = 1 << 5, /* --no-stream (stats) */
     SPEC_STRICT    = 1 << 6, /* reject any unconsumed flag: a target or a name never starts with - */
-    SPEC_PS_DOCKER = 1 << 7, /* ps speaks only Docker: --system not consumed */
+    SPEC_PS_DOCKER = 1 << 7, /* ps does not accept --system */
     SPEC_OWN_HELP  = 1 << 8, /* parses its own arguments, -h among them (send --text -h is text) */
     SPEC_KEYS      = 1 << 9  /* takes --detach-keys KEYS after its target too (attach) */
 };
 
 struct hold_cli_command_spec {
     const char *name;
-    const char *canon;      /* dispatch verb aliases fold onto; NULL = itself */
+    const char *canon;      /* canonical dispatch command; NULL = itself */
     int min_args;
     int max_args;           /* -1 means unbounded. */
     unsigned flags;
@@ -42,18 +42,17 @@ static const char usage_attach[] = "usage: backmux attach <target> [--detach-key
 #define SPEC_PURGE_FLAGS (SPEC_ALL | SPEC_SCOPE | SPEC_FORCE | SPEC_STRICT)
 
 static const struct hold_cli_command_spec command_specs[] = {
-    /* The launch verbs are parsed in cli/main.c (their words after the
-     * program are the program's); these rows are their help and keep their
-     * names from being taken by calls. */
+    /* cli/main.c parses launch commands and forwards arguments after PROGRAM.
+     * These rows provide help and reserve command names from process naming. */
     {"call", NULL, 1, -1, 0, "usage: backmux call [--name NAME] [options] <program> [<args>...]"},
     {"agent", NULL, 1, -1, 0, "usage: backmux agent [--name NAME] [options] <program> [<args>...]"},
     {"server", NULL, 1, -1, 0, "usage: backmux server [--name NAME] [-w] [options] <program> [<args>...]"},
     {"detach", NULL, 1, -1, 0, "usage: backmux detach [--name NAME] [options] <program> [<args>...]"},
     {"list", NULL, 0, 2, SPEC_ALL | SPEC_LIVE | SPEC_SCOPE | SPEC_STRICT,
-     "usage: backmux list [all] [-s|--system] [-u|--user] [name]"},
+     "usage: backmux list [all] [-s|--system] [-u|--user] [-a|--all] [name]"},
     {"info", NULL, 1, 1, SPEC_STRICT, "usage: backmux info <name|id>"},
     {"recall", NULL, 1, 1, SPEC_STRICT, "usage: backmux recall <name|id>"},
-    {"start", "recall", 1, 1, SPEC_STRICT, "usage: backmux start <name|id>   (Docker's word for recall)"},
+    {"start", "recall", 1, 1, SPEC_STRICT, "usage: backmux start <name|id>   (alias for recall)"},
     {"delete", NULL, 1, 1, SPEC_STRICT, "usage: backmux delete <name|id>"},
     {"set", NULL, 2, -1, SPEC_OWN_HELP, "usage: backmux set <name|id> <setting>[=<value>]"},
     {"unset", NULL, 2, 2, SPEC_OWN_HELP, "usage: backmux unset <name|id> <setting>"},
@@ -95,10 +94,10 @@ static const struct hold_cli_command_spec command_specs[] = {
      "       backmux config set <setting> <value>\n"
      "       backmux config unset <setting>\n"
      "settings: detach-size COLS ROWS, chat-name NAME"},
-    /* shell is a launch, parsed in cli/main.c; this row is its help. */
+    /* cli/main.c parses shell launches; this row provides help. */
     {"shell", NULL, 0, -1, 0,
-     "usage: backmux shell [--name NAME] [--size COLS ROWS] [--chat-key KEY]\n"
-     "                  [-e KEY=VALUE]... [--rm] [shell [args...]]"},
+     "usage: backmux shell [--name NAME] [--size COLS ROWS] [-e KEY=VALUE]... [--rm]\n"
+     "                     [shell [args...]]"},
     {"attach", NULL, 1, 1, SPEC_STRICT | SPEC_KEYS, usage_attach},
     {"console", "attach", 1, 1, SPEC_STRICT | SPEC_KEYS, "usage: backmux console <target> [--detach-keys KEYS]"},
     {"purge", NULL, 0, 1, SPEC_PURGE_FLAGS,
@@ -126,8 +125,8 @@ static const struct hold_cli_command_spec *find_public_command_spec(const char *
     return NULL;
 }
 
-/* The spelled flags the owned sweep can consume; each spec's mask says which
- * apply. -a rides SPEC_ALL: it is accepted wherever --all is. */
+/* Shared option spellings. Each command's mask selects the applicable rows;
+ * -a and --all are equivalent wherever SPEC_ALL is enabled. */
 static const struct owned_flag {
     const char *shortf; /* NULL when the flag has no short spelling */
     const char *longf;
@@ -145,7 +144,7 @@ static const struct owned_flag {
 
 /* Sweep an owned command's argv: consume the flags its spec allows (plus the
  * global --system/--quiet), collect everything else into cmd_argv. A literal
- * `--` passes the rest through untouched. Strict verbs (list/ps) reject any
+ * `--` passes the rest through untouched. SPEC_STRICT commands reject any
  * flag they did not consume rather than misreading it as a name filter.
  * Returns 0, or HOLD_EXIT_USAGE after printing the unknown-flag error and usage. */
 int hold_cli_collect_owned_args(const char *command, int argc, char **argv,
@@ -154,8 +153,7 @@ int hold_cli_collect_owned_args(const char *command, int argc, char **argv,
     const struct hold_cli_command_spec *spec = find_public_command_spec(command);
     unsigned allowed = spec ? spec->flags : 0;
     bool literal = false;
-    /* send and msg read a `--` themselves: what follows is text to type,
-     * and the verb has to know that to keep it from its own flags. */
+    /* send and msg need the delimiter to distinguish text from options. */
     bool keep_delimiter = command && (!strcmp(command, "send") || !strcmp(command, "msg"));
     for (int i = 0; i < argc; i++) {
         char *arg = argv[i];
@@ -166,8 +164,8 @@ int hold_cli_collect_owned_args(const char *command, int argc, char **argv,
                 if (keep_delimiter) cmd_argv[(*cmd_argc)++] = arg;
                 continue;
             }
-            /* --system selects the root-managed store for every owned verb
-             * except ps, which speaks only Docker and takes no scope flag. */
+            /* --system selects the root-managed store except for ps, which
+             * does not accept store-selection options. */
             if (!(allowed & SPEC_PS_DOCKER) && !strcmp(arg, "--system")) {
                 opts->requested_system = true;
                 continue;
@@ -176,8 +174,7 @@ int hold_cli_collect_owned_args(const char *command, int argc, char **argv,
                 opts->quiet = true;
                 continue;
             }
-            /* -h anywhere asks for the verb's help - except for the verbs
-             * that read their own arguments, where it may be text to send. */
+            /* Command-specific parsers decide whether -h is help or data. */
             if (!(allowed & SPEC_OWN_HELP) && (!strcmp(arg, "-h") || !strcmp(arg, "--help"))) {
                 opts->want_help = true;
                 continue;
@@ -212,8 +209,7 @@ int hold_cli_collect_owned_args(const char *command, int argc, char **argv,
     return 0;
 }
 
-/* Topic names from earlier releases, kept working: a link or a habit still
- * lands on the page that replaced it. */
+/* Retained topic aliases resolve to the current canonical help page. */
 static const char *const help_renamed[][2] = {
     {"users", "share"},
     {"comms", "messaging"},
@@ -253,9 +249,8 @@ static int show_all_help(void) {
     return 0;
 }
 
-/* The help pages are compiled in from src/cli/help (help_text.h): guides,
- * reference, the unlisted extras, and one page per command, which an alias
- * shares with the command it stands for. */
+/* Help pages are compiled from src/cli/help. Command aliases share their
+ * canonical command's page; guides, reference, and extra topics use names. */
 int hold_show_help(const char *topic) {
     if (!topic || !*topic) {
         hold_usage();
@@ -273,12 +268,11 @@ int hold_show_help(const char *topic) {
     if (spec && hold_checked_snprintf(name, sizeof(name), "commands/%s", spec->canon ? spec->canon : spec->name) == 0 &&
         hold_help_print(name) == 0)
         return 0;
-    fprintf(stderr, "backmux: unknown help topic '%s' (backmux help lists the commands)\n", topic);
+    fprintf(stderr, "backmux: unknown help topic '%s'; use backmux help help for the topic index\n", topic);
     return HOLD_EXIT_USAGE;
 }
 
-/* backmux manual: the whole reference, then the worked examples - one
- * document to read top to bottom, or to pipe into a pager. */
+/* manual combines the command reference and worked examples. */
 int hold_show_manual(void) {
     int rc = show_all_help();
     if (rc != 0) return rc;

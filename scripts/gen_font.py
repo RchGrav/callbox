@@ -8,13 +8,11 @@ Usage: python3 -I scripts/gen_font.py --emoji 'NotoEmoji[wght].ttf' \
 Sources and versions: third_party/unifont/README.md and
 third_party/noto-emoji/README.md.
 
-Unifont: keeps every glyph in the Basic Multilingual Plane (all modern
-scripts: Latin, Greek, Cyrillic, Hebrew, Arabic, Indic, Thai, Ethiopic, CJK,
-Hangul, symbols, box drawing, Braille, ...) except surrogates and private
-use, and from the upper-plane file the blocks terminal programs draw with:
-math alphanumerics, emoji and pictographs, and symbols for legacy computing
-(sextants, smooth mosaics). Glyphs are 8x16 (16 bytes) or 16x16 (32 bytes,
-wide). Anything absent renders as a hollow box.
+Unifont: retain source glyphs in the code-point ranges listed in RANGES.
+These cover most of the Basic Multilingual Plane, excluding C0/C1 controls,
+surrogates, and private-use characters, plus selected supplementary blocks
+for mathematical alphanumerics, emoji, pictographs, and legacy computing
+symbols. Glyphs are 8x16 (16 bytes) or 16x16 (32 bytes, wide).
 
 Noto Emoji (monochrome): each emoji the terminal grid makes double-width
 (libvterm's third_party/libvterm/src/fullwidth.inc) is rasterized here, from

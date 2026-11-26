@@ -50,7 +50,7 @@
  *                                -> "ok reason=idle|match|exit seq=N [exit_code=C]\n"
  *                                 | "ended reason=exit ..." | "timeout seq=N\n"
  *   nested keys=<hex>            -> no reply; the connection stays open. Sent by
- *                                   an attach client running in this call's
+ *                                   an attach client running in this process's
  *                                   terminal, for as long as it is attached:
  *                                   keys are its detach keys (see attach.c)
  *   msg [from=<hex>] [submit=0]\n<hex text>
@@ -123,8 +123,8 @@ void hold_console_term_release(void);
 void hold_console_leave_inline(void);
 void hold_console_set_attached_name(const char *name);
 
-/* The compositor (mux.c): panes of TTY calls and one floating window over
- * them, drawn into the person's terminal. Starts on first_sock's call, as if
+/* The compositor (mux.c): panes of TTY processes and one floating window over
+ * them, drawn into the person's terminal. Starts on first_sock's process, as if
  * the lead key then command had been pressed there. Returns how it ended;
  * *handed_back with the console to show plainly when one pane is left and
  * nothing floats. */

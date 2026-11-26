@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the full Linux CI mirror locally, on any host with Apple `container`,
+# Run the local Linux checks on a host with Apple `container`,
 # docker, or podman. Builds the committed CI image (docker/Dockerfile.linux-ci),
 # mounts the repo read-only, copies it inside (host tree never touched), and runs:
 #
@@ -8,8 +8,8 @@
 #   scripts/linux.sh release [dir]   # scripts/release_build.sh -> Linux artifacts in <dir> (default dist/)
 #   scripts/linux.sh -- <cmd>        # an arbitrary command in the container
 #
-# This replaces any author-only local setup: "Linux parity" is reproducible from
-# the committed Dockerfile for every contributor.
+# The committed Dockerfile supplies the tools for these checks. The default
+# command does not run every separate GitHub Actions lane.
 set -euo pipefail
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 repo="$(pwd)"

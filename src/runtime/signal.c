@@ -17,7 +17,7 @@ static int refuse_signal(const char *id, const char *why) {
     return 2;
 }
 
-/* The safety chain: boot-id -> starttime -> exe dev/ino -> pgid/sid. A call
+/* The safety chain: boot-id -> starttime -> exe dev/ino -> pgid/sid. A process
  * is signaled only when the live process tree still matches the recorded
  * identity; a record with no identity token is refused outright. */
 static int validate_signal_target(const char *id,
@@ -89,7 +89,7 @@ static int validate_signal_target(const char *id,
 
 /* ---- end/stop/kill ---------------------------------------------------- */
 
-/* A console call running where this shell cannot see its pid (another PID
+/* A console process running where this shell cannot see its pid (another PID
  * namespace): follow the chain of command and ask its broker - which can see
  * its program - to signal it. 0 when asked, -1 when no broker answers. */
 static int signal_through_broker(const struct hold_run_record *r, int sig) {
@@ -103,7 +103,7 @@ static int signal_through_broker(const struct hold_run_record *r, int sig) {
     return ok ? 0 : -1;
 }
 
-/* Why this shell cannot end a call it can see in the store but not as a
+/* Why this shell cannot end a process it can see in the store but not as a
  * process: it runs (or ran) in another PID namespace. */
 static void not_running_here(const struct hold_run_record *r, bool can_tell) {
     const char *label = r->has_name && r->name[0] ? r->name : r->id;
@@ -119,7 +119,7 @@ static void not_running_here(const struct hold_run_record *r, bool can_tell) {
                 "backmux purge %s --force.\n", label, label);
 }
 
-/* Whether the call has stopped running, as this shell can tell, within ms. */
+/* Whether the process has stopped running, as this shell can tell, within ms. */
 static bool call_ended_within(const struct hold_store *store, const char *id, int ms) {
     for (int waited = 0;; waited += 50) {
         struct hold_run_record cur;
@@ -167,7 +167,7 @@ static int signal_one(const struct hold_store *store,
             goto out;
         }
         if (!r.has_console || print_cmd) {
-            /* A -d call has no broker to ask (it stays the minimal mode), and
+            /* A -d process has no broker to ask (it stays the minimal mode), and
              * there is no kill command to print for a pid that means nothing
              * here. */
             not_running_here(&r, st == STATE_RUNNING);
@@ -252,7 +252,7 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
     for (int i = 0; i < argc; i++) {
         struct hold_resolved_target *one = NULL;
         int none = 0;
-        /* A call from another PID namespace that this shell cannot judge does
+        /* A process from another PID namespace that this shell cannot judge does
          * not match a running-only target; say why instead of "no match". */
         if (!print_cmd && !hold_token_resolves(inv, user_store, system_store, command, argv[i]) &&
             hold_token_resolves(inv, user_store, system_store, "inspect", argv[i])) {
@@ -266,10 +266,10 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
                     bool foreign = r.pid_ns != 0 && here != 0 && r.pid_ns != here;
                     enum run_state st = hold_eval_state(&r, hold_boot_id_or_null(boot));
                     bool unknown = st == STATE_UNKNOWN;
-                    /* A known call that has already ended: nothing to do,
+                    /* A known process that has already ended: nothing to do,
                      * which is success (backmux help scripting: "includes
-                     * known name with nothing to do"). Why: "no call
-                     * matches" denied a call that list -a and purge find, and
+                     * known name with nothing to do"). Why: "no process
+                     * matches" denied a process that list -a and purge find, and
                      * exit 5 failed a cleanup step whose goal already held. */
                     bool ended = st == STATE_EXITED || st == STATE_FAILED || st == STATE_STALE;
                     if (foreign && unknown) not_running_here(&r, false);
@@ -326,7 +326,7 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
         targets[kept++] = targets[i];
     }
     ntargets = kept;
-    /* What each call is known by, read before it is signalled: an --rm call's
+    /* What each process is known by, read before it is signalled: an --rm process's
      * record is gone by the time there is something to say about it. */
     char (*labels)[ALIAS_MAX_LEN + 1] = calloc(ntargets > 0 ? (size_t)ntargets : 1, sizeof(*labels));
     if (!labels) {
@@ -441,7 +441,7 @@ int hold_tail_log_until_exit(const struct hold_run_record *r, bool from_end, boo
     if (from_end) lseek(fd, 0, SEEK_END);
     /* Logs are the raw bytes the program wrote; following is a straight copy
      * to stdout, through the one client loop. Ctrl-C (SIGINT) stops following,
-     * never the call: a follower is watching a log, not on the call. */
+     * never the process: a follower is watching a log, not on the process. */
     struct hold_client c = {
         .out_fd = fd,
         .out_is_file = true,
@@ -465,9 +465,9 @@ int hold_tail_log_until_exit(const struct hold_run_record *r, bool from_end, boo
     return 0;
 }
 
-/* ---- following a call you launched ---------------------------------------
- * A plain call launched in the foreground: backmux follows its log, and the
- * keys mean what they mean everywhere you are on a call - Ctrl-C goes to the
+/* ---- following a process you launched ---------------------------------------
+ * A plain process launched in the foreground: backmux follows its log, and the
+ * keys mean what they mean everywhere you are on a process - Ctrl-C goes to the
  * program, Ctrl-Space q leaves it running. At a terminal the keys are read
  * one by one (output is untouched); without one, a SIGINT sent to backmux is
  * passed on, as docker run's sig-proxy does. */
@@ -528,7 +528,7 @@ int hold_follow_launched_call(const struct hold_invocation *inv, const struct ho
     close(fd);
     if (end == HOLD_CLIENT_SIGNALED) hold_term_reraise_stop();
     if (end == HOLD_CLIENT_ERROR && run_errno == EPIPE) {
-        /* `backmux -w cmd | head`: the reader has what it wanted. The call is
+        /* `backmux -w cmd | head`: the reader has what it wanted. The process is
          * not ours to end; say where it is, then end as a writer to a closed
          * pipe does (141) - the same as an attached launch. */
         if (!tail_call_ended(&f.t))
@@ -573,7 +573,7 @@ int hold_cmd_tail_if_call(const struct hold_invocation *inv,
 
 /* ---- inspect ------------------------------------------------------------ */
 
-/* Build the neutral fd-target object for a live call's leader: where fds 0/1/2
+/* Build the neutral fd-target object for a live process's leader: where fds 0/1/2
  * actually point right now (a pipe, the pty, /dev/null, a redirected file).
  * Returns a heap string like "  \"Stdio\": {\n ... }" or NULL when the process
  * is gone or none of its fds could be read. Caller frees. */
@@ -614,9 +614,9 @@ static char *build_stdio_object(pid_t pid) {
  * object, splice it in before the object's closing brace: the record is a
  * single top-level object, so the last '}' in the file is its terminator. */
 /* The record as stored, with what backmux observes now: "state" is the evaluated
- * state (as backmux list shows it) and, when the record says otherwise - a call
+ * state (as backmux list shows it) and, when the record says otherwise - a process
  * killed before its exit was stamped still reads "running" - the stored value
- * is kept as "recorded_state". A running call also gets its live stdio. */
+ * is kept as "recorded_state". A running process also gets its live stdio. */
 static int write_inspect(const char *path, const char *observed, const char *stdio_obj) {
     char *buf = NULL;
     if (hold_read_owned_file_no_symlink(path, &buf) != 0 || !buf) return -1;
@@ -672,8 +672,8 @@ int hold_cmd_inspect_action(const struct hold_invocation *inv,
     char boot[128];
     const char *boot_id = hold_boot_id_or_null(boot);
     enum run_state st = hold_eval_state(&r, boot_id);
-    /* Live fd targets are observable state, added only for a running call whose
-     * leader still exists; ended calls fall back to the verbatim record. */
+    /* Live fd targets are observable state, added only for a running process whose
+     * leader still exists; ended processes fall back to the verbatim record. */
     char *stdio_obj = st == STATE_RUNNING && r.pid > 1 ? build_stdio_object(r.pid) : NULL;
     rc = write_inspect(path, hold_state_str(st), stdio_obj);
     free(stdio_obj);
@@ -708,8 +708,8 @@ static off_t offset_of_last_lines(int fd, long lines) {
 
 static const char logs_usage[] = "usage: backmux logs <target> [--follow|-f] [--tail|-n N]\n";
 
-/* backmux logs: the call's captured output as plain bytes. -n N starts at the
- * newest N lines; -f keeps following until the call ends (Ctrl-C stops). */
+/* backmux logs: the process's captured output as plain bytes. -n N starts at the
+ * newest N lines; -f keeps following until the process ends (Ctrl-C stops). */
 int hold_cmd_view_action(const struct hold_invocation *inv,
                          const struct hold_store *user_store,
                          const struct hold_store *system_store,

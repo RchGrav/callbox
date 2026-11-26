@@ -7,7 +7,7 @@
 #include "backmux/platform.h"
 #include "backmux/observe.h"
 
-/* backmux stats <target>: a docker-stats-like live view of the call's process
+/* backmux stats <target>: a docker-stats-like live view of the process's process
  * group - CPU %, resident memory, and process count - refreshing in place once
  * a second until Ctrl-C. Falls back to a single plain frame when stdout is not
  * a TTY or --no-stream is given, so it stays script-safe. Aggregation is over
@@ -60,7 +60,7 @@ static void format_bytes(uint64_t bytes, char *out, size_t n) {
 }
 
 /* CPU% as a fraction of one core * 100, summed across the group (so a busy
- * multi-threaded call can exceed 100%), measured over an interval in seconds. */
+ * multi-threaded process can exceed 100%), measured over an interval in seconds. */
 static void format_cpu(uint64_t delta_ticks, double interval_s, char *out, size_t n) {
     long hz = sysconf(_SC_CLK_TCK);
     if (hz <= 0 || interval_s <= 0.0) {
@@ -168,7 +168,7 @@ int hold_cmd_stats_action(const struct hold_invocation *inv,
         print_stats_frame(display_id, name, cpu, mem, cur.pids, true);
         prev = cur;
         if (cur.pids == 0) {
-            /* The call ended while we watched; stop cleanly rather than spin on
+            /* The process ended while we watched; stop cleanly rather than spin on
              * an empty group. */
             break;
         }

@@ -83,8 +83,8 @@ void hold_sha256_final(struct sha256_ctx *c, unsigned char out[32]) {
     }
 }
 
-/* Hashes s (NULL reads as "") plus a terminating NUL, so a sequence of fields
- * hashes injectively: no concatenation of fields can collide with another. */
+/* Hash each C string with its terminating NUL to preserve field boundaries
+ * in the hash input. NULL is encoded as an empty string. */
 void hold_sha256_update_nul_field(struct sha256_ctx *ctx, const char *s) {
     static const unsigned char nul = 0;
     if (!s) s = "";

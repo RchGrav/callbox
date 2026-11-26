@@ -16,10 +16,10 @@ Examples:
 
 Options:
   --remote <name>    Git remote to push the tag to (default: origin)
-  --skip-tests       Do not run "make clean && make test" before tagging
+  --skip-tests       Skip scripts/ci.sh before tagging
   --no-watch         Do not wait for the GitHub Actions release run
   --no-install-test  Do not run the GitHub one-line installer smoke test
-  --dry-run          Validate and print the planned deployment, but do not tag
+  --dry-run          Run validation and enabled tests; print the plan without tagging
   --yes              Do not prompt before creating and pushing the tag
   -h, --help         Show this help
 EOF
@@ -160,7 +160,7 @@ note "deploy: source       $current_branch @ $head_sha"
 note "deploy: remote       $remote"
 
 if [[ "$run_tests" -eq 1 ]]; then
-  note "deploy: running full local rigor (scripts/ci.sh)"
+  note "deploy: running local CI checks (scripts/ci.sh)"
   bash scripts/ci.sh
 else
   note "deploy: skipping local tests"

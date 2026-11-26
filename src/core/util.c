@@ -145,10 +145,8 @@ void hold_format_rfc3339_utc_from_ns(int64_t unix_ns, char *out, size_t n) {
     }
 }
 
-/* Docker's go-units HumanDuration, character for character: the phrasing the
- * call table borrows for CREATED ("2 minutes") and STATUS ("Up 2 minutes",
- * "Exited (0) 2 days ago"). The caller appends " ago" where the reference is
- * a past instant. */
+/* Format elapsed seconds for CREATED and STATUS, using Docker-style time
+ * units. The caller appends " ago" for a past instant. */
 void hold_format_duration_human(int64_t seconds, char *out, size_t n) {
     if (seconds < 0) seconds = 0;
     if (seconds < 1) {
@@ -185,9 +183,9 @@ void hold_format_duration_human(int64_t seconds, char *out, size_t n) {
     }
 }
 
-/* Parse an RFC3339 UTC instant ("2026-07-03T01:23:45Z", fractional seconds and
- * the trailing Z ignored) into unix nanoseconds. Returns false on any garbage
- * or the zero-value placeholder Backmux writes for records without a timestamp. */
+/* Parse the YYYY-MM-DDTHH:MM:SS prefix as UTC and return whole-second Unix
+ * nanoseconds. Any suffix, including fractional seconds or a timezone, is
+ * ignored. Reject unparsable prefixes and nonpositive converted times. */
 bool hold_parse_rfc3339_utc_to_ns(const char *s, int64_t *out_ns) {
     if (!s || !*s) return false;
     struct tm tm;

@@ -2,32 +2,41 @@ usage: backmux send <target> [TEXT]... [--text TEXT] [-k KEY]...
                  [--keys "K1 K2"] [--enter] [--paste TEXT|-] [--stdin] [--seq]
                  [--mouse ACTION,COL,ROW[,BUTTON]] [--wait MS [--timeout MS]]
 
-Send input without attaching. Terminal processes and -i pipe-input processes
-accept input; plain -d and -dw processes do not. Arguments are applied in order.
+Send input without attaching. Terminal processes and pipe-input processes
+(-i without -t) accept input; plain -d and -dw processes do not.
+Input operations are applied in argument order.
 
-  TEXT             type literally; separate arguments add no spaces
-  --text TEXT      type text that starts with a dash
-  --               type all remaining arguments literally
-  -k, --key KEY    press a key: Enter, Tab, Escape, Backspace, Space, Up, Down,
-                   Left, Right, Home, End, PageUp, PageDown, Insert, Delete,
-                   F1-F24, with C- M- S- modifiers (C-c, M-x)
-  --keys "K1 K2"   press several keys
-  --enter          press Enter
-  --paste TEXT     paste it (bracketed when the program asked for that;
-                   - reads stdin)
-  --stdin          type what stdin holds
+TEXT AND KEYS
+  TEXT             send literal text; adjacent arguments add no spaces
+  --text TEXT      send literal text, including text starting with a dash
+  --               treat all remaining arguments as literal text
+  -k, --key KEY    send Enter, Tab, Escape, Backspace, Space, Up, Down, Left,
+                   Right, Home, End, PageUp, PageDown, Insert, Delete,
+                   or F1-F24; modifiers: C- (Ctrl), M- (Alt), S- (Shift)
+  --keys "K1 K2"   send several keys, for example --keys "C-a C-k"
+  --enter          send Enter
+  --paste TEXT     paste text; use bracketed paste when enabled by the program
+                   (--paste - reads stdin)
+  --stdin          send stdin as literal input
+
+MOUSE
   --mouse ACTION,COL,ROW[,BUTTON]
-                   a mouse event: click, press, release, move, drag, scroll-up,
-                   scroll-down (exit 9 if the program has mouse reporting off)
-                   COL,ROW are zero-based; BUTTON is 1 left (default), 2 middle,
-                   or 3 right. Drag with press, then drag, then release.
-  --wait MS        then wait until the program has answered and gone quiet for
-                   MS (--timeout MS bounds the wait; 10s if left out)
-  --seq            print the output counter, for backmux wait --since
+                   send click, press, release, move, drag, scroll-up, or
+                   scroll-down. COL,ROW are zero-based. BUTTON: 1 left
+                   (default), 2 middle, 3 right. Drag: press, drag, release.
+                   Exit 9 means mouse reporting is disabled and the mouse
+                   event was not delivered.
 
-Keys are encoded for the program's current modes. A curses program can read
-Escape and the key after it as one Alt key (ESCDELAY): send -k Escape in a
-send of its own. --wait needs output after the send; an action that draws
-nothing can time out even when delivered.
-Durations accept milliseconds, or suffixes ms, s, m (for example 1.5s),
-up to 24 hours. --timeout 0 means no timeout.
+OUTPUT WAIT
+  --wait MS        after sending, require new output followed by MS of idle
+                   output; --timeout bounds this wait (default: 10 s)
+  --seq            print the output counter captured before input delivery,
+                   for use with backmux wait --since
+
+Key encoding follows the program's current terminal modes. Some programs
+interpret Escape followed immediately by another key as an Alt combination;
+send Escape in a separate invocation when that distinction matters.
+
+--wait can time out after successful delivery if no output follows the input.
+Durations accept milliseconds or ms, s, m suffixes, such as 1.5s, up to
+24 hours. --timeout 0 disables the timeout. See backmux help wait.

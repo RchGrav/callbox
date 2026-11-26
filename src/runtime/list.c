@@ -78,8 +78,8 @@ static void format_age(int64_t ref_unix_ns, char *out, size_t n) {
     hold_format_duration_human(seconds_since(ref_unix_ns), out, n);
 }
 
-/* The instant a call last stopped running: its recorded end time when we have
- * one, otherwise its start (a good enough anchor for short-lived calls). */
+/* The instant a process last stopped running: its recorded end time when we have
+ * one, otherwise its start (a good enough anchor for short-lived processes). */
 static int64_t ended_reference_ns(const struct hold_run_record *r) {
     int64_t ns = 0;
     if (r->has_ended_at && hold_parse_rfc3339_utc_to_ns(r->ended_at, &ns)) return ns;
@@ -99,7 +99,7 @@ static void format_status(enum run_state st, const struct hold_run_record *r, ch
         else snprintf(out, n, "Exited (?) %s ago", human);
         break;
     case STATE_FAILED: snprintf(out, n, "Failed %s ago", human); break;
-    /* Stale is Backmux-specific: the boot id no longer matches, so the call
+    /* Stale is Backmux-specific: the boot id no longer matches, so the process
      * cannot be running. Report the age without a false exit story. */
     case STATE_STALE: snprintf(out, n, "Stale %s", human); break;
     default: snprintf(out, n, "Unknown"); break;
@@ -120,7 +120,7 @@ static void resolve_user_label(const struct hold_run_record *r, bool system_scop
     else snprintf(out, n, "%u", (unsigned)r->uid);
 }
 
-/* Parse "<id><suffix>" into a validated full-hex call id; rejects anything
+/* Parse "<id><suffix>" into a validated full-hex process id; rejects anything
  * else. Shared by the public projection reader and the orphan sweeps. */
 static bool id_from_artifact_name(const char *fname, const char *suffix, char id[ID_STR_LEN]) {
     size_t len = strlen(fname), suffix_len = strlen(suffix);
@@ -133,7 +133,7 @@ static bool id_from_artifact_name(const char *fname, const char *suffix, char id
 /* ---- collectors -------------------------------------------------------- */
 
 /* Records from a private store (the caller's own, a peer's, or root's global
- * store). running_only narrows to live calls; system_scope picks the USER
+ * store). running_only narrows to live processes; system_scope picks the USER
  * attribution. Corrupt records warn and are skipped, never fatal. */
 struct private_walk {
     const char *name_filter, *boot_id;
@@ -150,7 +150,7 @@ static int collect_private_cb(const char *id, const char *path, struct hold_run_
     }
     if (w->name_filter && (!r->has_name || strcmp(r->name, w->name_filter) != 0)) return 0;
     enum run_state st = hold_eval_state(r, w->boot_id);
-    /* Unknown stays: a call this shell cannot see (another PID namespace)
+    /* Unknown stays: a process this shell cannot see (another PID namespace)
      * may well be running, and a list of what runs must not hide it. */
     if (w->running_only && st != STATE_RUNNING && st != STATE_UNKNOWN) return 0;
     struct list_row row;
@@ -189,13 +189,13 @@ static int collect_list_private(const struct hold_store *store, const char *name
 /* The redacted global projection every user may see: the public index only,
  * never the root-private records. COMMAND and owner both read the literal
  * "hidden" -- exists-but-not-yours-to-see rather than "-"'s none. A row
- * carries the call id, its name if published, the honest projected status,
+ * carries the process id, its name if published, the honest projected status,
  * CREATED, and the ports root last observed. */
-/* Is a global call running? Anyone can see root's processes (/proc on Linux,
+/* Is a global process running? Anyone can see root's processes (/proc on Linux,
  * sysctl on macOS), so look: live members of its process group in its
  * session. The entry's hint is only what root wrote when it started (or a
  * waiter at exit); it decides only when there is no group to look at or the
- * process table cannot be read. Display only: acting on a global call goes
+ * process table cannot be read. Display only: acting on a global process goes
  * through root, which checks the private record first. */
 static bool public_call_running(const struct hold_public_index *pi) {
     bool hint = pi->state_hint[0] && strcmp(pi->state_hint, "running") == 0;
@@ -301,12 +301,12 @@ static int collect_all_user_stores(const char *name_filter, bool running_only, s
     return rc;
 }
 
-/* Refresh the public port projection of every live global call. Root can
+/* Refresh the public port projection of every live global process. Root can
  * observe the process group; non-root cannot, so this is where the PORTS a
  * user sees in `list -a` come from. Best-effort and eventually consistent: a
  * failed observe or rewrite just leaves the last projection in place. Only
  * listening TCP and bound UDP sockets are published (the hold_observe filter),
- * never outbound connections, so a call's peers cannot leak. */
+ * never outbound connections, so a process's peers cannot leak. */
 struct ports_refresh_walk { const struct hold_store *store; const char *boot_id; };
 
 static int refresh_ports_cb(const char *id, const char *path, struct hold_run_record *r, void *vctx) {
@@ -351,7 +351,7 @@ static int collect_system_view(const struct hold_invocation *inv, const struct h
 
 /* ---- the table renderer ------------------------------------------------ */
 
-/* The Docker-shaped call table, content-sized like `docker ps`: a first pass
+/* The Docker-shaped process table, content-sized like `docker ps`: a first pass
  * measures every column from the actual rows (never a fixed printf width that
  * shears a long value), a second pass prints. Two-space gutters; each column
  * at least as wide as its header; the final NAMES column is never padded, so
@@ -415,7 +415,7 @@ static int print_collected_table(struct list_rows *rows, bool with_user) {
 /* list is Backmux's scoped ledger. The requested scope resolves against
  * privilege: a normal user's default is their own store, root's the global
  * one. SYSTEM shows the global store (real for root, redacted for a normal
- * user); USER shows personal calls only, even under sudo; BOTH (-a) unions
+ * user); USER shows personal processes only, even under sudo; BOTH (-a) unions
  * the two. Every list view carries the USER column. */
 int hold_cmd_list(const struct hold_invocation *inv, const struct hold_store *user_store,
                   const struct hold_store *system_store, const char *name_filter,
@@ -441,8 +441,8 @@ int hold_cmd_list(const struct hold_invocation *inv, const struct hold_store *us
 /* ps is Docker's machine-wide, running-first view. Docker has no user/system
  * split, so a faithful ps shows everything running on the machine and speaks
  * only Docker: no scope flags, no USER column. A normal user sees their own
- * calls in full and the global calls redacted; root sees the global store
- * directly. -a adds ended calls. */
+ * processes in full and the global processes redacted; root sees the global store
+ * directly. -a adds ended processes. */
 int hold_cmd_ps(const struct hold_invocation *inv, const struct hold_store *user_store,
                 const struct hold_store *system_store, const char *name_filter, bool all) {
     bool running_only = !all;
@@ -464,7 +464,7 @@ static void unlink_public_index(const struct hold_store *store, const char *id) 
     if (hold_checked_snprintf(path, sizeof(path), "%s/%s.json", store->public_dir, id) == 0) unlink(path);
 }
 
-/* Purge derives its unlink targets from the store layout and the call id;
+/* Purge derives its unlink targets from the store layout and the process id;
  * a path string stored inside a record is never followed for deletion. */
 static void unlink_call_artifacts(const struct hold_store *store, const struct hold_run_record *r) {
     char log_path[HOLD_PATH_MAX], sock_path[HOLD_PATH_MAX];
@@ -488,7 +488,7 @@ static void unlink_call_artifacts(const struct hold_store *store, const struct h
     }
 }
 
-/* An --rm call's exit note: ".<id>.exit.tmp" holding "<code> <name>". The
+/* An --rm process's exit note: ".<id>.exit.tmp" holding "<code> <name>". The
  * dot-and-.tmp name puts it under sweep_tmp_litter, which deletes it after
  * a minute, so notes never pile up. */
 static void write_exit_note(const struct hold_store *store, const struct hold_run_record *r) {
@@ -549,7 +549,7 @@ void hold_auto_remove_settle(const struct hold_store *store, const char *id, int
         hold_free_run_record(&r);
         if (!auto_remove) return;
         /* Prefer the reaper's stamp (it carries the exit code into the note);
-         * past the timeout, a dead call is removed without one. */
+         * past the timeout, a dead process is removed without one. */
         if (st != STATE_RUNNING && (stamped || waited >= timeout_ms)) {
             bool removed = false;
             (void)hold_prune_one_run(store, id, boot_id, true, &removed);
@@ -594,7 +594,7 @@ int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const 
      * record after this unlink (see hold_mark_run_finished). */
     int lock_fd = hold_store_lock(store->record_dir);
     /* A redial launching it, or one that finished since the look above:
-     * the call is starting or running, not ended. */
+     * the process is starting or running, not ended. */
     struct hold_run_record cur;
     char cur_path[HOLD_PATH_MAX];
     bool running_now = false;
@@ -620,7 +620,7 @@ int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const 
 
 struct prune_sweep_stats { int removed, kept_live, kept_stale, kept_saved; };
 
-/* A young .<id>.reserve marks a call mid-creation (log and socket exist
+/* A young .<id>.reserve marks a process mid-creation (log and socket exist
  * before the record JSON); the sweep must not eat it. A stale reserve is a
  * dead start's litter: clear it and let the orphan collection proceed. */
 static bool orphan_creation_reserved(const struct hold_store *store, const char *id) {
@@ -651,7 +651,7 @@ static void sweep_tmp_litter(const char *dir) {
 
 /* One orphan sweep: any artifact in dir with the given suffix whose id has
  * no record left is removed (a public entry, log, or console socket whose
- * record is gone must never resurrect a call). */
+ * record is gone must never resurrect a process). */
 static void sweep_orphaned_artifacts(const struct hold_store *store, const char *dir,
                                      const char *suffix, struct prune_sweep_stats *stats) {
     DIR *d = opendir(dir);
@@ -685,8 +685,8 @@ static int prune_record_cb(const char *id, const char *path, struct hold_run_rec
         return 0;
     }
     enum run_state st = hold_eval_state(r, w->boot_id);
-    /* The sweep accounts for everything it sees: live calls are end's
-     * business, stale needs -a, and saved calls need a targeted --force. */
+    /* The sweep accounts for everything it sees: live processes are end's
+     * business, stale needs -a, and saved processes need a targeted --force. */
     if (st == STATE_RUNNING) {
         w->stats->kept_live++;
     } else if (st == STATE_STALE && !w->include_stale) {
@@ -756,8 +756,8 @@ int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_s
                           const struct hold_store *system_store, const char *target_token,
                           bool all, bool force, bool system_scope) {
     if (!target_token || strcmp(target_token, "all") == 0) {
-        /* A no-target sweep only clears already-ended calls and skips saved
-         * ones; --force adds nothing here (it never mass-ends live calls). The
+        /* A no-target sweep only clears already-ended processes and skips saved
+         * ones; --force adds nothing here (it never mass-ends live processes). The
          * scope is explicit: -s/--system sweeps the global store (root only,
          * non-root is re-execed through sudo before reaching here), everything
          * else sweeps the caller's personal store. */
@@ -765,8 +765,7 @@ int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_s
         struct prune_sweep_stats stats;
         bool include_stale = all || force || (target_token && strcmp(target_token, "all") == 0);
         int rc = cmd_prune_store_all(store, include_stale, &stats);
-        /* One line: what it did, and what is still running. Why one: the
-         * person can count, and list shows the rest. */
+        /* Summarize removed records and retained active processes. */
         if (rc == 0) {
             char active[64] = "";
             if (stats.kept_live > 0)
@@ -779,7 +778,7 @@ int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_s
         return rc;
     }
     /* Resolve the target regardless of run state (inspect intent) so protection
-     * and --force removal apply uniformly to live and ended calls. */
+     * and --force removal apply uniformly to live and ended processes. */
     struct hold_resolved_target *targets = NULL;
     int ntargets = 0;
     int rc = hold_resolve_action_token(inv, user_store, system_store, "inspect", target_token, all, &targets, &ntargets);
@@ -800,7 +799,7 @@ int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_s
     }
     char boot[128];
     const char *boot_id = hold_boot_id_or_null(boot);
-    /* Saved calls are protected: a targeted purge without --force refuses and
+    /* Saved processes are protected: a targeted purge without --force refuses and
      * echoes the exact command the user meant, ready to copy. */
     if (!force) {
         for (int i = 0; i < ntargets; i++) {
@@ -824,7 +823,7 @@ int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_s
     int worst = 0;
     int removed_count = 0;
     for (int i = 0; i < ntargets; i++) {
-        /* --force ends a still-live call before removal; without it a live call
+        /* --force ends a still-live process before removal; without it a live process
          * is refused below by hold_prune_one_run. */
         if (force) {
             struct hold_run_record r;

@@ -2,7 +2,7 @@
 
 [Docs index](index.md) | [Repository README](../README.md)
 
-Backmux publishes release artifacts for Linux and macOS. The installer detects your platform and picks the matching artifact. It checks the artifact against the release `SHA256SUMS` and validates the archive layout. Then it installs the `backmux` binary and runs it once to verify it. It refuses to install when the checksum is missing, malformed, or wrong.
+The release workflow builds artifacts for Linux and macOS. The installer detects your platform and picks the matching artifact. It checks the artifact against the release `SHA256SUMS` and validates the archive layout. Then it installs the `backmux` binary and runs it once to verify it. It refuses to install when the checksum is missing, malformed, or wrong.
 
 ## One-line install
 
@@ -177,8 +177,8 @@ The archive must hold the `backmux` executable at its root. The installer reject
 If no release artifact matches your platform, build from source. You need a C11 compiler, GNU make, and bash.
 
 ```sh
-git clone https://github.com/RchGrav/backmux.git
-cd backmux
+git clone --branch backmux https://github.com/RchGrav/callbox.git
+cd callbox
 make
 ./backmux --version
 ```

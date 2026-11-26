@@ -1,4 +1,7 @@
 usage: backmux save <target>
 
-Keep a process as a profile: purge and purge all leave it alone, and backmux
-recall starts it again. backmux delete <target> removes it.
+Mark a process record as a saved profile. Ordinary purge and purge all
+preserve it. recall can restart an ended process from its recorded settings.
+
+Use delete to remove an ended saved profile, or purge TARGET --force to stop
+and remove it. Saving a profile does not save a pane layout or program memory.

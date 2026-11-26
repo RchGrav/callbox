@@ -1,7 +1,6 @@
-/* cli/main.c — dispatch, the launch-option grammar, and the privilege gates.
- * Per-command flag parsing, arity, usage text, and help live in cli/specs.c;
- * this file owns the bare-form (Docker-dialect) launch path, the value
- * grammars behind the launch options, and the verb dispatch. */
+/* CLI dispatch, launch-option parsing, and privilege checks.
+ * cli/specs.c defines command names, shared options, arity, usage, and help.
+ * Commands with specialized arguments also parse them in runtime/. */
 #include "backmux/config.h"
 #include "backmux/types.h"
 #include "backmux/cli.h"
@@ -13,7 +12,7 @@
 #include "backmux/core.h"
 
 struct cli_run_options {
-    bool tail_flag; /* --tail/-f given: follow a named call's log, never redial it */
+    bool tail_flag; /* --tail/-f given: follow a named process's log, never redial it */
     bool detach;
     bool wait;
     bool interactive;
@@ -26,7 +25,7 @@ struct cli_run_options {
     int restart_delay_seconds;
     bool restart_delay_seen;
     int size_cols, size_rows; /* --size COLS ROWS: 0 = not given */
-    bool chat_key_seen;       /* --chat-key (backmux shell) */
+    bool chat_key_seen;       /* retained field; --chat-key is rejected */
     unsigned char chat_key;
 };
 
@@ -95,7 +94,7 @@ static bool parse_docker_run_flag(const char *arg,
     return false;
 }
 
-/* ---- value grammars behind the launch options (spec surface; frozen) ---- */
+/* ---- launch-option value parsing ---------------------------------------- */
 
 static int parse_restart_policy_arg(const char *arg, char out[64]) {
     if (!arg || !*arg) {
@@ -142,7 +141,7 @@ static int parse_restart_delay_arg(const char *arg, int *out) {
 }
 
 /* One detach-key token: a literal byte, ^X, ctrl-x / ctrl-X, or ctrl-space
- * (NUL, the default prefix, by the name people know it by). */
+ * (NUL, the default prefix). */
 static int detach_key_token_value(const char *token, size_t len, unsigned char *out) {
     if (!token || len == 0 || !out) return -1;
     if (len == 10 && !strncasecmp(token, "ctrl-space", 10)) {
@@ -276,8 +275,7 @@ static int append_env_file(const char *path, char ***env_out, int *envc_out) {
 
 enum run_opt_id { OPT_NAME, OPT_ENV, OPT_ENV_FILE, OPT_DETACH_KEYS, OPT_CHAT_KEY, OPT_RESTART, OPT_RESTART_DELAY };
 
-/* Each is spelled `--flag value`; rows with eq_form also take `--flag=value`,
- * as Docker's do. */
+/* Rows with eq_form accept both --flag value and --flag=value. */
 static const struct run_value_opt {
     const char *shortf;
     const char *longf;
@@ -293,21 +291,19 @@ static const struct run_value_opt {
     {NULL, "--restart-delay", true, OPT_RESTART_DELAY},
 };
 
-/* A call may not be named after a verb: at the top level the verb always
- * wins, so `backmux list` could never redial a call named list - it would
- * be reachable only by its id. Refused when the name is given, where the
- * fix (another name) is obvious, rather than leaving a call half-reachable.
- * Calls already named so keep their names. */
+/* Command names take precedence over process names at the top level.
+ * Reject new names that would prevent recall by name; existing records
+ * are unaffected. */
 static int refuse_verb_name(const char *name) {
-    /* "all" too: list all and purge all would make a call named so
+    /* "all" too: list all and purge all would make a process named so
      * ambiguous. */
     if (name && (!strcmp(name, "all") || !strcmp(name, "run"))) {
-        fprintf(stderr, "backmux: error: '%s' is reserved (%s); pick another name\n", name,
-                !strcmp(name, "all") ? "backmux list all, backmux purge all" : "backmux run is Docker's spelling of a launch");
+        fprintf(stderr, "backmux: error: '%s' is reserved (%s); choose another name\n", name,
+                !strcmp(name, "all") ? "backmux list all, backmux purge all" : "backmux run launches a program");
         return HOLD_EXIT_USAGE;
     }
     if (!name || !hold_cli_command_is_parser_owned(name)) return 0;
-    fprintf(stderr, "backmux: error: '%s' is a backmux command; a process named so could not be redialed by name\n",
+    fprintf(stderr, "backmux: error: '%s' is a backmux command and cannot be used as a process name\n",
             name);
     return HOLD_EXIT_USAGE;
 }
@@ -325,10 +321,9 @@ static int apply_run_value_opt(enum run_opt_id id, const char *value, struct cli
     case OPT_DETACH_KEYS:
         return configure_detach_keys_option(value);
     case OPT_CHAT_KEY:
-        /* Chat is no longer part of a call: it floats over whatever you are
-         * attached to, on Ctrl-Space c, so a call has no chat key to set. */
+        /* The attach client owns the chat overlay and its shortcut. */
         (void)value;
-        fprintf(stderr, "backmux: error: --chat-key is gone: chat belongs to no process; Ctrl-Space c opens it anywhere\n");
+        fprintf(stderr, "backmux: error: --chat-key is not supported; press Ctrl-Space c while attached to open chat\n");
         return HOLD_EXIT_USAGE;
     case OPT_RESTART:
         return parse_restart_policy_arg(value, run->restart_policy);
@@ -355,7 +350,7 @@ static int parse_run_options(int argc,
         (*index)++;
         return 0;
     }
-    /* Substrate flags Backmux cannot honor fail honestly, never accept-and-ignore. */
+    /* Backmux does not provide container port or filesystem mappings. */
     if (!strcmp(arg, "-p") || !strcmp(arg, "--publish") ||
         !strcmp(arg, "-P") || !strcmp(arg, "--publish-all") ||
         !strncmp(arg, "--publish=", 10)) {
@@ -372,13 +367,12 @@ static int parse_run_options(int argc,
         /* Rejected, never remapped (docs/docker-familiarity-contract.md). */
         fprintf(stderr,
                 "backmux: error: --privileged is not supported; backmux launches with the invoker's rights.\n"
-                "  To place a process in the root-managed store, run backmux as root (or with sudo).\n");
+                "  To start a process in the root-managed store, run backmux as root (or with sudo).\n");
         return HOLD_EXIT_USAGE;
     }
     if (!strcmp(arg, "--cap-add") || !strncmp(arg, "--cap-add=", 10) ||
         !strcmp(arg, "--cap-drop") || !strncmp(arg, "--cap-drop=", 11)) {
-        /* Grants-era remnant: capabilities left with that subsystem. Reject
-         * honestly like the other substrate flags rather than accept-and-ignore. */
+        /* Linux capability management is outside the launch interface. */
         fprintf(stderr,
                 "backmux: error: %s is not supported; backmux does not manage capabilities.\n"
                 "  Constrain the command itself instead, e.g. via capsh or systemd-run.\n",
@@ -455,7 +449,7 @@ static const char *default_shell(char *buf, size_t n) {
 }
 
 static const char shell_usage[] =
-    "usage: backmux shell [--name NAME] [--size COLS ROWS] [--chat-key KEY]\n"
+    "usage: backmux shell [--name NAME] [--size COLS ROWS]\n"
     "                  [-e KEY=VALUE]... [--rm] [shell [args...]]\n";
 
 int hold_cli_main(int argc, char **argv) {
@@ -480,7 +474,7 @@ int hold_cli_main(int argc, char **argv) {
     bool tail = false;
     bool console_mode = false;
     bool force_raw = false;
-    const char *launch_flag = NULL; /* the first option that only makes sense when placing a call */
+    const char *launch_flag = NULL; /* first option restricted to process launches */
     struct cli_run_options run = {0};
     struct hold_cli_owned_opts oo = {0};
 
@@ -493,7 +487,7 @@ int hold_cli_main(int argc, char **argv) {
             return option_rc;
         }
         if (parsed_run_option) {
-            /* (the detach keys are also an attach's to set) */
+            /* --detach-keys also applies to attach. */
             if (!launch_flag && strncmp(token, "--detach-keys", 13) != 0) launch_flag = token;
             continue;
         }
@@ -515,10 +509,8 @@ int hold_cli_main(int argc, char **argv) {
         break;
     }
 
-    /* A shortened verb or call name (see hold_shorten_word for the order and
-     * the why): it becomes the whole word before anything else looks -
-     * before the shell check too, so `backmux she` is backmux shell (it
-     * printed the help: the word became "shell" after that check). */
+    /* Expand unique command and process-name prefixes before dispatch,
+     * including the dedicated shell parser. */
     static char short_name[ALIAS_MAX_LEN + 1];
     if (!force_raw && !tail && !run.name && argi < argc &&
         !hold_cli_command_is_parser_owned(argv[argi])) {
@@ -533,22 +525,17 @@ int hold_cli_main(int argc, char **argv) {
         if (sr == 1) argv[argi] = (char *)verb;
         if (sr == 2) argv[argi] = short_name;
     }
-    /* backmux call|agent|server|detach [options] <program> [<args>...]: the
-     * four things people start, by name instead of by a matrix of -d/-i/-t.
-     * call: attached on a PTY, messages raw. agent: the same, with messages
-     * formatted for an agent (a header naming the sender and how to reply).
-     * server: detached, plain output to a log (-w keeps its exit code).
-     * detach: detached on a PTY, for attach, peek and send. The verb says
-     * the session mode, so -d/-i/-t after it are refused rather than
-     * silently fighting it; every other launch option still applies. The
-     * word after the options is always a program: never a call name. */
+    /* Launch commands select the I/O mode: call and agent use an attached
+     * PTY; detach uses a detached PTY; server writes to a log. agent also
+     * enables message headers, and server accepts -w for exit-code tracking.
+     * The first non-option argument is a program, not a retained process. */
     const char *launch_verb = NULL;
     if (argi < argc && !force_raw && !tail &&
         (!strcmp(argv[argi], "call") || !strcmp(argv[argi], "agent") || !strcmp(argv[argi], "server") ||
          !strcmp(argv[argi], "detach"))) {
         launch_verb = argv[argi++];
         if (run.detach || run.interactive || run.tty || run.wait || console_mode) {
-            fprintf(stderr, "backmux: error: backmux %s takes no -d/-i/-t/-w before it; the verb says how it runs\n",
+            fprintf(stderr, "backmux: error: -d/-i/-t/-w and --console cannot precede backmux %s; the command selects the launch mode\n",
                     launch_verb);
             free_run_options(&run);
             return HOLD_EXIT_USAGE;
@@ -569,9 +556,9 @@ int hold_cli_main(int argc, char **argv) {
                 bool session = run.detach != d || run.interactive != i || run.tty != t || tail || console_mode;
                 bool wait_ok = run.wait != w && !strcmp(launch_verb, "server");
                 if (session || (run.wait != w && !wait_ok)) {
-                    fprintf(stderr, "backmux: error: %s does not apply to backmux %s; the verb says how it runs%s\n",
+                    fprintf(stderr, "backmux: error: %s does not apply to backmux %s; the command selects the launch mode%s\n",
                             argv[argi - 1], launch_verb,
-                            run.wait != w ? " (-w is for server: a background job that keeps its exit code)" : "");
+                            run.wait != w ? " (backmux server -w records the exit code)" : "");
                     free_run_options(&run);
                     return HOLD_EXIT_USAGE;
                 }
@@ -616,8 +603,8 @@ int hold_cli_main(int argc, char **argv) {
         force_raw = true;
     }
 
-    /* backmux shell [options] [shell [args...]]: a person's shell on a PTY. Backmux's options end at the shell's name; every word
-     * after it is the shell's own, so no `--` is needed (one is accepted). */
+    /* Shell arguments begin after the shell executable. The optional --
+     * separator ends Backmux option parsing. */
     bool shell_mode = false;
     char shell_buf[HOLD_PATH_MAX];
     char *shell_argv[2] = {NULL, NULL};
@@ -658,8 +645,8 @@ int hold_cli_main(int argc, char **argv) {
             break;
         }
         if (run.detach || run.wait || tail || run.restart_policy[0]) {
-            fprintf(stderr, "backmux: error: backmux shell is a shell you sit at: -d, -w, --tail and --restart do not apply "
-                            "(a program to drive from a script is backmux detach <cmd>)\n");
+            fprintf(stderr, "backmux: error: backmux shell requires an attached terminal; -d, -w, --tail and --restart do not apply "
+                            "(use backmux detach <program> for a detached terminal process)\n");
             free_run_options(&run);
             return HOLD_EXIT_USAGE;
         }
@@ -676,7 +663,7 @@ int hold_cli_main(int argc, char **argv) {
     if (!shell_mode && !force_raw && argv[argi][0] == '-' && argv[argi][1] && strcmp(argv[argi], "--version") != 0 &&
         strcmp(argv[argi], "-V") != 0 && strcmp(argv[argi], "--help") != 0 && strcmp(argv[argi], "-h") != 0) {
         fprintf(stderr, "backmux: error: unknown flag '%s'\n"
-                        "  backmux help launch lists the flags for placing a process;\n"
+                        "  backmux help launch lists process launch options;\n"
                         "  to run a command whose name starts with a dash, put -- before it\n",
                 argv[argi]);
         free_run_options(&run);
@@ -743,10 +730,8 @@ int hold_cli_main(int argc, char **argv) {
         free_run_options(&run);
         return rc;
     }
-    /* Options for placing a call mean nothing to a verb; accepted and
-     * ignored, they would only hide a mistake. */
     if (owned && launch_flag) {
-        fprintf(stderr, "backmux: error: %s is for placing a process; it does not apply to 'backmux %s'\n", launch_flag, command);
+        fprintf(stderr, "backmux: error: %s is for launching a process; it does not apply to 'backmux %s'\n", launch_flag, command);
         free(cmd_argv);
         free_run_options(&run);
         return HOLD_EXIT_USAGE;
@@ -790,9 +775,9 @@ int hold_cli_main(int argc, char **argv) {
         hold_die_errno("backmux: failed to resolve invocation context");
     }
     inv.quiet = oo.quiet;
-    /* The bare form launches (or redials) a call and speaks Docker's output
+    /* The bare form launches (or redials) a process and speaks Docker's output
      * dialect: foreground streams and prints nothing of its own; -d prints the
-     * bare 64-hex call id. Management verbs keep their own output. */
+     * bare 64-hex process id. Management verbs keep their own output. */
     inv.docker_run = !owned;
     if (!owned) {
         if (!run.detach && (!console_mode || run.tty)) {
@@ -836,7 +821,7 @@ int hold_cli_main(int argc, char **argv) {
             hold_die_errno("backmux: failed to init user storage");
         }
     } else {
-        /* Root has no store of its own in the normal flow (its calls are
+        /* Root has no store of its own in the normal flow (its processes are
          * system-managed), but list -u / purge -u still need a personal store
          * handle: the invoking user's under sudo, else root's own home. The
          * paths are resolved without creating anything; an absent store simply
@@ -856,9 +841,9 @@ int hold_cli_main(int argc, char **argv) {
             }
             hold_die_errno("backmux: failed to init start storage");
         }
-        /* --tail <call>: follow that call's log, as `backmux tail` does - no
-         * PTY, no redial (Ctrl-C stops following; the call keeps running).
-         * A word that names no call is still a command to launch. */
+        /* --tail <process>: follow that process's log, as `backmux tail` does - no
+         * PTY, no redial (Ctrl-C stops following; the process keeps running).
+         * A word that names no process is still a command to launch. */
         if (run.tail_flag && !force_raw && !shell_mode && !run.name && cmd_argc == 1) {
             int rc = hold_cmd_tail_if_call(&inv, &user_store, &system_store, cmd_argv[0]);
             if (rc >= 0) {
@@ -866,9 +851,9 @@ int hold_cli_main(int argc, char **argv) {
                 return rc;
             }
         }
-        /* Redial: a lone token that resolves to a retained call (id then name)
-         * restarts it from its recipe. `--`, --name, and multi-token argv all
-         * force a fresh command launch (resolved on PATH and run directly). */
+        /* A lone token resolving to a retained process (ID, then name) can
+         * relaunch it or reconnect to it. --, --name, and multi-token argv
+         * force a fresh program launch. */
         if (!force_raw && !shell_mode && !run.name && cmd_argc == 1) {
             bool redialed = false;
             int rc = hold_cmd_redial(&inv, &user_store, &system_store, tail, console_mode,
@@ -886,21 +871,9 @@ int hold_cli_main(int argc, char **argv) {
          * missing command fails without leaving a record), matching the doc's
          * "process id -> process name -> PATH command" order. Shell snippets go
          * through an explicit `backmux -- sh -c ...`. */
-        /* User mode: a program placed with no session flags runs attached on
-         * a PTY, as `backmux shell` does for a shell - with the chat window,
-         * so messages for the call go there and are never typed into the
-         * program (backmux send still types into it) - and redial brings
-         * that program back. It is how a person runs a terminal program.
-         * Any switch says otherwise: -it, -d, -dt, -dw, -i. Why -it is not
-         * user mode: a program run with -it (an agent, say) must get its
-         * messages typed in; the window is only for the switchless launch
-         * and backmux shell. Without a terminal there is nowhere to draw
-         * the window: the program still runs attached on its PTY. */
-        /* A program placed with no verb and no session flags is a call:
-         * attached on a PTY, as backmux call does. No call carries chat or
-         * splits any more - chat floats over whatever you are attached to
-         * (Ctrl-Space c) and panes come from Ctrl-Space p a - so nothing
-         * here asks for them. */
+        /* A bare program launch uses an attached PTY, like backmux call.
+         * Chat and pane controls belong to the attach client; they do not
+         * change the launched program's message-delivery mode. */
         bool restart_asked = run.restart_policy[0] && strcmp(run.restart_policy, "no") != 0;
         bool bare = !run.detach && !run.interactive && !run.tty && !console_mode && !run.tail_flag && !run.wait &&
                     !restart_asked;
@@ -940,9 +913,8 @@ int hold_cli_main(int argc, char **argv) {
         rc = refuse_verb_name(cmd_argv[1]);
         if (rc == 0) rc = hold_cmd_rename_action(&inv, &user_store, &system_store, cmd_argv[0], cmd_argv[1]);
     } else if (!strcmp(canon, "list") || !strcmp(canon, "ps")) {
-        /* list shows what is running; list all adds the stopped ones. Why:
-         * "what is running" is the question asked most, and ended calls
-         * pile up. (ps is Docker's and keeps -a.) list all NAME filters. */
+        /* An unfiltered list defaults to running processes. list all adds
+         * ended records; list NAME filters across states. ps uses -a. */
         bool list_all = cmd_argc >= 1 && !strcmp(cmd_argv[0], "all") && !strcmp(canon, "list");
         const char *name_filter = list_all ? (cmd_argc == 2 ? cmd_argv[1] : NULL) : (cmd_argc == 1 ? cmd_argv[0] : NULL);
         if (!list_all && cmd_argc == 2) {
@@ -1012,11 +984,8 @@ int hold_cli_main(int argc, char **argv) {
              * (include stale). */
             bool purge_system = (oo.system_scope || oo.requested_system) && !oo.user_scope;
             if (purge_system && !target && !inv.euid_root) {
-                /* A non-root global sweep re-execs through sudo so sudo prompts
-                 * for the password. This is NOT the deleted elevation
-                 * subsystem: no sudoers pinning, no capability tokens — one
-                 * auditable execvp, whose root child re-enters here already
-                 * privileged and sweeps directly. */
+                /* Re-execute a non-root system-store sweep through sudo;
+                 * the elevated invocation performs the sweep directly. */
                 char self[HOLD_PATH_MAX];
                 if (hold_resolve_self_executable_path(argv[0], self, sizeof(self)) == 0) {
                     char *sudo_argv[8];
@@ -1033,7 +1002,7 @@ int hold_cli_main(int argc, char **argv) {
                 fprintf(stderr, "backmux: global purge needs root: sudo backmux purge --system\n");
                 rc = 3;
             } else if (target && !strcmp(target, "all")) {
-                /* purge all: end and remove every call not saved (it asks). */
+                /* purge all stops unsaved processes and removes their records. */
                 rc = hold_cmd_purge_all_action(&inv, &user_store, &system_store, oo.force, purge_system);
             } else {
                 rc = hold_cmd_purge_action(&inv, &user_store, &system_store, target, oo.all, oo.force, purge_system);

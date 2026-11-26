@@ -2,25 +2,19 @@
 # Privilege-delegation lane: run the regression suite as a NON-root user that can
 # elevate via passwordless sudo, and let the suite elevate per-test.
 #
-# This mirrors how backmux is actually used and must be tested: you invoke it as
-# yourself, and it sudo-elevates only the operations that need root — and the
-# elevated process must know WHICH non-root user invoked it (the SUDO_UID/
-# SUDO_USER provenance), not merely that it is running as root. Running the whole
-# suite as root would erase that distinction (and leave root-owned build
-# artifacts a non-root cleanup cannot remove, which is exactly what used to break
-# this lane). The suite's as_user/as_root/as_sudo_from_user helpers do the
-# per-test elevation; HOLD_REQUIRE_ROOT_TESTS=1 turns any skip into a failure,
-# so this lane proves the elevated tests really executed (that is its job, vs the
-# user-runner which merely permits them to skip).
+# The suite's as_user/as_root/as_sudo_from_user helpers exercise user, root,
+# and sudo invocations separately, including SUDO_UID/SUDO_USER provenance.
+# Builds and cleanup remain owned by the non-root test runner.
+# HOLD_REQUIRE_ROOT_TESTS=1 makes skipped privilege-sensitive tests fail.
 #
 # Shared verbatim by the GitHub CI lane (runs as the non-root 'runner') and by
 # scripts/linux.sh (runs this as the container's non-root 'ci' sudoer).
 set -euo pipefail
 
 if [ "$(id -u)" -eq 0 ]; then
-  echo "test_root.sh: run me as a NON-root user with passwordless sudo, not as root." >&2
-  echo "  This lane models the real 'invoke as a user, then sudo-elevate' flow so the" >&2
-  echo "  elevated tests see a genuine SUDO_UID/SUDO_USER. In the container use" >&2
+  echo "test_root.sh: run as a non-root user with passwordless sudo." >&2
+  echo "  This lane tests sudo invocations with the invoking user's" >&2
+  echo "  SUDO_UID/SUDO_USER. In the container use" >&2
   echo "  'scripts/linux.sh root' (it runs this as the non-root 'ci' sudoer)." >&2
   exit 1
 fi

@@ -1,5 +1,8 @@
 usage: backmux end [--print] <target>...
 
-End processes politely: TERM, then KILL if they have not gone within 5 seconds.
-Several targets may be named. --print ends nothing: it prints the kill command
-that would, for a script to run or inspect. (stop is an alias.)
+Stop each target's process group with SIGTERM. If it remains running after
+five seconds, send SIGKILL. Records and logs are retained unless the process
+was launched with --rm.
+
+--print displays the signal command without executing it. stop is an alias.
+Use kill for immediate SIGKILL, or purge to remove ended process records.

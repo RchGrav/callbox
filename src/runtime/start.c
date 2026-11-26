@@ -15,7 +15,7 @@
 
 static volatile sig_atomic_t g_restart_stop = 0;
 /* Decided once by the launcher, before it forks, and inherited: whether this
- * -d call's supervisor (waiter or restart supervisor) holds the lifetime log
+ * -d process's supervisor (waiter or restart supervisor) holds the lifetime log
  * lock - only under the fallback. The record says the same (liveness_lock). */
 static bool g_liveness_lock = false;
 
@@ -111,9 +111,9 @@ static int clear_process_environment(void) {
 #endif
 }
 
-/* The call's own identity, exported to the held program: BACKMUX_ID and
+/* The process's own identity, exported to the held program: BACKMUX_ID and
  * BACKMUX_NAME are its address (backmux send/peek/wait accept either), and
- * BACKMUX_PARENT names the call that launched it, when it was launched
+ * BACKMUX_PARENT names the process that launched it, when it was launched
  * from inside one (an agent starting a worker), so the worker can reply.
  * Captured in the launcher before fork; always overrides inherited values. */
 static struct {
@@ -136,13 +136,13 @@ static void child_identity_prepare(const char *id, const char *name, bool tty) {
     g_child_identity.tty = tty;
 }
 
-/* A TTY call runs on Backmux's own xterm-compatible terminal, never on the
+/* A TTY process runs on Backmux's own xterm-compatible terminal, never on the
  * launcher's, so its environment describes that terminal: TERM is
  * xterm-256color (as docker run -t sets TERM for its terminal), and the
  * variables naming the launcher's terminal or multiplexer go. A program that
  * sees TMUX believes it runs inside that tmux and acts on it - hollywood
  * opened its panes in the caller's byobu, leaving backmux's screen blank.
- * Applied before the recipe env, so an explicit -e wins. Plain calls are
+ * Applied before the recipe env, so an explicit -e wins. Plain processes are
  * left alone. */
 static int apply_default_term(void) {
     if (!g_child_identity.tty) return 0;
@@ -280,7 +280,7 @@ static int cannot_start(const char *name, int err) {
 }
 
 /* Exit persistence: rc 1 (record purged after load) is FINAL — never
- * resurrect a call the user just removed. Only rc -1 retries (covers a
+ * resurrect a process the user just removed. Only rc -1 retries (covers a
  * fast exit before the parent has written the record). */
 static void mark_finished_with_retry(const struct hold_store *store, const char *id, int status, pid_t pid) {
     for (int i = 0; i < 50; i++) {
@@ -328,9 +328,9 @@ static void run_restart_supervisor(const struct hold_store *store,
         clock_gettime(CLOCK_MONOTONIC, &run_start);
         /* The first worker's exec is the launch: its errno rides the launch
          * handshake, so a program that cannot start is reported (126/127)
-         * and rolled back exactly as without --restart, instead of a call
+         * and rolled back exactly as without --restart, instead of a process
          * id for a program that never ran. Later workers' failures are runs
-         * of the call and go to its log. */
+         * of the process and go to its log. */
         bool first = handshake_fd >= 0;
         int exec_pipe[2] = {-1, -1};
         if (first && hold_cloexec_pipe(exec_pipe) != 0) child_fail_errno(handshake_fd);
@@ -360,12 +360,12 @@ static void run_restart_supervisor(const struct hold_store *store,
                 if (hs < 0) kill(worker, SIGKILL);
                 while (waitpid(worker, NULL, 0) < 0 && errno == EINTR) continue;
                 errno = hs > 0 && worker_errno ? worker_errno : EIO;
-                child_fail_errno(handshake_fd); /* the launcher rolls the call back */
+                child_fail_errno(handshake_fd); /* the launcher rolls the process back */
             }
             close(handshake_fd);
             handshake_fd = -1;
             /* Under the fallback, a passive lifetime lock on the log tells
-             * shells in other PID namespaces the call is alive; nothing else
+             * shells in other PID namespaces the process is alive; nothing else
              * changes. */
             if (g_liveness_lock) hold_supervisor_lock_log(log_path);
         }
@@ -428,7 +428,7 @@ static pid_t fork_detached(void) {
 }
 
 /* docker run parity: a foreground launch exits with the held process's exit
- * status once it ends. An interrupted tail leaves the call held: exit 0. */
+ * status once it ends. An interrupted tail leaves the process held: exit 0. */
 static int foreground_exit_status(const struct hold_store *store, const char *id) {
     char boot[128] = {0};
     bool have_boot = hold_current_boot_id(boot, sizeof(boot));
@@ -492,8 +492,8 @@ bool hold_start_target_is_within_invoking_home(const struct hold_invocation *inv
                                                  const char *command,
                                                  int argc,
                                                  char **argv) {
-    /* Only an explicit start target (bare `backmux <cmd>` or `backmux start <cmd>`)
-     * is inspected; other owned verbs never route stores by argv. */
+    /* Only launch targets are inspected; management commands do not select
+     * a store from their program arguments. */
     if (argc <= 0 || !argv || !argv[0] || !*argv[0] ||
         (owned && !(command && strcmp(command, "start") == 0))) {
         return false;
@@ -552,7 +552,7 @@ struct launch_undo {
     const struct hold_store *store;
     const char *id;           /* reserve to abort once reserved */
     bool reserved;
-    int claim_fd;             /* a redial's claim on the call (-1: none) */
+    int claim_fd;             /* a redial's claim on the process (-1: none) */
     const char *log_path;
     bool unlink_log;          /* owns_new_log, once launch material exists */
     const char *console_sock; /* unlinked when nonempty */
@@ -633,21 +633,20 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     bool pipe_mode = interactive_stdin && !console_mode && !restart_enabled;
     bool brokered = console_mode || pipe_mode;
     if (restart_enabled && console_mode) {
-        fprintf(stderr, "backmux: error: --restart with --tty/-t is not supported yet\n");
+        fprintf(stderr, "backmux: error: --restart cannot be combined with --tty/-t\n");
         return HOLD_EXIT_USAGE;
     }
-    /* A shell is something you sit at: attached, at a terminal. Started from
-     * a script it would wait on input nobody types. */
+    /* backmux shell requires an attached interactive terminal. */
     if (opts->shell && (!console_mode || !tail)) {
         fprintf(stderr, "backmux: error: a backmux shell runs attached, on its PTY; -d does not apply\n");
         return HOLD_EXIT_USAGE;
     }
     if (opts->shell && !(isatty(STDIN_FILENO) && isatty(STDOUT_FILENO))) {
-        fprintf(stderr, "backmux: error: backmux shell needs a terminal; run it from an interactive terminal "
-                        "(to drive a program from a script: backmux detach <cmd>)\n");
+        fprintf(stderr, "backmux: error: backmux shell requires interactive terminal input and output "
+                        "(use backmux detach <program> for a detached terminal process)\n");
         return HOLD_EXIT_USAGE;
     }
-    /* --size is for a PTY call; one is never allocated just because a size
+    /* --size is for a PTY process; one is never allocated just because a size
      * was given. */
     if (opts->size_cols && !console_mode) {
         fprintf(stderr, "backmux: error: --size sets a PTY process's terminal size; add -t "
@@ -662,11 +661,10 @@ int hold_perform_start_options(const struct hold_invocation *inv,
      * launcher samples it here, while the real one is still on its stdio. */
     struct hold_console_options console_options = {.chat = opts->chat, .pipe = pipe_mode, .program = !opts->shell};
     if (opts->chat) {
-        /* A backmux shell's broker reads the keys itself: the lead key, then the
-         * detach key or the chat key. */
+        /* Broker-composited chat requires a two-key detach sequence. */
         unsigned char keys[8];
         if (hold_console_get_detach_keys(keys, sizeof(keys)) != 2) {
-            fprintf(stderr, "backmux: error: a backmux shell's --detach-keys are two keys: the lead key, then the key that "
+            fprintf(stderr, "backmux: error: broker-composited chat requires two detach keys: the prefix, then the key that "
                             "detaches (the default is ctrl-space,q)\n");
             return HOLD_EXIT_USAGE;
         }
@@ -674,7 +672,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         console_options.detach_key = keys[1];
         console_options.chat_key = opts->chat_key ? opts->chat_key : HOLD_CHAT_KEY_DEFAULT;
         if (console_options.chat_key == keys[0] || console_options.chat_key == keys[1]) {
-            fprintf(stderr, "backmux: error: --chat-key is pressed after the lead key, so it cannot be the lead key or the "
+            fprintf(stderr, "backmux: error: the recorded chat key must differ from the prefix and the "
                             "detach key\n");
             return HOLD_EXIT_USAGE;
         }
@@ -778,7 +776,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         if (opts->existing_run_name && *opts->existing_run_name) {
             copy_field(&u, run_name, sizeof(run_name), opts->existing_run_name, "backmux: process name too long");
         }
-        /* One launch per call at a time: claim it, then decide. The caller's
+        /* One launch per process at a time: claim it, then decide. The caller's
          * "not running" was read before this claim; a redial that launched
          * in between is seen only now (see hold_claim_existing_run). */
         u.claim_fd = hold_claim_existing_run(store, id);
@@ -859,9 +857,9 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     }
     /* A waiter stays behind as the program's parent to record its exit code:
      * foreground (it reports that code), -w, --rm, and --restart (whose
-     * supervisor is the waiter). A plain -d call leaves nothing behind - root's
-     * too: other users see a global call's liveness from its process group,
-     * not from the public entry's hint. A TTY call's broker is its parent. */
+     * supervisor is the waiter). A plain -d process leaves nothing behind - root's
+     * too: other users see a global process's liveness from its process group,
+     * not from the public entry's hint. A TTY process's broker is its parent. */
     bool waiter = !brokered && (opts->wait || tail || opts->auto_remove || restart_enabled);
     /* The waiter (or broker) reports the program's pid back over this pipe. */
     if (!restart_enabled && (brokered || waiter) && hold_cloexec_pipe(io + TP_R) != 0) {
@@ -869,8 +867,8 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     }
 
     child_identity_prepare(id, run_name, console_mode);
-    /* Only under the fallback (Unix sockets denied, or forced) does a call
-     * carry the cross-shell lock; asked once, before the fork (a TTY call's
+    /* Only under the fallback (Unix sockets denied, or forced) does a process
+     * carry the cross-shell lock; asked once, before the fork (a TTY process's
      * broker decides by its own listener). */
     bool fallback = !brokered && hold_console_fallback_selected();
     g_liveness_lock = fallback && waiter;
@@ -883,7 +881,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         close(io[HS_R]);
         if (io[TP_R] >= 0) close(io[TP_R]);
         /* The claim is the launcher's alone: a broker, waiter or supervisor
-         * that kept it would hold every later redial for the call's life. */
+         * that kept it would hold every later redial for the process's life. */
         if (u.claim_fd >= 0) close(u.claim_fd);
         if (restart_enabled) {
             run_restart_supervisor(store, id, io[HS_W], interactive_stdin,
@@ -905,7 +903,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
             if (target != 0) {
                 /* Under the fallback (sockets denied, or forced), a passive
                  * lifetime lock on the log tells shells in other PID namespaces
-                 * the call is alive - taken after the fork, so the target never
+                 * the process is alive - taken after the fork, so the target never
                  * holds it. The waiter itself is the original, below. */
                 if (g_liveness_lock) hold_supervisor_lock_log(log_path);
                 /* Write the target pid BEFORE closing the handshake pipe, so
@@ -1041,7 +1039,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     r.pid_ns = hold_current_pid_ns();
     /* Whether a supervisor holds the lifetime log lock - a waiter under the
      * fallback, or a broker whose endpoint came up as a FIFO - so that the
-     * lock going away means the call has ended. (A plain -d call's output
+     * lock going away means the process has ended. (A plain -d process's output
      * lock says only that it runs: a program may close its output.) */
     struct stat ep;
     r.liveness_lock = brokered ? (console_sock[0] && lstat(console_sock, &ep) == 0 && S_ISFIFO(ep.st_mode))
@@ -1059,9 +1057,8 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     r.recipe.mode_chat = opts->chat || opts->user_mode;
     r.recipe.mode_shell = opts->shell;
     r.recipe.mode_agent = opts->agent;
-    /* The folder it started in is where recall starts it again ("same path
-     * and args"), unless its working setting was unset - then recall runs
-     * it wherever it is run from, and the record keeps saying so. */
+    /* Record the launch working directory for recall, unless the profile's
+     * working setting was explicitly unset. */
     if (!opts->no_working && observed_cwd[0] &&
         hold_checked_snprintf(r.recipe.working, sizeof(r.recipe.working), "%s", observed_cwd) == 0)
         r.recipe.has_working = true;
@@ -1074,7 +1071,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     r.recipe.size_cols = opts->size_cols;
     r.recipe.size_rows = opts->size_rows;
     /* The broker is its own session's leader; a message it sends for the
-     * call (a backmux shell's chat) is verified against this. */
+     * process (a backmux shell's chat) is verified against this. */
     r.has_broker = broker_pid > 1;
     r.broker_pid = broker_pid;
     if (envc > 0 && hold_copy_argv(&r.recipe.env, envc, env) != 0) {
@@ -1117,11 +1114,11 @@ int hold_perform_start_options(const struct hold_invocation *inv,
 #endif
     int record_lock = -1;
     if (restarting_existing) {
-        /* A redial replaces the record, but what the person set on the call
-         * (backmux save, rename) is the call's, not the run's: carried over
+        /* A redial replaces the record, but what the person set on the process
+         * (backmux save, rename) is the process's, not the run's: carried over
          * from the record as it is now, under the lock save and rename
          * write under, so one made during this launch is kept too. Why: a
-         * redialed call that lost its saved flag was deleted by the next
+         * redialed process that lost its saved flag was deleted by the next
          * plain purge. */
         record_lock = hold_store_lock(store->record_dir);
         struct hold_run_record cur;
@@ -1143,7 +1140,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         u.record_path = record_path;
     }
     /* Committed: the record write removed the claim's file; a waiting
-     * redial now finds this call running. */
+     * redial now finds this process running. */
     hold_release_existing_run(store, id, u.claim_fd);
     u.claim_fd = -1;
 
@@ -1192,8 +1189,8 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     hold_run_id_display(r.id, display_id);
     /* Docker's dialect: detach prints the full ID alone on stdout (scripts
      * read it: id=$(backmux -dt ...)); foreground prints nothing of its own
-     * (the call's output is what follows). The name follows on stderr. Why:
-     * it is what msg, peek and attach take, and with other calls running,
+     * (the process's output is what follows). The name follows on stderr. Why:
+     * it is what msg, peek and attach take, and with other processes running,
      * whoever started this one could not tell which name was theirs. */
     if (!tail) {
         printf("%s\n", r.id);
@@ -1206,7 +1203,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         free_launch_and_observed_argv(launch_argv, observed_argv, argc);
         int tail_rc = 0;
         if (brokered) {
-            /* placed from inside another call: this attach is nested in it */
+            /* placed from inside another process: this attach is nested in it */
             struct hold_store home_store;
             const char *home = getenv("HOME");
             bool have_home = home && *home && hold_init_user_store_from_home(home, &home_store) == 0;
@@ -1233,7 +1230,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
             }
             /* A program that is over before the attach gets there is not an
              * error: it ran, and what it printed and how it exited follow. */
-            /* From a script, a call that was over before the stream reached
+            /* From a script, a process that was over before the stream reached
              * it (it sent nothing) is shown from the log, too. */
             /* Inline is a stream too: a program over before the attach got
              * there can leave it with nothing (seen on macOS over FIFOs), and
@@ -1244,7 +1241,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
             bool unseen = hold_console_was_gone() || (streamed && tail_rc == 0 && !hold_console_heard_output());
             if (unseen) tail_rc = 0;
             /* Detached, or over (an attach that failed has said so itself).
-             * An ended call's exit status is backmux's own, as for a launch
+             * An ended process's exit status is backmux's own, as for a launch
              * without -t. */
             if (tail_rc == 0 && hold_after_attach(inv, store, &r, r.has_name ? r.name : display_id, on_terminal, unseen))
                 tail_rc = foreground_exit_status(store, r.id);
@@ -1254,7 +1251,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         }
         if (opts->auto_remove && hold_call_still_running(store, r.id)) {
             /* Detached (Ctrl-Space q) or interrupted while it runs on: it
-             * is removed when it ends, as a -d --rm call is. */
+             * is removed when it ends, as a -d --rm process is. */
             spawn_auto_remove_watcher(store, &r);
         } else if (opts->auto_remove) {
             char boot[128];

@@ -212,8 +212,8 @@ int hold_mark_run_finished(const struct hold_store *store, const char *id, int s
     struct hold_run_record r;
     if (hold_load_record_by_id(store->record_dir, id, &r, path, sizeof(path)) != 0) return -1;
     /* A purge may have removed the record between our load and this write
-     * (force-purging a live call races the reaper's exit stamp); recreating
-     * it here would resurrect a call the user just removed. Purge unlinks
+     * (force-purging a live process races the reaper's exit stamp); recreating
+     * it here would resurrect a process the user just removed. Purge unlinks
      * under the store lock, so holding it from this re-check through the
      * rename makes "purged, stay gone" hold. Return 1 — distinct from -1 —
      * so callers can tell "purged, stay gone" (terminal) from a load failure
@@ -258,7 +258,7 @@ int hold_mark_run_finished(const struct hold_store *store, const char *id, int s
     /* (Root rewriting a sudo user's record: hold_atomic_write_json gives the
      * new file the old one's owner before the rename.) */
     if (rc == 0 && store->kind == STORE_SYSTEM_MANAGED && store->public_dir[0]) {
-        /* A finishing call has no live ports; the projection clears them. */
+        /* A finishing process has no live ports; the projection clears them. */
         rc = hold_write_public_index_atomic(store, &r, NULL);
     }
     hold_store_unlock(lock_fd);

@@ -6,10 +6,8 @@
 #include "backmux/console_internal.h"
 #include "backmux/screen.h"
 
-/* Ctrl-Space then q. Why Ctrl-Space: no shell or editor needs it held
- * back (Emacs and readline only tap it to set a mark, and the prefix twice
- * still sends one); Ctrl-P, the old prefix, is a shell's previous-command
- * key. Why q: Docker's detach is Ctrl-P Ctrl-Q, and d is densify. */
+/* Default detach sequence: Ctrl-Space, then q. Repeating the prefix sends
+ * one prefix byte to the program, preserving access to its own binding. */
 #define CONSOLE_ATTACH_PREFIX 0x00 /* Ctrl-Space sends NUL */
 #define CONSOLE_ATTACH_DETACH 'q'
 
@@ -23,7 +21,7 @@ static char g_enclosing_sock[HOLD_PATH_MAX];
 
 /* The person's terminal, owned across a hand-off: plain attach and the
  * compositor (mux.c) take turns at it without leaving the alternate screen
- * in between, so going from one call to panes and back never flashes the
+ * in between, so going from one process to panes and back never flashes the
  * shell underneath. Restored once, by whoever has it last. */
 struct hold_console_term g_console_term = {.guard_fd = -1};
 
@@ -175,9 +173,9 @@ bool hold_console_was_gone(void) {
     return g_gone;
 }
 
-/* The person detached (the detach keys, or the prefix then q with panes up):
- * the names let go, comma separated; "" when it was this process alone. A
- * newer attach taking the process sets nothing - that is not a detach. */
+/* Explicit detachment: comma-separated names of removed panes, or an empty
+ * string for a single-process attach. Replacement by a newer client does
+ * not set this state. */
 static bool g_detached;
 static char g_detached_names[512];
 /* The process a compositor handed back to plain attach: a detach from then
@@ -261,7 +259,7 @@ void hold_console_set_enclosing(const char *sock_path) {
     snprintf(g_enclosing_sock, sizeof(g_enclosing_sock), "%s", sock_path ? sock_path : "");
 }
 
-/* We are an attach client in another call's terminal: say so to that call's
+/* We are an attach client in another process's terminal: say so to that process's
  * broker, with our detach keys, over a control connection held open until we
  * exit (its closing is how that broker learns we have gone). The person's
  * detach keys reach the outermost client first; its broker hands them on to
@@ -351,8 +349,8 @@ struct attach_state {
     struct hold_term_line line;
 };
 
-/* A frame that cannot be sent because the broker has gone (the call ended
- * while input was still coming): not an error - stop, and let what the call
+/* A frame that cannot be sent because the broker has gone (the process ended
+ * while input was still coming): not an error - stop, and let what the process
  * did decide the exit status. */
 static int sent_or_over(int rc) {
     if (rc == 0) return 0;
@@ -469,7 +467,7 @@ static int attach_on_resize(void *ctx, const struct winsize *ws) {
 }
 
 /* Our reader went away (`backmux foo | head`): stop showing output. The
- * call itself is not ours to end - it keeps running - and the caller says
+ * process itself is not ours to end - it keeps running - and the caller says
  * so, then ends as a writer to a closed pipe does. */
 static int stdout_failed(void) {
     if (errno != EPIPE) return -1;
@@ -509,7 +507,7 @@ static int attach_on_output(void *ctx, const char *buf, size_t n) {
  * reason still unread in the connection. Read what is there (briefly: a
  * broker that went away gives its end at once) before calling the console
  * gone. Why: under load a refused attach said "has closed its terminal and
- * runs on" about a call that was running and attached elsewhere. */
+ * runs on" about a process that was running and attached elsewhere. */
 static void read_parting_words(int sock, struct attach_state *a) {
     while (a->held_len < sizeof(a->held)) {
         struct pollfd p = {.fd = sock, .events = POLLIN};
@@ -538,7 +536,7 @@ static int attach_once(const char *sock_path) {
             g_refused_by = hold_fifo_busy_holder();
             return 3;
         }
-        /* The console has closed: the call's output is over. A broker that
+        /* The console has closed: the process's output is over. A broker that
          * exits mid-handshake (a command that ended at once) shows up as a
          * refused, reset, or broken connection rather than a missing one. */
         if (e == ENOENT || e == ECONNREFUSED || e == ECONNRESET || e == EPIPE || e == ENXIO) {
@@ -603,15 +601,12 @@ static int attach_once(const char *sock_path) {
     struct hold_term_detach detach;
     hold_term_detach_init(&detach, g_detach_keys, g_composited ? 0 : g_detach_key_count);
     if (g_line_mode) hold_term_detach_set_interrupt(&detach, 0x03); /* Ctrl-C */
-    /* The prefix then a (attach a process to the screen), c (chat), ? (the
-     * keys), or a mode key: the compositor's. Only with the two-key prefix
-     * form and a terminal to draw on. */
+    /* Compositor controls require a two-key detach sequence and an owned
+     * terminal. Prefix p opens pane mode; its a opens the attach picker. */
     bool mux_keys = interactive && !g_line_mode && !g_composited && g_mux_store && g_detach_key_count == 2 &&
                     term->owned;
     if (mux_keys) {
-        /* What means something with one process on screen: c chat, ? the
-         * keys, n rename, ; save, p pane mode (its a attaches another). The
-         * rest - swap, rearranging, resize, lock - act on several panes. */
+        /* These commands enter the compositor from a single-process attach. */
         static const unsigned char cmds[] = {'c', '?', 'n', ';', 'p'};
         hold_term_detach_set_commands(&detach, cmds, sizeof(cmds));
     }
@@ -727,7 +722,7 @@ int hold_run_native_console(const char *sock_path) {
         if (!g_mux_cmd) return rc;
         /* Panes or a floating window were asked for: the compositor takes the
          * terminal. With one pane left and nothing floating it hands back the
-         * call to show plainly, and this loop attaches to it as before. */
+         * process to show plainly, and this loop attaches to it as before. */
         char back[HOLD_PATH_MAX] = "";
         bool handed_back = false;
         rc = hold_mux_run(g_mux_store, g_chat_name, cur, g_mux_cmd, g_mux_rest, g_mux_rest_len, back, sizeof(back),

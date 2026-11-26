@@ -20,10 +20,8 @@ int hold_lookup_passwd_by_uid(uid_t uid, struct hold_passwd_entry *out) {
     if (!out) { errno = EINVAL; return -1; }
     memset(out, 0, sizeof(*out));
 
-    /* getpwuid consults the platform's account database (OpenDirectory on
-     * macOS, NSS on glibc); real macOS users never appear in /etc/passwd.
-     * The file parse below stays as the fallback for static Linux builds,
-     * where glibc's NSS lookup can be unavailable. */
+    /* Query the platform account database, which can contain users absent
+     * from /etc/passwd. Static builds use the file parser below. */
 #if !defined(HOLD_STATIC_LINK)
     /* A statically linked glibc binary cannot load NSS modules reliably (and
      * the linker warns about it); that build reads /etc/passwd only. */
@@ -85,7 +83,7 @@ int hold_resolve_binary_path(const char *argv0, char *out, size_t n) {
 
 /* An absolute spelling of path WITHOUT resolving symlinks: programs that find
  * their environment through their own path (a venv's python, busybox-style
- * multi-call binaries) must run under the name they were given. Leading
+ * multi-process binaries) must run under the name they were given. Leading
  * "./" segments are dropped; ".." stays for the kernel to resolve. */
 static int absolute_copy(const char *path, const char *cwd, char *out, size_t n) {
     if (path[0] == '/') return hold_checked_snprintf(out, n, "%s", path);

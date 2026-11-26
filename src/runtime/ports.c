@@ -7,10 +7,10 @@
 #include "backmux/platform.h"
 #include "backmux/observe.h"
 
-/* backmux ports <target>: the listening sockets in use by the call's process
+/* backmux ports <target>: the listening sockets in use by the process's process
  * group, one per line, in the same "127.0.0.1:8080/tcp" form as the PORTS
- * column. Own calls need no root - the match runs against /proc socket inodes.
- * A call the invoking user cannot read (another user's) exits 3 with a note. */
+ * column. Own processes need no root - the match runs against /proc socket inodes.
+ * A process the invoking user cannot read (another user's) exits 3 with a note. */
 int hold_cmd_ports_action(const struct hold_invocation *inv,
                           const struct hold_store *user_store,
                           const struct hold_store *system_store,
@@ -41,7 +41,7 @@ int hold_cmd_ports_action(const struct hold_invocation *inv,
     const char *boot_id = hold_boot_id_or_null(boot);
     enum run_state st = hold_eval_state(&r, boot_id);
     if (st != STATE_RUNNING) {
-        /* An ended call holds no sockets; that is a clean empty result, not an
+        /* An ended process holds no sockets; that is a clean empty result, not an
          * error, so scripts can loop over it. */
         hold_free_run_record(&r);
         free(targets);

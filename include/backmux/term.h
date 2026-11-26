@@ -37,7 +37,7 @@ int hold_term_pipe_spawn(const struct hold_term_spawn *spec,
 int hold_cloexec_pipe(int fds[2]);
 
 /* One drain step of a PTY master: reads once into buf[n], appends the bytes
- * to the call's log, and returns them for caller fan-out (screen, client).
+ * to the process's log, and returns them for caller fan-out (screen, client).
  * Returns >0 bytes pumped; 0 when the target side is gone (EOF, or EIO from
  * a failed read after the last slave closed); -1 on a retryable read error
  * (errno preserved). */
@@ -49,14 +49,12 @@ typedef size_t (*hold_term_pump_filter)(void *ctx, const char *in, size_t n, cha
 ssize_t hold_term_pump_master_filtered(int master, int logfd, char *buf, size_t n,
                                        hold_term_pump_filter filter, void *ctx);
 
-/* THE detach-key FSM (Ctrl-Space q by default). The first key is a lead
- * key: it is held back until the next key says what it meant, however long
- * that takes - there is no timer, so a slow second key still works, and a
- * person can stop to think. The rest of the chord detaches (*completed
- * reports 1, nothing is forwarded); the lead key again sends one lead key
- * through; any other key sends the held keys and itself through, in order.
- * So nothing typed is ever lost, and the lead key alone reaches the program
- * as soon as anything follows it. A one-key chord detaches at once. */
+/* Detach-key state machine (Ctrl-Space q by default). The prefix is buffered
+ * without a timeout. Completing the sequence reports *completed = 1 and
+ * consumes it; repeating the prefix sends one prefix byte to the program.
+ * Without command keys, unmatched input is forwarded in order. With command
+ * keys, an unrecognized second key cancels the prefix and both are consumed.
+ * A single-key detach sequence completes immediately. */
 #define HOLD_TERM_DETACH_MAX_KEYS 8
 
 struct hold_term_detach {
@@ -127,9 +125,9 @@ struct hold_term_saved {
 int hold_term_input_enter(int fd, enum hold_term_input_mode mode, struct hold_term_saved *saved);
 void hold_term_input_restore(struct hold_term_saved *saved);
 
-/* SIGWINCH (resized), SIGTERM/SIGHUP (stop: restore the terminal, then die of
- * the signal), SIGPIPE ignored, and optionally SIGINT (interrupt) - so no
- * client can leave the terminal raw. A signal the caller ignores stays so. */
+/* Track SIGWINCH and SIGTERM/SIGHUP for the client loop, ignore SIGPIPE, and
+ * optionally track SIGINT. Callers restore the terminal before re-raising
+ * a stop signal. Signals already ignored by the caller remain ignored. */
 struct hold_term_signals {
     struct sigaction old_winch, old_pipe, old_term, old_hup, old_int;
     bool have_winch, have_pipe, have_term, have_hup, have_int;

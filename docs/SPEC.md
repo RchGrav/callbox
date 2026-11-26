@@ -2,8 +2,8 @@
 
 [Docs index](index.md) | [Identity and surface contract](backmux-identity.md) | [Docker familiarity contract](docker-familiarity-contract.md)
 
-The command surface is specified by [backmux-identity.md](backmux-identity.md)
-and the borrowed Docker behaviors by
+The current command model is summarized in [backmux-identity.md](backmux-identity.md)
+and Docker-style syntax in
 [docker-familiarity-contract.md](docker-familiarity-contract.md). Mechanism references:
 [launcher](launcher.md), [store](store.md), [identity](identity.md),
 [console](console.md). This document records only the on-disk invariants that
@@ -19,25 +19,30 @@ root-managed:  /var/lib/backmux  (Linux)       /var/db/backmux  (macOS)
 ```
 
 The user-local store is 0700 because it holds command lines, environment,
-and output: only its owner may read it. When root creates it under sudo, it
-is chowned back to the invoking user. A process placed as root, or under sudo,
-goes in the root-managed store; a normal user cannot place one there.
+and output. Its mode restricts ordinary access to its owner; privileged
+processes can also read it. When root creates it under sudo, it
+is chowned back to the invoking user. Root and sudo launches normally use the system store. If the program or
+an existing path argument is under the invoking user's home, launch routing
+selects that user's store instead. A normal user cannot launch into the
+system store.
 
 User-local layout, directly under the base:
 
 - process records (`<64hex>.json`, 0600) and logs (`<64hex>.log`, 0600);
-- beside each log of a TTY process: its last screen (`<64hex>.screen`) and its
+- beside each log of a terminal process: its last screen (`<64hex>.screen`) and its
   last full-screen frame (`<64hex>.altscreen`), both HSNAP1 (see
   [screen.md](screen.md)), and its delivered-message log (`<64hex>.msgs`);
 - transient dot-files: `.<id>.reserve` while a process is being created, and
-  `.<id>.exit.tmp` for a minute after an `--rm` process ends, so `backmux wait`
-  can still report its exit code;
+  `.<id>.exit.tmp` after an `--rm` process ends, so `backmux wait` can
+  report its exit code; a later sweep removes notes older than one minute;
 - console endpoints under `console/` (0700): `<id>.sock`, a 0600 Unix
-  socket, or a 0600 FIFO where the environment denies Unix sockets.
+  socket, or a 0600 FIFO where Unix sockets are unavailable;
+- outside-sender inbox state under `inbox/` and conversation logs and
+  compositor coordination files under `chat/`.
 
 Root-managed layout: the base is 0755. `runs/`, `logs/`, and `console/` are
-0700 root-only, so command lines, environment, and ownership never leave
-them. The `.screen`, `.altscreen`, and `.msgs` files sit beside the log in
+0700 root-only, keeping private command lines, environment, and invocation
+metadata out of the public projection. The `.screen`, `.altscreen`, and `.msgs` files sit beside the log in
 `logs/`. `public/` is 0755, with one 0644 redacted projection per global
 process, so every user can list global processes without reading their records.
 
@@ -59,23 +64,26 @@ One JSON record per process in a single native snake_case schema, written
 atomically (temp file, fsync, rename) and never partially visible. Docker
 parity lives at the CLI surface (flags and tables), not in storage.
 
-The record is the recipe. Redial reuses the process's id, name, and log (new
-output appends), and replays its argv, environment, session mode (`mode{}`:
-`interactive`, `tty`, `detach`, `wait`, `chat`; `chat` marks a `backmux
-shell`), the `--size` it was placed with (`size_cols`, `size_rows`), and
-`--restart` / `--restart-delay`. Mode flags given on the redial override the
-recipe. A running process is not redialed: naming it gets you back to it
-(attach when it has a console, else follow its log; with `-d`, print its id,
-exit 0), because there is nothing to start. A target that matches more than
-one process is listed, exit 6, never guessed; the start of a name is a target
-when exactly one process fits, and a top-level word that is no verb, process, or
-program may be the start of one verb or name (see `backmux help targets`).
+A record contains the launch settings used by recall: executable and
+arguments, explicit environment assignments, working directory, launch mode,
+explicit terminal size, restart policy, and message formatting. Recall
+reuses the Backmux process ID and name and appends to the same log.
+`backmux recall NAME` rejects a process confirmed to be running. The bare
+target shorthand
+reconnects to a running console or follows a running server's log; explicit
+`-d` prints its ID without attaching.
 
-A `backmux shell`'s record carries `lead_key`, `detach_key`, and `chat_key`
-(control bytes), which its broker reads itself. When `mode.chat` and these
-keys are present, `backmux attach` passes every key through instead of
-reading the detach keys. A TTY process's record also names its console broker
-(`broker_pid`). `saved: true` protects it from sweeps.
+Current mode fields include `interactive`, `tty`, `detach`, `wait`, and
+`shell`. `agent` and `working` are top-level fields. The reader and writer
+also retain `mode.chat`, `lead_key`, `detach_key`, and `chat_key` for the
+older broker-chat path. Current launch commands do not enable that path;
+chat is drawn by the attach-client compositor. A console-backed record
+identifies its broker through `broker_pid`. `saved: true` protects the
+record from ordinary purge sweeps.
+
+A target matching several records is reported as ambiguous (exit 6).
+Names, ID prefixes, command abbreviations, and bare program names have
+distinct resolution rules; see `backmux help targets`.
 
 IDs are 64 hex: the SHA-256 of the executable, cwd, start time in
 nanoseconds, launcher pid, argv, and a collision counter, reserved with an
@@ -87,17 +95,18 @@ and must resolve to one process, and user-renameable (renaming saves).
 ## Logs
 
 Raw captured bytes, appended as they arrive: stdout and stderr of a plain
-call (one append-mode file both go to, so they interleave in arrival order),
-or the PTY stream of a TTY process. A plain process's program writes its log
-directly, with no copying process in between; a TTY process's broker writes
-it. One plain file, no index; anything can read it without Backmux's help.
+process (one append-mode file for stdout and stderr),
+the PTY stream of a terminal process, or the broker-captured output of a
+pipe-input process. A plain process writes directly to its log; a
+console-backed process's broker copies its output. One plain file, no index; anything can read it without Backmux's help.
 `backmux logs` prints it whole, from the newest N lines (`-n`), or followed
 to the process's end (`-f`).
 
 ## Safety invariants
 
 - Every managed process gets its own process group and session.
-- Signals reach the group only after revalidation: the boot id must match;
+- Local group signaling requires revalidation: recorded and current boot
+  IDs must agree when both are available;
   a live leader must still have its recorded start time (or, when none was
   recorded, its executable's device and inode) and its recorded pgid and
   sid; a record with no identity token is never signaled. When the leader
@@ -115,8 +124,8 @@ to the process's end (`-f`).
 - Purge removes only store-resident artifacts derived from the process id;
   paths stored in records are never followed for deletion, so a tampered
   record cannot aim purge at a file outside the store.
-- stdout carries machine data; human notes go to stderr; `--quiet`
-  silences them.
+- stdout carries command results and help; status notes and errors go to
+  stderr; `--quiet` suppresses ordinary status notes.
 - Backmux never elevates on a user's behalf, with one deliberate exception:
   a no-target `backmux purge --system` run by a normal user re-executes
   itself through `sudo` (which does the prompting) at a single commented
@@ -125,9 +134,10 @@ to the process's end (`-f`).
 
 ## Non-goals
 
-No daemon: nothing runs except the processes of live processes and, per process, a
-waiter, restart supervisor, or console broker. No root-log visibility for
-normal users. No run-id uniqueness across users' personal stores. No
+No central daemon: live managed processes can have a waiter, restart
+supervisor, or console broker. Interactive attach clients and their
+compositors exist while in use. No root-log visibility for
+normal users. Backmux process IDs are not reserved across all users' personal stores. No
 scanning of other users' private stores by anyone but root. Tests never
 touch the real system store or real homes: `make test` compiles with
 `HOLD_TESTING`, which honors `HOLD_TEST_SYSTEM_STATE_DIR`,

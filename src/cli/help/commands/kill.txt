@@ -1,4 +1,6 @@
 usage: backmux kill [--print] <target>...
 
-Force processes down with KILL, at once. Several targets may be named. --print
-prints the kill command instead of running it.
+Send SIGKILL immediately to each target's process group. Records and logs
+are retained unless the process was launched with --rm. --print displays the
+signal command without executing it.
+Use end to send SIGTERM first and allow up to five seconds for shutdown.

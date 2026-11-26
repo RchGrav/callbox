@@ -2,12 +2,12 @@
 
 [Docs index](index.md) | [Repository README](../README.md) | Related: [Console](console.md), [Implementation invariants](SPEC.md)
 
-A process placed with `-t` runs on a PTY owned by its **console broker**, a
-process born with the process and gone with it (Backmux stays daemonless). The
+A terminal process runs on a PTY owned by its **console broker**. The
 broker writes every output byte to the process's log, and also feeds it to a
 headless terminal — vendored [libvterm](../third_party/libvterm/) 0.3.3 —
-so it always knows the process's screen: every cell's characters, colors and
-attributes, the cursor, and the program's input modes.
+which tracks the modeled screen cells, colors, attributes, cursor, and
+program input modes. Pipe-input processes also feed their output to a
+headless screen, with line feeds translated for display.
 
 ## Layers
 
@@ -16,7 +16,7 @@ attributes, the cursor, and the program's input modes.
 | `src/screen/screen.c` | The terminal wrapper: feed, resize, snapshot, mode-aware key/paste/mouse encoding, the HSNAP1 format, plain text, repaint. Depends on core only. |
 | `src/screen/render.c` | Snapshot to PNG: 8x16 cells (GNU Unifont subset, Noto Emoji subset for wide emoji, procedural box drawing/blocks/Braille), ruler, cursor ring, mouse reticle, footer, and a small fixed-Huffman deflate encoder. |
 | `src/console/broker.c` | Owns the PTY; one attach client plus up to 64 control clients (more are answered `error busy`, which is safe to retry because nothing was done; clients retry with backoff for up to 10 s); waits, queued messages, the final screen. |
-| `src/console/compose.c`, `chat.c` | For `backmux shell` and bare launches on a real terminal: the composited display and chat window ([shell.md](shell.md)). |
+| `src/console/mux.c`, `compose.c`, `chat.c` | The attach-client pane compositor, interactive help, and chat window ([shell.md](shell.md)). |
 | `src/console/control.c` | The client side of a control request. |
 | `src/runtime/screen_cmds.c` | `backmux peek / send / wait / resize / msg`. |
 | `src/runtime/inbox.c`, `src/store/inbox.c` | Outside sender identity, inbox history, `inbox --wait`, `monitor`, and reply waits. |
@@ -50,7 +50,7 @@ nested keys=<hex>            -> no reply; held open while a nested attach client
 ```
 
 Errors are one line, `error <why>`: for example `error busy`, `error the
-call has ended`, `error rate limit: 20 messages a minute to one process`,
+process has ended`, `error rate limit: 20 messages a minute to one process`,
 `error too many undelivered messages`. When the program exits, a `wait` that asked
 for the exit (`exit=1`, or no condition at all) replies `ok`; any other
 replies `ended`. A `timeout` of 0 or none means no deadline.
@@ -71,10 +71,10 @@ set detach-size`, `backmux resize` — parsed by one function
 (1 to 1000 each). Zero, negative, non-numeric, incomplete, and out-of-range
 sizes are refused before anything is started or saved.
 
-The launcher resolves a TTY process's first size, in this order:
+The launcher resolves a terminal process's first size, in this order:
 
-1. `--size COLS ROWS` (a redial replays the size its recipe was placed with,
-   unless the redial gives its own);
+1. `--size COLS ROWS` (recall reuses the recorded explicit size; an explicit
+   size on the target shorthand overrides it);
 2. for a detached launch (`-dt`, `-dwt`) only, the saved default
    (`backmux config set detach-size`, kept in `~/.config/backmux/config`);
 3. the invoking terminal's size, when stdin or stdout is a terminal that
@@ -85,23 +85,26 @@ The broker opens the PTY and creates the headless screen at that size before
 it forks the program, so a TUI that asks for its dimensions the moment it
 starts gets the right answer. `--size` is where the process starts, not a lock:
 `backmux resize`, and an attached terminal's window, change it afterwards.
-`--size` requires a terminal mode: explicit `-t`, a bare launch, or
-`backmux shell`. It does not turn a plain `-d` process into a terminal.
+`--size` requires a terminal mode: `call`, `agent`, `detach`, `shell`, a
+bare terminal launch, or explicit `-t`. It does not turn a plain `-d` process into a terminal.
 A saved default never touches a process that is already
 running, and a saved value that no longer reads as a size is not guessed at:
 the launch stops and says how to set or clear it.
 
 ## Query replies and attached terminals
 
-Programs ask their terminal questions (cursor position, device attributes).
-With no one attached, the headless terminal answers them, so programs that
-wait for replies work under `-dt`. While any attach client is connected, the
-broker drops its own replies so nothing is answered twice; the attached
-terminal answers. A client that is not a terminal (a pipe, `socat`) answers
-nothing, so a program waiting on a query stalls while it is attached. A
-backmux shell is the exception: its headless screen always answers
-([shell.md](shell.md)). A newly attached terminal is repainted from the screen —
-cells, colors, input modes, cursor — rather than replayed from bytes.
+Programs can query terminal state, such as cursor position or device
+attributes. With no attach client, the broker's headless terminal answers.
+With an ordinary interactive attach, the person's terminal answers and the
+broker discards its own replies to avoid duplicates.
+
+A framed client can send `N` (`CONSOLE_FRAME_NO_TERMINAL`) to request that
+the headless terminal continue answering. Backmux sends this for a
+noninteractive attach and for compositor panes. A raw client such as
+`socat` does not send it; while that client is attached, a program can wait
+indefinitely for a terminal reply. Stored broker-chat mode also uses the
+headless terminal's replies. A normal interactive reattach repaints the
+current screen rather than replaying the entire output log.
 
 ## HSNAP1
 
@@ -133,9 +136,10 @@ screen is active; a sequence split across two reads is missed.
 
 ## Messages between processes
 
-(Processes with chat are the exception to what follows about typing: a bare
-launch on a real terminal or `backmux shell` sends messages to its chat
-window instead of typing into the program. See [shell.md](shell.md).)
+New terminal and pipe-input processes receive message text as program
+input. The `agent` setting adds a sender and reply-command header. Chat
+uses the person's separate inbox identity; see [shell.md](shell.md).
+The retained broker-chat mode of older records is a separate path.
 
 `backmux msg` hands text to the *receiver's* broker, which types it in at
 once, without waiting for a quiet screen. The receiving harness decides
@@ -146,20 +150,18 @@ that messages the instant it starts can beat its own record, and the
 header's name comes from that record. And
 messages go in oldest first, one per broker pass, with at most 16 pending.
 
-Every control character except newline and tab (C0 bytes, DEL, C1) is
-removed first, so a message can never type Escape, submit early with a
-carriage return, end a bracketed paste, or drive the terminal. An escape
+Message sanitization removes control characters other than newline and
+tab, including C0 controls, DEL, and C1 controls. An escape
 sequence (CSI, OSC, DCS and the other string forms) is removed whole, not just
 its first byte, so `\e[31mRED` arrives as `RED` rather than `[31mRED`. The text goes
 in as a bracketed paste when the program enabled mode 2004. Otherwise
-newlines and carriage returns become spaces, so it cannot submit early.
+newlines and carriage returns become spaces, before delivery.
 Enter follows, unless `--no-enter` was given (`submit=0`).
 
 The sender names its process by `BACKMUX_ID`, else `BACKMUX_NAME`; only an id
 or a process name is taken (anything else could break the header or a `.msgs`
 line). The receiver looks that process up and shows its name as the record has it
-now, so a renamed process is shown, and answered, by its new name. The header,
-on one line before the text:
+now, so a renamed process is shown, and answered, by its new name. When `agent` is enabled, the header precedes the text:
 
 ```text
 [msg from NAME; reply: backmux msg NAME "..."]
@@ -180,27 +182,22 @@ inbox name when reading from a different harness or terminal.
 `backmux msg ... --wait-reply` records the inbox end before sending, then
 waits for the first newer message from any sender. It does not correlate
 messages with requests. The name expires after an hour without use;
-individual messages expire one hour after delivery. Why: an agent that
-runs outside backmux has no
-prompt for a reply to be typed into, and the receiver should not need to know
-that; one way of replying works for everyone. Only when no name can be made
-does the header fall back to `[msg from outside backmux]`.
+individual messages expire one hour after delivery. The inbox supplies a
+reply destination without requiring a managed input console. If no sender
+name can be resolved, agent-formatted delivery uses
+`[msg from outside backmux]`.
 
 Inbox identity lookup and creation share the process-name lock, so parallel
 first sends use one inbox and an active inbox name cannot also be allocated
 to a process in the same store. Existing records are not renamed automatically.
 
-The header is addressing, not proof. Only the console's own user can reach
-it (the socket checks the peer's uid; FIFOs are the user's), and anything
-running as that user could type the same text with `backmux send`. Why there
-is no check beyond that: an earlier version verified the sender's session and
-process ancestry, which guarded only against the user's own processes, put a
-verify step and a longer header in front of every agent, and read as "safe"
-when it meant only "from".
+The header provides a reply address, not authenticated proof of sender
+identity. Console access checks admit root, the process owner, and the
+authorized invoking sudo user. A process with equivalent access can type
+the same text through `send`.
 
 Each delivered message is appended to `<id>.msgs` as `ID UNIXTIME FROMCALL
-SENDER HEXTEXT` (FROMCALL is 1 when the sender is a process; it is where that
-earlier version wrote its verified flag, so older logs read the same).
+SENDER HEXTEXT` (FROMCALL is 1 when the sender is a managed process).
 `backmux msg --received` reads it: the process's message history. Delivery is
 capped at 20 messages a minute per receiver, counted when a request is
 accepted. This slows message loops; it does not establish task completion

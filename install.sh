@@ -26,7 +26,7 @@ Options:
   --system         Install to (or uninstall from) /usr/local/bin, using sudo
                    if needed.
   -u, --uninstall  Remove the installed backmux binary and the installer's PATH
-                   block. Backmux state (your calls, logs, records) is kept.
+                   block. Process records and logs are retained.
   -h, --help       Show this help.
 
 Environment:

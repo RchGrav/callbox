@@ -25,14 +25,14 @@ const struct hold_record_field hold_record_fields[] = {
     F("pid_ns", RF_U64, 0, pid_ns),               /* launching PID namespace; absent = 0 = unknown */
     F("liveness_lock", RF_BOOL, 0, liveness_lock), /* lifetime lock on the log; absent = false */
     F("log_start", RF_I64, 0, log_start),         /* this run's output starts here; absent = 0 */
-    FH("broker_pid", RF_PID, 0, broker_pid, has_broker), /* a TTY call's console broker */
+    FH("broker_pid", RF_PID, 0, broker_pid, has_broker), /* a TTY process's console broker */
     FH("size_cols", RF_INT, 0, recipe.size_cols, recipe.has_size), /* --size */
     FH("size_rows", RF_INT, 0, recipe.size_rows, recipe.has_size),
     FH("chat_key", RF_INT, 0, recipe.chat_key, recipe.has_chat_key), /* backmux shell: lead key, then this */
     FH("lead_key", RF_INT, 0, recipe.lead_key, recipe.has_keys),     /* backmux shell: keys its broker reads */
     FH("detach_key", RF_INT, 0, recipe.detach_key, recipe.has_keys),
     F("agent", RF_BOOL, 0, recipe.mode_agent),    /* messages formatted for an agent; absent = raw */
-    SH("working", RF_ABS, recipe.working, recipe.has_working), /* recall's folder; absent = where it runs */
+    SH("working", RF_ABS, recipe.working, recipe.has_working), /* recall working directory; absent = current directory */
     F("version", RF_INT, RF_REQ, version),
     S("id", RF_REQ, id),
     S("run_id", RF_WRONLY, run_id),               /* reader defaults run_id <- id */
@@ -66,9 +66,7 @@ const struct hold_record_field hold_record_fields[] = {
 };
 const size_t hold_record_field_count = sizeof(hold_record_fields) / sizeof(hold_record_fields[0]);
 
-/* The one running-record base: everything the launch and adoption paths would
- * otherwise stamp field-by-field in parallel. The table above stays the
- * schema authority; this only fills values. */
+/* Initialize common launch fields; the table above defines the schema. */
 void hold_record_init_running(struct hold_run_record *r,
                               const char *id,
                               const char *log_path,

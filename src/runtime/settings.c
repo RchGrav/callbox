@@ -1,12 +1,10 @@
-/* runtime/settings.c - a call's settings and the verbs around them:
+/* Process settings and related commands:
  * set/unset (agent, working, program, args, name), info, recall, delete,
  * and purge all.
  *
- * A setting belongs to the call, not to how it happened to be started, so it
- * can be changed on a running or an ended call alike. agent and name act at
- * once (the broker reads agent at every delivery; a name is only an
- * address); working, program and args act at the next launch, since a
- * running program's folder and command cannot change under it. */
+ * Settings can change while a process is running or after it ends. agent
+ * affects the next message, and name changes target resolution immediately.
+ * working, program, and args affect the next launch. */
 #include "backmux/config.h"
 #include "backmux/types.h"
 #include "backmux/runtime.h"
@@ -28,10 +26,8 @@ static const char *label_of(const struct hold_run_record *r, char *display, size
     return display;
 }
 
-/* "args=a b c" splits on blanks; "args -- a 'b c'" takes each word as the
- * shell already split it. Why both: the = form reads like the other
- * settings; the word form keeps an argument with spaces in it whole, with
- * the shell doing the quoting instead of backmux parsing one long string. */
+/* args= splits on spaces and tabs. args -- preserves the argument
+ * boundaries supplied by the invoking shell, including embedded spaces. */
 static int split_words(const char *s, char ***out, int *outc) {
     *out = NULL;
     *outc = 0;
@@ -84,25 +80,24 @@ int hold_cmd_set_action(const struct hold_invocation *inv,
         return HOLD_EXIT_USAGE;
     }
     if (unset && value) {
-        fprintf(stderr, "backmux: error: unset takes the setting's name alone: backmux unset %s %s\n", token, key);
+        fprintf(stderr, "backmux: error: unset accepts a setting name without a value: backmux unset %s %s\n", token, key);
         return HOLD_EXIT_USAGE;
     }
     if (unset && (!strcmp(key, "program") || !strcmp(key, "name"))) {
         fprintf(stderr, "backmux: error: %s cannot be unset: %s\n", key,
-                !strcmp(key, "program") ? "a process without a program is nothing; backmux set NAME program=... changes it"
-                                        : "every command and agent finds a process by its name; backmux set NAME name=... changes it");
+                !strcmp(key, "program") ? "a launch profile requires a program; use backmux set NAME program=..."
+                                        : "the process name is required; use backmux set NAME name=...");
         return HOLD_EXIT_USAGE;
     }
     if (!unset && !strcmp(key, "agent") && value) {
-        fprintf(stderr, "backmux: error: agent is on or off: backmux set %s agent / backmux unset %s agent\n", token, token);
+        fprintf(stderr, "backmux: error: agent takes no value; enable with backmux set %s agent or disable with backmux unset %s agent\n", token, token);
         return HOLD_EXIT_USAGE;
     }
     if (!unset && (!strcmp(key, "working") || !strcmp(key, "program") || !strcmp(key, "name")) && (!value || !*value)) {
-        fprintf(stderr, "backmux: error: %s needs a value: backmux set %s %s=...\n", key, token, key);
+        fprintf(stderr, "backmux: error: %s requires a value: backmux set %s %s=...\n", key, token, key);
         return HOLD_EXIT_USAGE;
     }
-    /* name is a rename: the old name stops answering at once, no alias kept
-     * (one that still answered could later be taken by another call). */
+    /* Renaming releases the previous name for reuse. */
     if (!strcmp(key, "name")) return hold_cmd_rename_action(inv, user_store, system_store, token, value);
 
     char new_working[HOLD_PATH_MAX] = "";
@@ -113,7 +108,7 @@ int hold_cmd_set_action(const struct hold_invocation *inv,
         if (!getcwd(cwd, sizeof(cwd)) ||
             hold_absolute_existing_path_from_cwd(value, cwd, abs, sizeof(abs)) != 0 || !realpath(abs, new_working) ||
             stat(new_working, &st) != 0 || !S_ISDIR(st.st_mode)) {
-            fprintf(stderr, "backmux: error: working: '%s' is not a folder\n", value);
+            fprintf(stderr, "backmux: error: working: cannot resolve '%s' to an existing directory\n", value);
             return 5;
         }
     }
@@ -216,7 +211,7 @@ out:
     return rc;
 }
 
-/* What kind of call it is, in the words of the verb that starts one. */
+/* Describe the stored launch mode using the corresponding command name. */
 static const char *call_kind(const struct hold_run_record *r) {
     if (r->recipe.mode_shell) return "shell";
     if (r->recipe.mode_detach) return r->recipe.mode_tty ? "detach" : "server";
@@ -249,18 +244,17 @@ int hold_cmd_info_action(const struct hold_invocation *inv,
     putchar('\n');
     printf("program:   %s\n", r.recipe.argc > 0 && r.recipe.argv ? r.recipe.argv[0] : "?");
     printf("args:      %s\n", args[0] ? args : "-");
-    printf("working:   %s\n", r.recipe.has_working ? r.recipe.working : "- (recall runs it where you stand)");
+    printf("working:   %s\n", r.recipe.has_working ? r.recipe.working : "- (recall uses the current working directory)");
     if (r.has_observed && r.observed_cwd[0]) printf("started in: %s\n", r.observed_cwd);
-    printf("messages:  %s\n", r.recipe.mode_agent ? "agent (a header naming the sender and how to reply)"
-                                                   : "raw (the text, then Enter)");
+    printf("messages:  %s\n", r.recipe.mode_agent ? "agent (sender header and reply command)"
+                                                   : "raw (message text; Enter by default)");
     printf("saved:     %s\n", r.saved ? "yes" : "no");
     if (r.has_started_at) printf("started:   %s\n", r.started_at);
     if (r.has_ended_at && st != STATE_RUNNING) printf("ended:     %s\n", r.ended_at);
     if (st == STATE_RUNNING) printf("pid:       %d\n", (int)r.pid);
     if (r.recipe.has_size) printf("size:      %dx%d\n", r.recipe.size_cols, r.recipe.size_rows);
     if (r.recipe.has_restart_policy) printf("restart:   %s\n", r.recipe.restart_policy);
-    /* Names only: values can be secrets, and this is the view people paste
-     * into a chat. backmux inspect prints the record as stored. */
+    /* Omit environment values from this summary; inspect shows the record. */
     for (int i = 0; i < r.recipe.envc; i++) {
         const char *e = r.recipe.env[i];
         const char *q = strchr(e, '=');
@@ -291,10 +285,9 @@ int hold_cmd_recall_action(const struct hold_invocation *inv,
     char label[ALIAS_MAX_LEN + 1];
     snprintf(label, sizeof(label), "%s", label_of(&r, display, sizeof(display)));
     hold_free_run_record(&r);
-    /* recall relaunches an ended call; one still running is reached, not
-     * relaunched, and the verb for that is attach (or tail). */
+    /* Reject a confirmed running target before attempting a relaunch. */
     if (running) {
-        fprintf(stderr, "backmux: %s is running; backmux attach %s reaches it\n", label, label);
+        fprintf(stderr, "backmux: %s is running; use backmux attach %s (console) or backmux tail <target> (log)\n", label, label);
         return 1;
     }
     bool redialed = false;
@@ -322,18 +315,16 @@ int hold_cmd_delete_action(const struct hold_invocation *inv,
     char label[ALIAS_MAX_LEN + 1];
     snprintf(label, sizeof(label), "%s", label_of(&r, display, sizeof(display)));
     hold_free_run_record(&r);
-    /* delete removes a profile; it never stops a program. Why: ending a
-     * running call is end's (or kill's) job, and one verb doing both would
-     * make a typo in a name end someone's agent. */
+    /* Reject a confirmed running target before removing its retained profile. */
     if (running) {
-        fprintf(stderr, "backmux: %s is running; backmux end %s first, then delete it\n", label, label);
+        fprintf(stderr, "backmux: %s is running; run backmux end %s before deleting its profile\n", label, label);
         return 1;
     }
     return hold_cmd_purge_action(inv, user_store, system_store, target.id, false, true,
                                  target.store.kind == STORE_SYSTEM_MANAGED);
 }
 
-/* purge all: end and remove every call that is not saved. */
+/* purge all selects unsaved records, stopping running processes first. */
 struct purge_all_walk {
     const char *boot_id;
     int running, ended;
@@ -380,7 +371,7 @@ int hold_cmd_purge_all_action(const struct hold_invocation *inv,
     char boot[128];
     struct purge_all_walk w = {.boot_id = hold_boot_id_or_null(boot)};
     if (hold_for_each_record(store->record_dir, purge_all_cb, &w) != 0) {
-        fprintf(stderr, "backmux: error: cannot read the processes\n");
+        fprintf(stderr, "backmux: error: cannot read process records\n");
         return 1;
     }
     int rc = 0;
@@ -388,16 +379,14 @@ int hold_cmd_purge_all_action(const struct hold_invocation *inv,
         hold_sig_note(inv, "backmux: nothing to purge (saved processes are kept)\n");
         goto out;
     }
-    /* It does what it says, as the menu has it - end and purge all calls
-     * not saved - and says which it ended, so nothing goes unnoticed.
-     * Saving a call (backmux save) is how one is kept. */
+    /* The CLI operation does not prompt; saved records were excluded above. */
     (void)force;
 
     int removed = 0;
     for (int i = 0; i < w.n; i++) {
         if (w.live[i]) {
             char *one[1] = {w.ids[i]};
-            /* quietly: the one summary line says what was ended */
+            /* Suppress per-target success notes; failures remain visible. */
             struct hold_invocation quiet = *inv;
             quiet.quiet = true;
             int src = hold_cmd_signal_action(&quiet, user_store, system_store, "stop", 1, one, SIGTERM, true, false, false);
@@ -412,10 +401,10 @@ int hold_cmd_purge_all_action(const struct hold_invocation *inv,
         if (prc > rc) rc = prc;
     }
     if (w.running > 0)
-        hold_sig_note(inv, "Ended %d process%s and cleaned up %d record%s.\n", w.running, w.running == 1 ? "" : "es", removed,
+        hold_sig_note(inv, "Selected %d running process%s for purge; removed %d record%s.\n", w.running, w.running == 1 ? "" : "es", removed,
                       removed == 1 ? "" : "s");
     else
-        hold_sig_note(inv, "Cleaned up %d record%s.\n", removed, removed == 1 ? "" : "s");
+        hold_sig_note(inv, "Removed %d record%s.\n", removed, removed == 1 ? "" : "s");
 out:
     free(w.ids);
     free(w.labels);
@@ -442,11 +431,9 @@ struct mux_seen {
     bool has_here;
 };
 
-/* backmux swap A,B: two panes trade places in the terminal that shows them.
- * Panes are named by letter (A-D, the window that terminal has on screen),
- * by number (1-4 window 1, 5-8 window 2, ...), or by the call's name. Run
- * from inside a pane it acts on that terminal; otherwise on the one terminal
- * showing panes, and asks which when there are several. */
+/* backmux swap targets panes by process name or ID, not keyboard slot labels.
+ * From inside a pane it selects that terminal; otherwise exactly one terminal
+ * must be displaying panes. Multiple eligible terminals produce an error. */
 int hold_cmd_swap_action(const struct hold_invocation *inv,
                          const struct hold_store *user_store,
                          const struct hold_store *system_store,
@@ -457,7 +444,7 @@ int hold_cmd_swap_action(const struct hold_invocation *inv,
     if (argc == 1) {
         const char *comma = strchr(argv[0], ',');
         if (!comma || comma == argv[0] || !comma[1] || (size_t)(comma - argv[0]) >= sizeof(a)) {
-            fprintf(stderr, "usage: backmux swap <pane>,<pane>   (A-D, a number, or a process's name)\n");
+            fprintf(stderr, "usage: backmux swap TARGET,TARGET | TARGET TARGET   (process names or IDs)\n");
             return HOLD_EXIT_USAGE;
         }
         snprintf(a, sizeof(a), "%.*s", (int)(comma - argv[0]), argv[0]);
@@ -496,8 +483,8 @@ int hold_cmd_swap_action(const struct hold_invocation *inv,
         if (seen[i].has_here) pick = i;
     if (pick < 0 && nseen == 1) pick = 0;
     if (pick < 0) {
-        fprintf(stderr, nseen == 0 ? "backmux: no terminal is showing panes (Ctrl-Space p a makes them)\n"
-                                   : "backmux: several terminals show panes; run backmux swap from a pane in the one you mean\n");
+        fprintf(stderr, nseen == 0 ? "backmux: no active pane session found; press Ctrl-Space p a while attached to add a pane\n"
+                                   : "backmux: multiple terminals have panes; run backmux swap inside the target terminal\n");
         return 1;
     }
     char req[HOLD_PATH_MAX], tmp[HOLD_PATH_MAX + 8], body[200];
@@ -510,11 +497,11 @@ int hold_cmd_swap_action(const struct hold_invocation *inv,
     int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
     if (fd < 0 || hold_write_all(fd, body, (size_t)k) != 0 || close(fd) != 0 || rename(tmp, req) != 0) {
         if (fd >= 0) unlink(tmp);
-        fprintf(stderr, "backmux: error: cannot ask that terminal: %s\n", strerror(errno));
+        fprintf(stderr, "backmux: error: cannot send the swap request to the terminal: %s\n", strerror(errno));
         return 1;
     }
-    /* It takes the request on its next pass (a quarter second at most) and
-     * writes back whether the swap could be made. */
+    /* The compositor processes the request in its event loop. Poll for a
+     * response for up to two seconds. */
     char res[HOLD_PATH_MAX];
     if (hold_checked_snprintf(res, sizeof(res), "%s/mux.%d.result", dir, (int)seen[pick].pid) != 0) return 1;
     for (int waited = 0; waited < 2000; waited += 50) {
@@ -537,6 +524,6 @@ int hold_cmd_swap_action(const struct hold_invocation *inv,
         nanosleep(&sl, NULL);
     }
     unlink(req);
-    fprintf(stderr, "backmux: that terminal did not answer\n");
+    fprintf(stderr, "backmux: terminal did not respond to the swap request within 2 seconds\n");
     return 1;
 }

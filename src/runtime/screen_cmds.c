@@ -12,8 +12,8 @@
 #include <ctype.h>
 #include <regex.h>
 
-/* The screen verbs: backmux peek / send / wait / resize. Each resolves one call,
- * then talks to its console broker over the control protocol. An ended call's
+/* The screen verbs: backmux peek / send / wait / resize. Each resolves one process,
+ * then talks to its console broker over the control protocol. An ended process's
  * last screen is read from <id>.screen beside its log. */
 
 #define WAIT_EXIT_TIMEOUT 7
@@ -54,7 +54,7 @@ static void close_screen_target(struct screen_target *t) {
 }
 
 static int no_screen(const struct screen_target *t) {
-    fprintf(stderr, "backmux: %s has no terminal screen; place TTY processes with -t (e.g. backmux -dt <cmd>)\n", t->label);
+    fprintf(stderr, "backmux: %s has no terminal screen; start a terminal process with backmux detach <program>\n", t->label);
     return HOLD_EXIT_NO_SCREEN;
 }
 
@@ -66,15 +66,15 @@ static bool state_ended(enum run_state st) {
 
 /* One control request, retried while the broker answers "error busy" (it
  * serves a bounded number of clients and turns the rest away without acting,
- * so retrying is safe) or a running call's socket refuses the connection
- * (its accept queue is full); backs off for up to 10 s. -1 with errno when the
+ * so retrying is safe) or a running process's socket refuses the connection
+ * (possibly a full accept queue); backs off for up to 10 s. -1 with errno when the
  * broker cannot be reached; *reply stays "error busy" if it never frees up. */
 static int control_quiet(const struct screen_target *t, const char *req, size_t len, unsigned char **reply, size_t *reply_len) {
     long delay_ms = 20, waited_ms = 0;
     for (;;) {
         if (hold_console_request(t->r.console_sock, req, len, reply, reply_len) != 0) {
-            /* A running call's broker refusing means its accept queue is
-             * full (macOS refuses instead of queueing): back off and retry. */
+            /* Connection refusal may indicate a full accept queue. Retry
+             * while the recorded process is running. */
             if (errno != ECONNREFUSED || t->st != STATE_RUNNING || waited_ms >= 10000) return -1;
             int saved = errno;
             struct timespec sl = {.tv_sec = delay_ms / 1000, .tv_nsec = (delay_ms % 1000) * 1000000L};
@@ -94,7 +94,7 @@ static int control_quiet(const struct screen_target *t, const char *req, size_t 
     }
 }
 
-/* The call's state now (t->st is from when the command started). */
+/* The process's state now (t->st is from when the command started). */
 static enum run_state current_state(const struct screen_target *t) {
     struct hold_run_record cur;
     char path[HOLD_PATH_MAX], boot[128];
@@ -177,9 +177,8 @@ int hold_print_final_screen(const struct hold_store *store, const char *id, FILE
         hold_snapshot_row_text(&snap, last, line, cap);
         if (line[0]) break;
     }
-    /* On a terminal, as it looked - colors and styles - so the last screen
-     * reads as what was there, not as a gray copy of it. Into a file or a
-     * pipe, plain text. */
+    /* Preserve terminal styles for terminal output; use plain text for pipes
+     * and files. */
     bool colors = isatty(fileno(f));
     for (int r = 0; line && r <= last; r++) {
         if (colors) {
@@ -239,14 +238,14 @@ static int load_snapshot(const struct screen_target *t, struct hold_snapshot *sn
     }
     if (last_alt) {
         if (read_saved_frame(t, ".altscreen", snap) == 0) return 0;
-        fprintf(stderr, "backmux: %s left no full-screen (alternate) frame\n", t->label);
+        fprintf(stderr, "backmux: %s has no saved alternate-screen frame\n", t->label);
         return 5;
     }
     if (read_saved_screen(t, snap) == 0) {
         struct hold_snapshot alt;
         if (read_saved_frame(t, ".altscreen", &alt) == 0) {
             hold_snapshot_free(&alt);
-            fprintf(stderr, "backmux: note: %s's last full-screen frame is shown by backmux peek %s --last-alt\n",
+            fprintf(stderr, "backmux: note: view %s's saved alternate-screen frame with backmux peek %s --last-alt\n",
                     t->label, t->label);
         }
         return 0;
@@ -606,7 +605,7 @@ static int send_action_impl(const struct hold_invocation *inv,
             int col = -1, row = -1, button = 1;
             int got = sscanf(argv[++i], "%31[^,],%d,%d,%d", action, &col, &row, &button);
             if (got < 3 || col < 0 || row < 0) {
-                fprintf(stderr, "backmux: error: --mouse wants ACTION,COL,ROW[,BUTTON] (e.g. click,10,4)\n");
+                fprintf(stderr, "backmux: error: --mouse requires ACTION,COL,ROW[,BUTTON] (for example, click,10,4)\n");
                 goto out;
             }
             char line[96];
@@ -657,8 +656,8 @@ static int send_action_impl(const struct hold_invocation *inv,
             if (mouse_off)
                 fprintf(stderr, "backmux: %s has mouse reporting off; the mouse event was not delivered\n", t.label);
             if (mouse_op && strstr((char *)reply, "mouse=clamped"))
-                fprintf(stderr, "backmux: note: %s uses the legacy mouse encoding, which cannot reach past column/row 222; "
-                                "the event landed at the edge\n", t.label);
+                fprintf(stderr, "backmux: note: %s uses legacy mouse encoding; "
+                                "coordinates above 222 were clamped to 222\n", t.label);
             if (print_seq) printf("%llu\n", sv);
             if (wait_ms >= 0) {
                 char args[160];
@@ -691,10 +690,8 @@ out:
 
 /* ---- wait ----------------------------------------------------------------- */
 
-/* Ask the broker; map its answer to an exit status. After a send, the
- * messages say the input was delivered. Why: send --wait printed wait's own
- * text, so a failed step read as if the keys had not arrived, and nothing
- * told it apart from a separate wait. */
+/* Map broker replies to exit statuses. After send --wait, diagnostics
+ * distinguish successful input delivery from the subsequent wait result. */
 static int run_wait(const struct screen_target *t, const char *args, bool print_exit, bool after_send) {
     unsigned char *reply = NULL;
     size_t len = 0;
@@ -713,7 +710,7 @@ static int run_wait(const struct screen_target *t, const char *args, bool print_
     /* A broker shutting down answers a request it had not yet read with this
      * instead of closing: the console closed, as above. Why: a send --wait
      * whose wait arrived late (the FIFO transport is slower) said only "the
-     * call has ended", exit 1, where it means input sent, then ended (8). */
+     * process has ended", exit 1, where it means input sent, then ended (8). */
     if (!strncmp(r, "error the process has ended", 24)) {
         free(reply);
         return WAIT_CONSOLE_CLOSED;
@@ -726,15 +723,15 @@ static int run_wait(const struct screen_target *t, const char *args, bool print_
     } else if (!strncmp(r, "timeout", 7)) {
         const char *to = after_send ? strstr(args, "timeout=") : NULL;
         if (to)
-            fprintf(stderr, "backmux: input sent; %s did not go quiet within %ld ms\n", t->label, atol(to + 8));
+            fprintf(stderr, "backmux: input sent; %s did not meet the output-idle condition within %ld ms\n", t->label, atol(to + 8));
         else if (after_send)
-            fprintf(stderr, "backmux: input sent; %s did not go quiet before the timeout\n", t->label);
+            fprintf(stderr, "backmux: input sent; %s did not meet the output-idle condition before the timeout\n", t->label);
         else
             fprintf(stderr, "backmux: %s: wait timed out\n", t->label);
         rc = WAIT_EXIT_TIMEOUT;
     } else if (!strncmp(r, "ended", 5)) {
         if (after_send)
-            fprintf(stderr, "backmux: input sent; %s then ended (exit code %d) before going quiet\n", t->label, code);
+            fprintf(stderr, "backmux: input sent; %s ended (exit code %d) before meeting the output-idle condition\n", t->label, code);
         else
             fprintf(stderr, "backmux: %s ended (exit code %d) before the wait condition held\n", t->label, code);
         rc = WAIT_EXIT_ENDED;
@@ -745,7 +742,7 @@ static int run_wait(const struct screen_target *t, const char *args, bool print_
     return rc;
 }
 
-/* docker wait for any call (no console needed): poll the record. */
+/* docker wait for any process (no console needed): poll the record. */
 static int wait_record_exit(const struct screen_target *t, long timeout_ms) {
     struct timespec start;
     clock_gettime(CLOCK_MONOTONIC, &start);
@@ -773,7 +770,7 @@ static int wait_record_exit(const struct screen_target *t, long timeout_ms) {
             printf("%d\n", has ? code : -1);
             return 0;
         }
-        /* A plain -d call leaves nothing behind to record its exit code. */
+        /* A plain -d process leaves nothing behind to record its exit code. */
         if (st == STATE_EXITED && !records) {
             fprintf(stderr, "backmux: %s has ended; a plain -d process records no exit code (launch it with -dw to "
                             "record one)\n", t->label);
@@ -788,8 +785,7 @@ static int wait_record_exit(const struct screen_target *t, long timeout_ms) {
             if (unstamped_since.tv_sec == 0) unstamped_since = now;
             long gone_ms = (now.tv_sec - unstamped_since.tv_sec) * 1000 + (now.tv_nsec - unstamped_since.tv_nsec) / 1000000;
             if (gone_ms >= 2000) {
-                fprintf(stderr, "backmux: %s's exit was never recorded, and no supervisor answers for it (it most "
-                                "likely ended along with the shell that started it)\n", t->label);
+                fprintf(stderr, "backmux: %s has ended; its exit code was not recorded within 2 seconds of detecting the exit\n", t->label);
                 printf("-1\n");
                 return 0;
             }
@@ -870,7 +866,7 @@ static int wait_action_impl(const struct hold_invocation *inv,
             if (need_value(i, argc, a) != 0) return 1;
             since = argv[++i];
             if (strspn(since, "0123456789") != strlen(since) || !*since) {
-                fprintf(stderr, "backmux: error: --since wants the number backmux send --seq printed\n");
+                fprintf(stderr, "backmux: error: --since requires the sequence number printed by backmux send --seq\n");
                 return 1;
             }
         } else if (!strcmp(a, "--exit")) {
@@ -892,11 +888,11 @@ static int wait_action_impl(const struct hold_invocation *inv,
     }
     bool screen_cond = idle >= 0 || match;
     if (!screen_cond) want_exit = true;
-    /* A screen condition defaults to a 30 s bound so an agent never hangs;
-     * waiting for exit alone is unbounded unless --timeout says otherwise. */
+    /* Screen conditions default to a 30-second timeout. Exit-only waits
+     * have no default timeout. */
     if (timeout < 0) timeout = screen_cond ? 30000 : 0;
 
-    /* docker run --rm + docker wait: an --rm call that already ended and
+    /* docker run --rm + docker wait: an --rm process that already ended and
      * was removed still reports how it exited (for a minute). */
     if (!screen_cond && !hold_token_resolves(inv, user_store, system_store, "wait", token)) {
         int code;
@@ -948,7 +944,7 @@ static int wait_action_impl(const struct hold_invocation *inv,
     free(b.p);
     if (rc == WAIT_CONSOLE_CLOSED) {
         if (!screen_cond) {
-            /* The record (or an --rm call's exit note) says when it ends. */
+            /* The record (or an --rm process's exit note) says when it ends. */
             rc = wait_record_exit(&t, timeout);
         } else if (match && saved_screen_matches(&t, match, regex)) {
             rc = 0; /* the last screen is final, and it shows the text */
@@ -965,8 +961,8 @@ static int wait_action_impl(const struct hold_invocation *inv,
             rc = st == STATE_UNKNOWN ? 3 : WAIT_EXIT_ENDED;
         }
     } else if (!screen_cond && rc == 3) {
-        /* The broker can vanish with its call before answering (an --rm
-         * call removed as it ended): the record, or its exit note, says. */
+        /* The broker can vanish with its process before answering (an --rm
+         * process removed as it ended): the record, or its exit note, says. */
         rc = wait_record_exit(&t, timeout);
     }
     if (!screen_cond && rc == 0) hold_auto_remove_settle(&t.target.store, t.r.id, 2000);
@@ -1026,10 +1022,9 @@ static const char msg_usage[] =
     "                   [--wait-reply [--timeout MS]]\n"
     "       backmux msg [<target>] --received [ID]\n";
 
-/* Agent-to-agent messaging: the text is typed into the target's prompt at
- * once, behind a "[msg from <sender>; reply: ...]" header. The sender is this
- * process's own call ($BACKMUX_ID), named by the receiving broker as its
- * record names it now. */
+/* Message delivery to a managed process. The receiving broker selects raw
+ * input or an agent header from the target's agent setting and resolves
+ * BACKMUX_ID to the sender's current process name. */
 static bool is_msg_id(const char *s) {
     if (strlen(s) != 6) return false;
     for (int i = 0; i < 6; i++)
@@ -1037,8 +1032,8 @@ static bool is_msg_id(const char *s) {
     return true;
 }
 
-/* backmux msg [TARGET] --received [ID]: a call's message history (by default
- * the call we run in), from its <id>.msgs log: one line per message, or with
+/* backmux msg [TARGET] --received [ID]: a process's message history (by default
+ * the process we run in), from its <id>.msgs log: one line per message, or with
  * ID that message's sender and full text. */
 static int msg_received(const struct hold_invocation *inv, const struct hold_store *user_store,
                         const struct hold_store *system_store, const char *token, const char *want) {
@@ -1093,7 +1088,7 @@ static int msg_received(const struct hold_invocation *inv, const struct hold_sto
             struct tm tmv;
             char at[32] = "?";
             if (localtime_r(&tt, &tmv)) strftime(at, sizeof(at), "%Y-%m-%d %H:%M:%S", &tmv);
-            const char *who = strcmp(from, "-") ? from : "(no sender: sent from outside any process)";
+            const char *who = strcmp(from, "-") ? from : "(sender not recorded)";
             (void)from_call;
             if (want) {
                 printf("id:   %s\nfrom: %s\nat:   %s\n\n%s\n", id, who, at, hex);
@@ -1183,7 +1178,7 @@ static int msg_action_impl(const struct hold_invocation *inv,
         fputs(msg_usage, stderr);
         goto out;
     }
-    /* A sender outside any call answers to a name of its own, and replies to
+    /* A sender outside any process answers to a name of its own, and replies to
      * it wait in an inbox (runtime/inbox.c): the receiver sees an ordinary
      * header either way. */
     const char *self_id = getenv("BACKMUX_ID"), *self_name = getenv("BACKMUX_NAME");
@@ -1192,8 +1187,8 @@ static int msg_action_impl(const struct hold_invocation *inv,
     bool made = false;
     if (outside && hold_operator_name(user_store, true, opname, sizeof(opname), &made) != 0) opname[0] = '\0';
     if (wait_reply && !outside) {
-        fprintf(stderr, "backmux: --wait-reply is for a sender outside backmux.\n"
-                        "Inside a process, replies arrive as program input or chat.\n");
+        fprintf(stderr, "backmux: --wait-reply requires a sender outside a managed process.\n"
+                        "Inside a managed process, use backmux msg --received to read received-message history.\n");
         rc = HOLD_EXIT_USAGE;
         goto out;
     }
@@ -1203,7 +1198,7 @@ static int msg_action_impl(const struct hold_invocation *inv,
     }
     off_t reply_from = opname[0] ? hold_inbox_size(user_store, opname) : 0;
     if (hold_valid_alias(token) && hold_inbox_live(user_store, token)) {
-        /* To an operator: no broker, straight into its inbox. From a call,
+        /* To an operator: no broker, straight into its inbox. From a process,
          * its name as the record has it now: BACKMUX_NAME in a running
          * program is the name it started with, and a rename (backmux set
          * NAME name=...) would leave the reply going to a name that no
@@ -1240,7 +1235,7 @@ static int msg_action_impl(const struct hold_invocation *inv,
         char num[96];
         snprintf(num, sizeof(num), "msg%s", submit ? "" : " submit=0");
         int bad = rb_str(&req, num);
-        /* The exact id names one call; the receiver shows its name. An
+        /* The exact id names one process; the receiver shows its name. An
          * operator sends its inbox name, marked op=1. */
         const char *from = getenv("BACKMUX_ID");
         if (!from || !*from) from = getenv("BACKMUX_NAME");

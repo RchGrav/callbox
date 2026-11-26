@@ -28,9 +28,8 @@ bool hold_valid_id_prefix(const char *id) {
     return len >= 1 && len <= ID_HEX_LEN && all_lower_hex(id, len);
 }
 
-/* Validates a call name (the identifier kept for its own sake, not the deleted
- * profile-era alias). A name that looks like a full run id is rejected so
- * names can never shadow ids in resolution. */
+/* Process and inbox names exclude full process IDs to avoid ambiguity with
+ * ID resolution. A leading hyphen is also invalid because it denotes an option. */
 bool hold_valid_alias(const char *alias) {
     if (!alias) return false;
     size_t len = strlen(alias);

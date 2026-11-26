@@ -6,18 +6,14 @@
 #include "backmux/runtime.h"
 #include "backmux/runtime_internal.h"
 
-/* An agent outside any call (Claude Code in a plain terminal, a script) can
- * message a call, but has no call to type the reply into. It gets a name, made
- * like a call's, and an inbox under that name (store/inbox.c); the receiver
- * sees an ordinary header and replies with an ordinary backmux msg. Why: one
- * way of talking for everyone - the receiver needs to know nothing about
- * where the sender runs.
+/* Senders outside managed processes receive replies through named operator
+ * inboxes (store/inbox.c). Recipients reply with the same backmux msg command
+ * used for managed processes.
  *
  * The name belongs to the sender's harness: the first process above backmux
  * that is not a shell or a wrapper, identified by its name, pid, and start
- * time (so every command one Claude Code session runs shares one name, and a
- * reused pid is a new name). Where that walk finds nothing, the name is
- * "operator". */
+ * time, when available. If no harness is found, the account UID identifies
+ * the sender and "operator" is the preferred name if available. */
 
 #define INBOX_POLL_MS 200
 
@@ -61,7 +57,7 @@ int hold_operator_name(const struct hold_store *store, bool create, char *name, 
 
 /* The person's chat name: one per account, the same in every terminal (chat
  * follows them), their chosen chat-name when that is free, else generated.
- * It is an operator inbox like any sender's outside a call, so agents reply
+ * It is an operator inbox like any sender's outside a process, so agents reply
  * to it with backmux msg. */
 int hold_person_chat_name(const struct hold_store *store, const char *own, char *name, size_t n) {
     char key[64];
@@ -72,7 +68,7 @@ int hold_person_chat_name(const struct hold_store *store, const char *own, char 
 static int operator_name_for(const struct hold_store *store, const char *key, const char *own, bool create,
                              char *name, size_t n, bool *made) {
     if (made) *made = false;
-    /* One namespace with calls: keep lookup and claim together, so parallel
+    /* One namespace with processes: keep lookup and claim together, so parallel
      * first sends share an inbox and a launch cannot take its name. Root's
      * personal store may not exist yet; make it before taking its lock. */
     char dir[HOLD_PATH_MAX];
@@ -80,8 +76,8 @@ static int operator_name_for(const struct hold_store *store, const char *key, co
     int lock_fd = hold_store_lock(store->record_dir);
     int rc = hold_inbox_find(store, key, name, n), saved;
     if (rc <= 0 || !create) goto out; /* 0: it has one; -1: error; 1: none */
-    /* A generated name, as a call gets: from a hash of the key, stepping on
-     * while the name is taken by a call or another inbox. */
+    /* A generated name, as a process gets: from a hash of the key, stepping on
+     * while the name is taken by a process or another inbox. */
     for (unsigned salt = 0; salt < 64; salt++) {
         struct sha256_ctx h;
         unsigned char digest[32];
@@ -115,12 +111,12 @@ out:
 
 void hold_operator_first_note(const char *name) {
     fprintf(stderr,
-            "backmux: you are %s, outside any process. Replies to you wait in your inbox\n"
-            "for 60 minutes:\n"
-            "  backmux inbox                    read them\n"
-            "  backmux inbox --wait             wait for the next one\n"
-            "  backmux monitor                  print each one as it arrives, until stopped\n"
-            "  backmux msg <process> TEXT --wait-reply   wait for the next new message\n",
+            "backmux: sender %s is outside any managed process. Replies use an operator inbox\n"
+            "that expires after 60 minutes of inactivity:\n"
+            "  backmux inbox                    Read retained messages\n"
+            "  backmux inbox --wait             Wait for an unread message\n"
+            "  backmux monitor                  Follow incoming messages\n"
+            "  backmux msg <target> TEXT --wait-reply   Send and wait for a new message\n",
             name);
 }
 
@@ -219,7 +215,7 @@ static int inbox_action_impl(const struct hold_store *user_store, int argc, char
         }
     }
     if (wait && monitor) {
-        fprintf(stderr, "backmux: error: --wait and --monitor do not go together\n%s", usage);
+        fprintf(stderr, "backmux: error: --wait and --monitor cannot be combined\n%s", usage);
         return HOLD_EXIT_USAGE;
     }
     char name[ALIAS_MAX_LEN + 1];
@@ -232,14 +228,14 @@ static int inbox_action_impl(const struct hold_store *user_store, int argc, char
     } else {
         const char *in_call = getenv("BACKMUX_ID");
         if (in_call && *in_call) {
-            fprintf(stderr, "backmux: you run inside a process: messages arrive as program input or chat,\n"
-                            "not in an outside inbox\n");
+            fprintf(stderr, "backmux: this command runs inside a managed process; use backmux msg --received\n"
+                            "to read its received-message history\n");
             return HOLD_EXIT_USAGE;
         }
         int rc = hold_operator_name(user_store, false, name, sizeof(name), NULL);
         if (rc != 0) {
-            fprintf(stderr, "backmux: you have no inbox yet: one is made the first time you send with backmux msg "
-                            "from outside a process\n");
+            fprintf(stderr, "backmux: no operator inbox exists for this sender; send with backmux msg "
+                            "from outside a managed process to create one\n");
             return HOLD_EXIT_NO_TARGET;
         }
     }

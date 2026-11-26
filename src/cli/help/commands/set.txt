@@ -1,21 +1,27 @@
 usage: backmux set <name|id> <setting>[=<value>]
        backmux unset <name|id> <setting>
 
-Change a process's settings, running or ended.
+Change settings on a running or ended process.
 
-  agent              messages arrive formatted for an agent (unset: raw,
-                     the text then Enter). Takes effect from the next
-                     message, with no relaunch.
-  working=DIR        the folder recall starts it in (unset: wherever you
-                     run recall)
-  program=PROGRAM    the program it runs, a path or a name on PATH (cannot
-                     be unset)
-  args=A B C         its arguments, split on blanks; or, to keep an argument
-                     with spaces whole: backmux set NAME args -- A "B C"
-                     (unset: none)
-  name=NAME          its name, at once; the old name stops answering (cannot
-                     be unset)
+  agent              include a sender header in messages; unset removes
+                     the header. Applies to the next message.
+  working=DIR        working directory for the next launch; unset uses
+                     the directory from which recall is invoked
+  program=PROGRAM    executable path or name on PATH for the next launch;
+                     cannot be unset
+  args=TEXT          replace arguments, splitting TEXT at spaces and tabs;
+                     quote the assignment when it contains spaces
+  args -- ARG...     replace arguments with the shell's argument list,
+                     preserving quoted spaces; unset args clears them
+  name=NAME          rename and save the profile immediately; cannot be unset
 
-working, program and args take effect at the next launch (backmux recall):
-a running program's folder and command cannot change under it. The id never
-changes.
+working, program, and args affect the next launch through recall. They do
+not change the running program. The Backmux process ID remains unchanged.
+
+Examples:
+  backmux set worker working=/srv/project
+  backmux set worker 'args=--port 8080'
+  backmux set worker args -- --title "Build results"
+  backmux unset worker agent
+
+See backmux help rename and help recall.

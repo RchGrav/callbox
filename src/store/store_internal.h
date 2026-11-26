@@ -14,7 +14,7 @@ enum { RF_STR, RF_BOOL, RF_INT, RF_I64, RF_U64, RF_PID, RF_UID, RF_GID };
 
 enum {
     RF_REQ = 1 << 0,      /* read: required, the load fails when absent */
-    RF_ALIAS = 1 << 1,    /* read: accept only a valid call name */
+    RF_ALIAS = 1 << 1,    /* read: accept only a valid process name */
     RF_ABS = 1 << 2,      /* read: accept only an absolute path */
     RF_NONEMPTY = 1 << 3, /* read: treat an empty string as absent */
     RF_WRONLY = 1 << 4,   /* write only: the reader owns a default or shim */
@@ -40,7 +40,7 @@ void hold_record_emit_fields(FILE *f, bool *first, const struct hold_run_record 
 int hold_record_read_fields(const char *json, struct hold_run_record *r);
 int hold_record_checked_i64_to_pid(int64_t v, pid_t *out);
 
-/* The ONLY commit tail in the store (atomic.c). */
+/* Shared atomic JSON write operation, implemented in atomic.c. */
 typedef int (*hold_json_emit_fn)(FILE *f, void *ctx);
 int hold_atomic_write_json(const char *dir, const char *final_name, mode_t mode,
                            bool chown_root, hold_json_emit_fn emit, void *ctx,

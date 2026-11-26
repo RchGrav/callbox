@@ -1,8 +1,11 @@
 usage: backmux ps [-a|--all] [name]
 
-List running processes across your personal and root-managed stores.
--a, --all includes ended processes. A name filters the listing.
+List active processes from your user store and the root-managed store.
+Under root, show only the root-managed store. Processes whose state is
+Unknown remain visible. -a, --all includes ended records. An optional name
+filters by exact process name.
 
-The columns are PROCESS ID, COMMAND, CREATED, STATUS, PORTS, and NAMES.
-Private root-managed processes show a 'hidden' command. ps takes no scope
-flags; use list for --user, --system, and an owner column.
+Columns: PROCESS ID, COMMAND, CREATED, STATUS, PORTS, NAMES. PROCESS ID is
+the Backmux process ID, not the operating-system PID. Private root-managed
+processes show a 'hidden' command. ps does not accept store-selection flags;
+use list for --user, --system, and an owner column.

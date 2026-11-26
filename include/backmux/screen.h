@@ -4,14 +4,14 @@
 
 #include "backmux/config.h"
 
-/* The screen layer: a headless terminal (vendored libvterm) that a PTY call's
+/* The screen layer: a headless terminal (vendored libvterm) that a PTY process's
  * broker feeds every output byte into, plus the snapshot format every viewer
  * of that screen reads. Depends on core only.
  *
  * A snapshot is plain data: grid size, cursor, terminal modes, and one cell
  * per column with its characters, resolved 24-bit colors, and attributes. It
  * serializes to a small self-describing binary blob ("HSNAP1") that travels
- * over the console socket and is written beside the log when the call ends. */
+ * over the console socket and is written beside the log when the process ends. */
 
 #define HOLD_CELL_CHARS 3 /* base character plus up to two combining marks */
 
@@ -55,7 +55,7 @@ struct hold_screen_modes {
     bool mouse_sgr;       /* mode 1006 */
 };
 
-/* Broker-side facts about the call that travel with a snapshot. */
+/* Broker-side facts about the process that travel with a snapshot. */
 struct hold_screen_meta {
     uint64_t output_seq;  /* total PTY output bytes seen so far */
     uint32_t idle_ms;     /* milliseconds since the last output byte */

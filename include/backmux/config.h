@@ -79,21 +79,19 @@
 #define HOLD_NEED_SOCKET_CLOEXEC 1
 #endif
 #define JSON_MAX_DEPTH 64
-/* A PTY call's terminal size, in character cells. --size, the saved
+/* A PTY process's terminal size, in character cells. --size, the saved
  * detach-size default and backmux resize all take 1..HOLD_TERM_MAX_DIM columns
- * and rows; with nothing to go on, a call starts at the default below. */
-/* Exit codes with one meaning everywhere (backmux help scripting lists them all).
- * A command line backmux cannot act on - an unknown option, a missing or
- * malformed value, the wrong number of arguments - is a usage error. "No
- * such call" keeps its own code, so a script can tell the two apart. */
+ * and rows; with nothing to go on, a process starts at the default below. */
+/* Shared exit-code constants. See backmux help scripting for command-specific
+ * meanings and foreground launches that return the program's exit status. */
 #define HOLD_EXIT_USAGE 1
 #define HOLD_EXIT_NO_TARGET 5
-/* The call exists but has no terminal screen (peek/send/wait/resize on a
- * call placed without -t). Its own code, not 5: a script must be able to
- * tell "wrong name" from "wrong kind of call". */
+/* The target exists but has no console for the requested operation.
+ * Both PTY and pipe-input processes can have consoles; exit-only wait does
+ * not require one. */
 #define HOLD_EXIT_NO_SCREEN 10
 /* The name asked for is taken (--name, rename). Its own code, not 5: the
- * call it names does exist - "no such call" would be the opposite. */
+ * process it names does exist - "no such process" would be the opposite. */
 #define HOLD_EXIT_NAME_TAKEN 11
 /* No --restart-delay given: the restart supervisor backs off (1 s, doubling
  * to 30 s; reset after a run of 10 s or more) instead of restarting at once.

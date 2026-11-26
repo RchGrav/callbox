@@ -8,8 +8,8 @@
 #include "backmux/names/adjectives.h"
 #include "backmux/names/nouns.h"
 
-/* Call-record operations split out of start.c: redial resolution, save, rename,
- * and generated call-name assignment. The start machinery (spawn, log capture,
+/* Process-record operations split out of start.c: redial resolution, save, rename,
+ * and generated process-name assignment. The start machinery (spawn, log capture,
  * restart supervisor) stays in start.c; these share only hold_perform_start_options
  * and the public runtime API. */
 
@@ -25,9 +25,8 @@ static int name_exists_cb(const char *id, const char *path, struct hold_run_reco
     return r && r->has_name && strcmp(r->name, w->name) == 0;
 }
 
-/* A call mid-launch has no record yet, only its .<id>.reserve, which holds
- * the name it was given (written under the store lock). A young reserve's
- * name is taken; an old one is a dead start's litter. */
+/* Pending launches reserve names in .<id>.reserve under the store lock.
+ * Reservations modified less than 600 seconds ago block name reuse. */
 static bool name_reserved_in_store(const struct hold_store *store, const char *name, const char *ignore_id) {
     DIR *d = opendir(store->record_dir);
     if (!d) return false;
@@ -64,7 +63,7 @@ static int run_name_exists_in_store(const struct hold_store *store, const char *
     return rc;
 }
 
-/* Claims NAME for the call mid-launch: written into its .<id>.reserve, which
+/* Claims NAME for the process mid-launch: written into its .<id>.reserve, which
  * the record write removes. */
 static void reserve_run_name(const struct hold_store *store, const char *id, const char *name) {
     char path[HOLD_PATH_MAX];
@@ -133,8 +132,7 @@ static int restart_existing_run(const struct hold_invocation *inv,
         interactive_stdin = old.recipe.mode_interactive;
         wait = wait || old.recipe.mode_wait;
     }
-    /* A backmux shell comes back as one: attached, on its PTY, with chat. (An
-     * explicit -d is refused by the launch itself.) */
+    /* Retained broker-chat profiles default to an attached PTY. */
     if (old.recipe.mode_chat && !explicit_session_mode) {
         tail = true;
         console_mode = true;
@@ -170,11 +168,10 @@ static int restart_existing_run(const struct hold_invocation *inv,
         rc = 5;
         goto out;
     }
-    /* Same path and args: recall starts in the folder recorded at launch
-     * (backmux set NAME working=DIR changes it; unset, it runs here). */
+    /* Recall uses the recorded working directory unless that setting was unset. */
     if (old.recipe.has_working && chdir(old.recipe.working) != 0) {
         fprintf(stderr, "backmux: error: cannot start %s in %s: %s\n"
-                        "  backmux set %s working=DIR picks another folder; backmux unset %s working runs it here\n",
+                        "  backmux set %s working=DIR changes the directory; backmux unset %s working uses the current directory\n",
                 old.has_name ? old.name : id, old.recipe.working, strerror(errno),
                 old.has_name ? old.name : id, old.has_name ? old.name : id);
         rc = 5;
@@ -203,7 +200,7 @@ static int restart_existing_run(const struct hold_invocation *inv,
         .size_cols = size_cols ? size_cols : (console_mode && old.recipe.has_size ? old.recipe.size_cols : 0),
         .size_rows = size_cols ? size_rows : (console_mode && old.recipe.has_size ? old.recipe.size_rows : 0),
         /* The chat window needs a terminal to be drawn on: redialed from a
-         * script, a user-mode call comes back attached without it. */
+         * script, a user-mode process comes back attached without it. */
         .chat = old.recipe.mode_chat && !explicit_session_mode && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO),
         /* the intent survives a redial from a script, where chat cannot be drawn */
         .user_mode = old.recipe.mode_chat && !explicit_session_mode,
@@ -259,15 +256,13 @@ int hold_cmd_redial(const struct hold_invocation *inv,
         return 3;
     }
     if (!restart_store) {
-        /* Not a retained call; the caller launches it as a command instead. */
+        /* Not a retained process; the caller launches it as a command instead. */
         return 0;
     }
     *redialed = true;
-    /* Still running: there is nothing to start, and the reason to type its
-     * name is to get back to it - so go there, the way it can be reached:
-     * its console (attach; Ctrl-Space q leaves again), or else its log
-     * (followed until it ends; Ctrl-C stops following). An explicit -d
-     * means "in the background": it is, so say which call and return. */
+    /* A running target is attached when it has a console, otherwise its log
+     * is followed. An explicit detached invocation returns its ID instead
+     * of starting another instance. */
     struct hold_run_record cur;
     char cur_path[HOLD_PATH_MAX];
     if (hold_load_record_by_id(restart_store->record_dir, restart_id, &cur, cur_path, sizeof(cur_path)) == 0) {
@@ -292,11 +287,9 @@ int hold_cmd_redial(const struct hold_invocation *inv,
                                 restart_delay_seconds, size_cols, size_rows, restart_id);
 }
 
-/* save and rename share one shape: resolve with the widest (inspect) intent,
- * load, mutate the protection/name state, rewrite atomically, refresh the
- * public projection for global calls, confirm on stderr. new_name==NULL
- * means save; non-NULL means rename (which also saves — naming a call
- * declares the intent to keep it). */
+/* Resolve and atomically update the saved flag and optional name, then refresh
+ * the public index for system-managed records. new_name==NULL saves the record;
+ * a non-NULL name renames it and sets the saved flag. */
 static int protect_record_action(const struct hold_invocation *inv,
                                  const struct hold_store *user_store,
                                  const struct hold_store *system_store,
@@ -337,7 +330,7 @@ static int protect_record_action(const struct hold_invocation *inv,
     }
     char display_id[ID_DISPLAY_HEX_LEN + 1];
     hold_run_id_display(r.id, display_id);
-    /* Saving is idempotent: an already-saved call needs no rewrite, but still
+    /* Saving is idempotent: an already-saved process needs no rewrite, but still
      * confirms the protected state on stderr and exits 0. */
     if (!new_name && r.saved) {
         hold_store_unlock(lock_fd);

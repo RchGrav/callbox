@@ -1,10 +1,9 @@
 #!/bin/sh
 # Turn the help pages (src/cli/help/**/*.txt) into C data compiled into the
 # binary: one array of line strings per page, and a table of the pages by
-# name ("overview", "guides/tui", "commands/send", ...). Why: the pages stay
-# plain text in the repository, readable and linkable on GitHub, and backmux
-# still prints them with no file I/O at run time. One string per line keeps
-# every literal far below the 4095 characters C99 promises.
+# name ("overview", "guides/tui", "commands/send", ...). Help remains editable
+# as plain text and requires no external help files at runtime. One literal
+# per source line avoids concatenating a whole page into one C string.
 #
 # usage: scripts/gen_help.sh <root> <file.txt>... > gen/help_text.c
 # POSIX sh and awk only, so every release build (macOS, cross compilers) can

@@ -5,7 +5,7 @@
 #include "store_internal.h"
 
 /* The public projection: the deliberately narrower, world-readable view of a
- * root-managed call. Never carries argv, environment, or the owning user —
+ * root-managed process. Never carries argv, environment, or the owning user —
  * that split is a frozen invariant. Writer and reader live together so the
  * projection schema has one home. */
 

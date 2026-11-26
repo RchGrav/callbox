@@ -17,17 +17,16 @@ struct hold_recipe {
     bool mode_detach;
     bool mode_wait; /* a waiter records the exit code (-w; implied by foreground, --rm, --restart) */
     bool allow_multi;
-    bool mode_chat;  /* user mode (backmux <cmd>, -it, backmux shell): composited display; backmux msg
-                        lands in its chat inbox */
-    bool mode_shell; /* placed with backmux shell (chat's hints name the shell, not "the program") */
-    int chat_key;    /* backmux shell: the key after the lead key that opens chat */
+    bool mode_chat;  /* retained broker-composited chat mode; current CLI launches leave this false */
+    bool mode_shell; /* launched with backmux shell */
+    int chat_key;    /* broker-chat toggle key following the prefix */
     bool has_chat_key;
-    bool has_keys;   /* backmux shell: its broker reads the lead key itself (lead_key, then detach_key) */
+    bool has_keys;   /* broker-interpreted prefix and detach keys are recorded */
     int lead_key, detach_key;
     bool mode_agent; /* backmux agent (or set NAME agent): messages arrive with a header naming the
                         sender and how to reply; without it they arrive raw, the text then Enter.
                         Read at each delivery, so set/unset take effect from the next message. */
-    char working[HOLD_PATH_MAX]; /* the folder recall starts it in; absent = where recall is run */
+    char working[HOLD_PATH_MAX]; /* recall working directory; absent = current directory */
     bool has_working;
     bool has_size;   /* placed with --size: redial replays it */
     int size_cols, size_rows;
@@ -84,7 +83,7 @@ struct hold_run_record {
     int64_t log_start; /* where this run's output starts in the log (redials append) */
     uint64_t pid_ns;  /* Linux: the launching PID namespace (inode of /proc/self/ns/pid); 0 = unknown */
     bool liveness_lock; /* its supervisor holds a lifetime lock on the log (the fallback) */
-    pid_t broker_pid;   /* a TTY call's console broker, a session leader: it speaks for the call */
+    pid_t broker_pid;   /* a TTY process's console broker, a session leader: it speaks for the process */
     bool has_broker;
     struct hold_recipe recipe;
     bool has_observed;

@@ -11,7 +11,8 @@ INSPECT A TERMINAL WITHOUT ATTACHING
   The broker feeds output into libvterm, keeping the visible cells, colors,
   attributes, cursor, and input modes. peek reads that screen as text,
   JSON, or a PNG with a ruler, cursor marker, and embedded fonts.
-  --last-alt preserves the last full-screen frame after an app switches back.
+  --last-alt reads the saved alternate-screen frame after the app returns
+  to the primary screen.
 
 SEND INPUT AND CHECK THE RESULT
   send encodes keys, mouse events, and pasted text for the app's current
@@ -23,13 +24,13 @@ SEND INPUT AND CHECK THE RESULT
 WORK TOGETHER ON ONE SCREEN
   A person can stay attached while an agent uses peek, send, and resize.
   While attached, Ctrl-Space p a puts another process beside it as a pane and
-  Ctrl-Space c opens the person's chat over everything; the apps, their
-  logs, and peek snapshots never include either. Processes with the agent
-  setting receive messages with a sender header; others receive them as
-  typed text. Outside harnesses receive replies in an inbox and can follow
-  them with monitor.
+  Ctrl-Space c opens the chat window. Pane decorations and chat are composed
+  by the attach client; each process's log and snapshot contain its own
+  output. The agent setting adds a sender header to messages; without it,
+  messages arrive as program input without that header. Outside harnesses
+  receive replies in an inbox and can follow them with monitor.
 
-REUSE A CALL
+RECALL A PROCESS
   Processes retain their command, launch mode, explicit environment settings,
   and initial size. A process's name reconnects while it runs and restarts
   its recorded command after it ends. Logs accumulate across runs.
@@ -37,9 +38,9 @@ REUSE A CALL
   back off from 1 s to 30 s. --restart-delay sets a fixed delay instead.
 
 MANAGE NAMED PROCESSES
-  Processes have generated or chosen names and stable IDs. Unique prefixes
-  resolve without guessing when there is more than one match. end sends
-  TERM, then KILL after five seconds, to its process group.
+  Processes have generated or chosen names and stable Backmux process IDs.
+  General target lookup rejects ambiguous prefixes. end sends SIGTERM, then
+  SIGKILL after five seconds if needed, to the process group.
   Identity checks use boot and process metadata before signaling.
   save protects a record from ordinary purge; rename also saves it.
 

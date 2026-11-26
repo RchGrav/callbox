@@ -1,9 +1,14 @@
 usage: backmux recall <name|id>
 
-Start an ended process again, under the same name and id: the same program,
-the same arguments, in the same folder, attached or in the background as it
-first ran. backmux set NAME program=/args=/working= change what the next
-recall runs; backmux unset NAME working runs it where you stand.
+Relaunch the recorded command with its stored arguments, working directory,
+and launch mode. The process retains its name and Backmux process ID.
+Existing log output is retained.
 
-A process that is still running is reached with backmux attach (or tail), not
-recalled. Docker's spelling: backmux start.
+Targets reported as running are refused. Unknown targets can proceed to
+relaunch; that state does not confirm that the previous execution ended.
+
+Use set to change program, args, or working before the next launch. Unsetting
+working makes recall use its caller's working directory.
+
+Use attach or tail to access a process that is already running.
+start is an alias. See backmux help set and help launch.

@@ -16,9 +16,10 @@ Each message prints as [HH:MM from NAME] TEXT; text can span multiple lines.
 All readers share the inbox's unread position. Reading history marks it
 read too, so a later --wait waits for a new message.
 
-The inbox name is based on the invoking harness process. A different
-harness may have a different name; use the name printed by the first send
-when crossing between them. Names expire after an hour without use.
+The default inbox is associated with the invoking harness when identified,
+otherwise with the user account. A different harness may have a different
+name; use the printed inbox name when reading from another harness.
+Names expire after an hour without use.
 Messages expire one hour after delivery, even if the inbox stays active.
 
 Inside a process, messages arrive as program input; there is no

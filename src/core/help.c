@@ -2,8 +2,8 @@
 #include "backmux/types.h"
 #include "backmux/help_text.h"
 
-/* Looking up and printing the compiled-in help pages (include/backmux/
- * help_text.h). The pages themselves are generated data. */
+/* Help text is compiled from src/cli/help into the table declared in
+ * backmux/help_text.h; runtime lookup does not read documentation files. */
 
 static const struct hold_help_page *find_page(const char *name) {
     for (const struct hold_help_page *p = hold_help_pages; name && p->name; p++)

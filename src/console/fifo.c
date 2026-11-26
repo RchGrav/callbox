@@ -89,7 +89,7 @@ int hold_open_channel(const char *path, char kind, int *output) {
         return *output;
     }
     /* Mutual authentication, as with the socket: the endpoint must belong to
-     * us — or, for root, to the call's owner, whoever that is. */
+     * us — or, for root, to the process's owner, whoever that is. */
     uid_t me = geteuid(), owner = (uid_t)-1;
     int listener = pipe_end(path, O_WRONLY, &owner);
     if (listener < 0) return -1;
@@ -107,7 +107,7 @@ int hold_open_channel(const char *path, char kind, int *output) {
     if (exchange_paths(&x) != 0 || mkfifo(x.input, 0600) != 0 || mkfifo(x.output, 0600) != 0) goto done;
     /* Open both of our ends before the introduction. The temporary reader
      * keeps the request writer valid until the broker has its own reader. */
-    /* Root driving another user's call: hand the channel to that user, or
+    /* Root driving another user's process: hand the channel to that user, or
      * the broker (running as them) could not open it. */
     if (me == 0 && owner != 0 &&
         (chown(x.dir, owner, (gid_t)-1) != 0 || chown(x.input, owner, (gid_t)-1) != 0 ||

@@ -1,21 +1,13 @@
-usage: backmux set <name|id> <setting>[=<value>]
-       backmux unset <name|id> <setting>
+usage: backmux unset <name|id> <setting>
 
-Change a process's settings, running or ended.
+Clear an optional setting on a running or ended process.
 
-  agent              messages arrive formatted for an agent (unset: raw,
-                     the text then Enter). Takes effect from the next
-                     message, with no relaunch.
-  working=DIR        the folder recall starts it in (unset: wherever you
-                     run recall)
-  program=PROGRAM    the program it runs, a path or a name on PATH (cannot
-                     be unset)
-  args=A B C         its arguments, split on blanks; or, to keep an argument
-                     with spaces whole: backmux set NAME args -- A "B C"
-                     (unset: none)
-  name=NAME          its name, at once; the old name stops answering (cannot
-                     be unset)
+  agent      disable the sender header for subsequent messages
+  working    use the caller's working directory on the next recall
+  args       remove all recorded arguments for the next recall
 
-working, program and args take effect at the next launch (backmux recall):
-a running program's folder and command cannot change under it. The id never
-changes.
+program and name are required and cannot be unset. Use set to replace them.
+Changes to working and args do not affect the running program.
+
+Example: backmux unset worker args
+See backmux help set for all settings and argument syntax.

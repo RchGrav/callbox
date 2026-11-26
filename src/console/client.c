@@ -4,16 +4,13 @@
 #include "backmux/core.h"
 #include "backmux/term.h"
 
-/* THE client loop: every way a person watches or is on a call - attached to
- * its console, or following its log - runs here, so the keys mean the same
- * thing everywhere and the terminal is restored the same way. The caller
- * chooses the output source (a console socket, or a log file read as it
- * grows) and the hooks; the caller owns the terminal's mode. */
+/* Shared event loop for console attachment and log following. The caller
+ * supplies the output source and input hooks, and owns terminal modes. */
 
 /* A log file never reports "no more data" through poll: read it until EOF,
  * then look again after this long. */
 #define CLIENT_FILE_POLL_MS 100
-/* ...and ask whether the call has ended every this many quiet looks. */
+/* Check process completion after this many iterations without input. */
 #define CLIENT_FILE_DONE_EVERY 10
 /* macOS poll() never reports end-of-file on a FIFO: probe this often. */
 #define CLIENT_FIFO_PROBE_MS 250

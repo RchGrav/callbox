@@ -1,13 +1,14 @@
 usage: backmux call [--name NAME] [options] <program> [<args>...]
 
-Run a terminal program attached, on a PTY, under a name. Ctrl-Space q
-detaches; it keeps running, and backmux attach NAME picks it back up.
+Start an attached terminal process on a pseudoterminal (PTY). Ctrl-Space q
+detaches the active pane and leaves its process running. Use backmux attach
+NAME to reconnect.
 
-Messages to it (backmux msg NAME TEXT, or chat) arrive raw: exactly the text,
-then Enter, as if typed - so a message can run a command in a shell or a CLI.
-backmux agent starts the same thing with messages formatted for an agent;
-backmux set NAME agent switches a running process over.
+Messages arrive as program input without a sender header, followed by Enter
+by default. A message to a shell can execute a command. backmux agent enables
+the sender header at launch; backmux set NAME agent enables it later.
+See backmux help msg for text handling and delivery behavior.
 
-Options: --name, -e KEY=VALUE, --env-file, --size COLS ROWS, --rm, --restart,
---detach-keys. The word after the options is always the program. Docker's
-spelling: backmux run -it.
+Options include --name, -e KEY=VALUE, --env-file, --size COLS ROWS, --rm, and
+--detach-keys. Options precede PROGRAM; subsequent arguments go to the program.
+Equivalent launch: backmux run -it. See backmux help launch and help panes.

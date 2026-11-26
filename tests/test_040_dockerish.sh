@@ -20,7 +20,7 @@ export HOLD_TEST_SYSTEM_STATE_DIR="$TEST_ROOT/system"
 export HOLD_TEST_INVOKING_HOME="$TEST_ROOT/home"
 mkdir -p "$HOME"
 
-# Where calls land: root uses the system store (runs/ and logs/ under its
+# Where processes land: root uses the system store (runs/ and logs/ under its
 # base), everyone else the user store (records and logs side by side).
 if [ "$(id -u)" -eq 0 ]; then
   REC_DIR="$HOLD_TEST_SYSTEM_STATE_DIR/runs"
@@ -44,18 +44,18 @@ extract_full64() {
 }
 
 # Bare foreground: stream the process output, print no id and no startup note.
-# (It runs on a PTY - user mode - so lines end in \r\n and stderr is merged.)
+# (It runs on a PTY, so lines end in \r\n and stderr is merged.)
 out=$(backmux -- /bin/sh -c 'echo smoke-out; echo smoke-err >&2' 2>&1 | tr -d '\r')
 printf '%s\n' "$out" | grep -qx 'smoke-out' || fail "foreground stdout missing"
 printf '%s\n' "$out" | grep -qx 'smoke-err' || fail "foreground stderr missing"
 if printf '%s\n' "$out" | grep -q 'backmux  started'; then
-  fail "foreground call printed a startup note"
+  fail "foreground process printed a startup note"
 fi
 if printf '%s\n' "$out" | grep -Eq '^[0-9a-f]{12}$|^[0-9a-f]{64}$'; then
-  fail "foreground call printed an id line"
+  fail "foreground process printed an id line"
 fi
 full=$(basename "$(ls "$LOG_DIR/"*.log | head -n1)" .log)
-[ "${#full}" -eq 64 ] || fail "full 64-hex call id missing from store"
+[ "${#full}" -eq 64 ] || fail "full 64-hex process ID missing from store"
 display=${full:0:12}
 log="$LOG_DIR/$full.log"
 tr -d '\r' <"$log" | grep -qx 'smoke-out' || fail "stdout raw log line missing"
@@ -63,19 +63,19 @@ test ! -e "$log.idx" || fail "a log index sidecar was written"
 backmux logs --plain "$display" | tr -d '\r' | grep -qx 'smoke-out' || fail "logs --plain did not print raw log"
 backmux logs -p "$display" | tr -d '\r' | grep -qx 'smoke-out' || fail "logs -p did not print raw log"
 
-# Named detached call, then redial by name reuses the same call id and log.
+# Named detached process, then redial by name reuses the same process ID and log.
 named=$(backmux -d --name named-smoke -- /bin/sh -c 'echo named; sleep 0.1' 2>&1 | extract_full64 | cut -c1-12)
-[ "${#named}" -eq 12 ] || fail "named call id missing"
+[ "${#named}" -eq 12 ] || fail "named process ID missing"
 sleep 0.3
-redial_id=$(backmux -d named-smoke 2>&1 | extract_full64 | cut -c1-12) || fail "redial by call name failed"
-[ "$redial_id" = "$named" ] || fail "redial did not reuse existing call id"
+redial_id=$(backmux -d named-smoke 2>&1 | extract_full64 | cut -c1-12) || fail "redial by process name failed"
+[ "$redial_id" = "$named" ] || fail "redial did not reuse existing process ID"
 sleep 0.3
 [ "$(backmux logs --plain named-smoke | grep -c '^named$')" -eq 2 ] ||
   fail "redial did not append to existing raw log"
 
-# rename gives a call a meaningful name.
+# rename gives a process a meaningful name.
 backmux rename named-smoke renamed-smoke >/dev/null 2>&1 || fail "rename failed"
-backmux ps -a | grep -q 'renamed-smoke' || fail "rename did not update the call name"
+backmux ps -a | grep -q 'renamed-smoke' || fail "rename did not update the process name"
 
 if backmux -p 8080:80 -- /bin/true >"$TEST_ROOT"/pub.out 2>"$TEST_ROOT"/pub.err; then
   fail "publish unexpectedly succeeded"
@@ -97,7 +97,7 @@ for _ in $(seq 1 30); do
   fi
   sleep 0.1
 done
-printf '%s\n' "$psout" | grep -q '^CALL ID[[:space:]]\+COMMAND[[:space:]]\+CREATED[[:space:]]\+STATUS[[:space:]]\+PORTS[[:space:]]\+NAMES' ||
+printf '%s\n' "$psout" | grep -q '^PROCESS ID[[:space:]]\+COMMAND[[:space:]]\+CREATED[[:space:]]\+STATUS[[:space:]]\+PORTS[[:space:]]\+NAMES' ||
   fail "ps header is not Docker-shaped"
 # Port observation reads /proc: Linux-only (macOS shows an honest empty PORTS).
 if [ "$(uname -s)" = Linux ]; then

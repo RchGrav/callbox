@@ -113,7 +113,7 @@ int hold_proc_fd_target(pid_t pid, int fd, char *out, size_t n) {
     ssize_t got = readlink(path, target, sizeof(target) - 1);
     if (got < 0) return -1;
     target[got] = '\0';
-    /* A held call's captured stdout/stderr point at Backmux's own capture pipe;
+    /* A held process's captured stdout/stderr point at Backmux's own capture pipe;
      * report the plumbing by its role, not its ephemeral inode. */
     snprintf(out, n, "%s", strncmp(target, "pipe:", 5) == 0 ? "pipe:backmux" : target);
     return 0;
@@ -186,10 +186,8 @@ static int scan_proc_net_file(const char *path, const char *proto, bool is_tcp, 
              tok = strtok_r(NULL, " \t\r\n", &save))
             fields[nf++] = tok;
         if (nf <= 9) continue;
-        /* TCP: only LISTEN sockets (state 0A). UDP has no listen state, so an
-         * unconnected bound socket is the honest analogue — a socket with a
-         * remote address set is an outbound client (e.g. an ephemeral DNS
-         * port) and never belongs in PORTS. */
+        /* Include TCP listeners and bound, unconnected UDP sockets. Exclude
+         * connected sockets; this view reports local endpoints, not peers. */
         if (is_tcp && strcmp(fields[3], "0A") != 0) continue;
         if (!is_tcp) {
             const char *rem_port = strchr(fields[2], ':');
@@ -426,7 +424,7 @@ uint64_t hold_current_pid_ns(void) {
 
 /* A process's parent and short name (comm: at most 15 characters on Linux,
  * cut to 15 on macOS too, so names line up the same everywhere). Used to name
- * the harness that runs a sender outside any call (runtime/inbox.c). */
+ * the harness that runs a sender outside any process (runtime/inbox.c). */
 int hold_proc_parent_and_name(pid_t pid, pid_t *ppid_out, char *name, size_t n) {
     if (pid <= 0 || !ppid_out || !name || n == 0) {
         errno = EINVAL;

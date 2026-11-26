@@ -18,8 +18,9 @@ Run it as a normal user. It refuses UID 0, because a root run can mask bugs
 that only exist for ordinary users. It runs, in order:
 
 1. the version-sync check (`scripts/check_version_sync.sh`);
-2. static and dynamic builds with `-Werror`;
-3. `make test` and `make test-040`;
+2. a default-link build (static on Linux, dynamic on macOS) and a dynamic
+   build, both with `-Werror`;
+3. `make test`, which includes `test-040`;
 4. `make test` under ASan/UBSan, if the compiler supports it;
 5. cppcheck, if installed;
 6. the layer-dependency lint (`scripts/lint_layers.sh`).
@@ -58,14 +59,17 @@ no invoking user, so it cannot test provenance.
 | `static-analysis` | cppcheck. |
 | `layer-dependencies` | `bash scripts/lint_layers.sh`. |
 
-The build, sanitizer, cppcheck, and lint jobs run the same commands as
-`scripts/ci.sh` but do not process it. The version-sync check runs only
-locally. The root-runner, FIFO, and macOS lanes run only on GitHub.
+The build, sanitizer, cppcheck, and lint jobs share their check commands
+with `scripts/ci.sh`; they do not invoke that script. The version-sync
+check is included in the local script, not the CI workflow. Root-runner,
+FIFO, and macOS checks are separate lanes and are not included in `make ci`.
+
+The workflow runs on pushes and pull requests targeting `main`, and on
+manual dispatch. A push to `backmux` alone does not trigger it.
 
 ## Release gate (`.github/workflows/release.yml`)
 
-The publish job depends on two test jobs, so a tag produces no release
-assets unless both are green:
+Release publication depends on both test jobs succeeding:
 
 1. `test`: `make test` as the non-root runner;
 2. `privilege-delegation-test`: `scripts/test_root.sh`.
@@ -76,5 +80,5 @@ The release workflow does not run the other `ci.yml` lanes.
 
 cppcheck versions differ between local machines and GitHub runners. Keep the
 cppcheck command identical in `scripts/ci.sh` and `.github/workflows/ci.yml`,
-so a local pass means the same as a CI pass. Add any targeted suppression in
+to keep the checks aligned; tool versions can still affect results. Add any targeted suppression in
 both places, with its reason in the commit message.

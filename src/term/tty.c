@@ -16,8 +16,7 @@ int hold_term_input_enter(int fd, enum hold_term_input_mode mode, struct hold_te
     } else {
         /* Key by key, for a client that reads keys itself (detach keys,
          * Ctrl-C) but leaves output as it was: no line buffering, no echo, no
-         * signals from keys, no Ctrl-S/Ctrl-Q flow control (Ctrl-Q is half of
-         * the detach keys). Output processing stays, so "\n" still starts a
+         * signals from keys, and no Ctrl-S/Ctrl-Q flow control. Output processing stays, so "\n" still starts a
          * new line. */
         t.c_lflag &= (tcflag_t) ~(ICANON | ECHO | ISIG | IEXTEN);
         t.c_iflag &= (tcflag_t) ~(IXON | ICRNL);

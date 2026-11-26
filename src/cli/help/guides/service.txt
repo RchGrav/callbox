@@ -1,8 +1,8 @@
 backmux help service - run background services and CI jobs
 
-Use this when a job or service must keep running while a script tests it or
-you do other work. Background processes capture output without a terminal.
-Choose -dw when you need the program's exit code; plain -d keeps no waiter.
+Run jobs and services in the background with output captured in a log.
+Use -dw to record the program's exit code. A plain -d launch without --rm
+or an active restart policy retains no waiter.
 
 RUN A JOB AND RETURN ITS RESULT
   In a project with a make test target:
@@ -58,7 +58,7 @@ CHOOSE THE MODE YOU NEED
 
     backmux -d --restart on-failure --name api -- ./server --port 8080
 
-  end stops it; backmux api starts the recorded command again. save api
+  end stops it; backmux recall api restarts its recorded command. save api
   protects its record from ordinary purge. Restart policies do not install
   a boot service; see backmux help launch for policies and retry timing.
 

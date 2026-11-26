@@ -1,5 +1,7 @@
 usage: backmux ports <target>
 
-List the listening sockets in use by its process group, one per line
-("127.0.0.1:8080/tcp"). Your own processes need no root. Linux only: on macOS
-it lists nothing.
+List network socket endpoints observed for the target's process group,
+one per line, such as 127.0.0.1:8080/tcp. This reports TCP listeners and
+unconnected bound UDP endpoints; it does not publish or forward ports.
+
+Available on Linux. On macOS, the command produces no endpoint listing.

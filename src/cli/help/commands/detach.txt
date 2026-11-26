@@ -1,7 +1,11 @@
 usage: backmux detach [--name NAME] [options] <program> [<args>...]
 
-Run a terminal program in the background on a PTY, for later: backmux attach
-NAME shows it, and peek, send and wait drive it from a script or an agent.
+Start a terminal process in the background on a pseudoterminal (PTY).
+Use backmux attach NAME for interactive access, or peek, send, and wait
+for scripted inspection and control.
 
-Options: --name, -e, --env-file, --size COLS ROWS, --rm, --restart. Docker's
-spelling: backmux run -dt.
+Options include --name, -e KEY=VALUE, --env-file, --size COLS ROWS, and --rm.
+Equivalent launch: backmux run -dt. See backmux help launch for options.
+
+This launch command starts a new process. To detach an existing active pane,
+press Ctrl-Space q while attached; its process continues running.

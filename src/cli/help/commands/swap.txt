@@ -1,9 +1,12 @@
 usage: backmux swap <name|id>,<name|id>
        backmux swap <name|id> <name|id>
 
-Two panes trade places in the terminal that shows them, named by their
-processes' names or ids: whoever runs it may not see that screen, so there
-are no letters or numbers to guess at. Run from inside a pane it acts on that
-terminal; from anywhere else, on the one terminal showing panes.
+Exchange two panes' positions, identified by process name or Backmux process
+ID. ID prefixes of at least four characters are accepted. This command does
+not use the pane letters displayed by the interactive swap control.
 
-In the terminal itself, Ctrl-Space s swaps the panes on the screen.
+From inside a pane, swap selects that pane's terminal. Otherwise, exactly one
+terminal must be displaying panes; with several, run swap from the intended
+terminal's pane. Example: backmux swap editor,reviewer
+
+Interactive control: Ctrl-Space s. See backmux help panes for its keys.

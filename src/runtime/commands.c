@@ -9,7 +9,7 @@
 #include "backmux/console.h"
 #include "backmux/access.h"
 
-/* How a person refers to a call: its name, else the short id. */
+/* How a person refers to a process: its name, else the short id. */
 static void call_label(const struct hold_run_record *r, char *out, size_t n) {
     if (r->has_name && r->name[0]) snprintf(out, n, "%s", r->name);
     else snprintf(out, n, "%.12s", r->id);
@@ -29,19 +29,18 @@ static int match_session(const char *id, const char *path, struct hold_run_recor
     return 1;
 }
 
-/* The console is someone else's just now. Say where: a call's program and
- * everything it runs share its session, so the holder's session tells which
- * call (if any) it is attached from inside. */
+/* Match the attached client's session ID to a managed process when possible,
+ * so the diagnostic can identify a nested attachment. */
 void hold_note_attached_elsewhere(const char *label, pid_t by, const struct hold_store *a, const struct hold_store *b) {
     struct session_owner o = {.sid = by > 0 ? getsid(by) : -1};
     const struct hold_store *stores[2] = {a, b};
     for (int i = 0; i < 2 && o.sid > 0 && !o.label[0]; i++)
         if (stores[i] && stores[i]->record_dir[0]) (void)hold_for_each_record(stores[i]->record_dir, match_session, &o);
     if (o.label[0])
-        fprintf(stderr, "backmux: %s is already attached, from inside the process %s (pid %ld). Detach it there: Ctrl-Space q.\n",
+        fprintf(stderr, "backmux: %s is already attached, from inside the process %s (PID %ld). Detach it there: Ctrl-Space q.\n",
                 label, o.label, (long)by);
     else if (by > 0)
-        fprintf(stderr, "backmux: %s is already attached in another terminal (pid %ld). Detach it there: Ctrl-Space q.\n",
+        fprintf(stderr, "backmux: %s is already attached in another terminal (PID %ld). Detach it there: Ctrl-Space q.\n",
                 label, (long)by);
     else
         fprintf(stderr, "backmux: %s is already attached in another terminal. Detach it there: Ctrl-Space q.\n", label);
@@ -63,8 +62,8 @@ static void nap_ms(long ms) {
     }
 }
 
-/* An ended TTY call's broker records its exit and then saves the complete
- * last screen: wait (a moment) for the record, quietly - a call removed
+/* An ended TTY process's broker records its exit and then saves the complete
+ * last screen: wait (a moment) for the record, quietly - a process removed
  * meanwhile (--rm) has nothing more to wait for. */
 static void await_exit_record(const struct hold_store *store, const char *id) {
     for (int i = 0; i < 30; i++) {
@@ -79,7 +78,7 @@ static void await_exit_record(const struct hold_store *store, const char *id) {
 }
 
 /* The broker stamps the program's exit in the record when it reaps it. A
- * stamped call has ended even when something it started lives on in its
+ * stamped process has ended even when something it started lives on in its
  * process group (a background child on pipes keeps the group alive, and no
  * SIGHUP clears it). */
 static enum run_state program_state(const struct hold_store *store, const char *id) {
@@ -119,7 +118,7 @@ static enum run_state after_attach(const struct hold_invocation *inv, const stru
         else if (unseen) (void)hold_print_run_log(r);
     }
     if (state == STATE_RUNNING && closed)
-        hold_sig_note(inv, "backmux: %s has closed its terminal and runs on; there is nothing to attach - see 'backmux logs %s'\n",
+        hold_sig_note(inv, "backmux: %s is still running but its console is unavailable; see 'backmux logs %s'\n",
                       label, label);
     /* A detach says so, in one line: inline, the screen stays as it was,
      * and without the line nothing shows that anything happened. */
@@ -152,9 +151,9 @@ static int attach_console_record(const struct hold_invocation *inv,
     char label[ALIAS_MAX_LEN + 1];
     call_label(r, label, sizeof(label));
     /* How an attach ended, as its exit code - so a script that attached can
-     * tell what it came back to: 0 detached without a confirmed exit; 8 the call
+     * tell what it came back to: 0 detached without a confirmed exit; 8 the process
      * has ended (before or while attached; the same "ended" as wait's 8);
-     * 3 unreachable or refused (attached elsewhere, or this is that call); 10 the call has
+     * 3 unreachable or refused (attached elsewhere, or this is that process); 10 the process has
      * no console to attach to (the same "wrong kind of process" as peek's). */
     if (program_ended(st)) {
         hold_sig_note(inv, "backmux: %s has ended - see 'backmux logs %s'\n", label, label);
@@ -164,20 +163,20 @@ static int attach_console_record(const struct hold_invocation *inv,
         hold_sig_note(inv, "backmux: %s has no console (start with -it)\n", label);
         return HOLD_EXIT_NO_SCREEN;
     }
-    /* Attaching to the call this very command runs in would show a screen
+    /* Attaching to the process this very command runs in would show a screen
      * inside itself. */
     const char *here = getenv("BACKMUX_ID");
     if (here && !strcmp(here, r->id)) {
-        fprintf(stderr, "backmux: you are inside %s already\n", label);
+        fprintf(stderr, "backmux: cannot attach to %s from inside the same managed process\n", label);
         return 3;
     }
-    /* A backmux shell's broker reads the lead key itself; any other call's keys
-     * are read here, by the attach client. */
+    /* Retained broker-chat profiles interpret keys in the broker; other
+     * attachments interpret them in the client. */
     hold_console_set_composited(r->recipe.mode_chat && r->recipe.has_keys);
-    /* A call with a console but no PTY runs on pipes (backmux -i): attach in
+    /* A process with a console but no PTY runs on pipes (backmux -i): attach in
      * line mode. */
     hold_console_set_line_mode(!r->recipe.mode_tty);
-    /* A call on pipes printed its output into this terminal as it went:
+    /* A process on pipes printed its output into this terminal as it went:
      * there is no screen to print again when it ends. */
     bool on_terminal = r->recipe.mode_tty && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
     hold_prepare_mux(inv, store);

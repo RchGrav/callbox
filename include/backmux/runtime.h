@@ -25,13 +25,12 @@ struct hold_start_options {
     const char *restart_policy;
     int restart_delay_seconds; /* HOLD_RESTART_BACKOFF: none given, back off */
     int size_cols, size_rows; /* --size, or a redialed recipe's: 0 = resolve (see start.c) */
-    bool chat;                /* backmux shell: composited display, messages to the chat inbox */
-    bool user_mode;           /* placed in user mode: recorded, so redial at a terminal gets chat
-                                 even when this launch (from a script) could not draw it */
+    bool chat;                /* broker-composited chat for a retained mode_chat profile */
+    bool user_mode;           /* retain mode_chat even when no terminal can display it */
     bool shell;               /* placed with backmux shell */
     bool agent;               /* backmux agent: messages arrive formatted for an agent */
-    const char *working;      /* recall: the recorded folder to start in; NULL = here */
-    bool no_working;          /* recall of a call whose working was unset: record none */
+    const char *working;      /* recorded working directory; NULL = current directory */
+    bool no_working;          /* recall of a process whose working was unset: record none */
     unsigned char chat_key;   /* the key that opens chat; 0 = the default */
     const char *existing_id;
     const char *existing_log_path;
@@ -46,7 +45,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
  * requested scope, resolved against the caller's privilege. */
 enum hold_list_scope {
     HOLD_LIST_SCOPE_DEFAULT, /* non-root: the user's own store; root: the global store */
-    HOLD_LIST_SCOPE_USER,    /* -u/--user: personal calls only, even under sudo */
+    HOLD_LIST_SCOPE_USER,    /* -u/--user: personal processes only, even under sudo */
     HOLD_LIST_SCOPE_SYSTEM,  /* -s/--system: the global/system store only */
     HOLD_LIST_SCOPE_BOTH     /* -a/--all: user and system scopes together */
 };
@@ -57,8 +56,8 @@ int hold_cmd_list(const struct hold_invocation *inv,
                     const char *name_filter,
                     enum hold_list_scope scope,
                     bool live_only);
-/* ps is Docker's machine-wide view: running calls (plus ended with -a) across
- * both the caller's own store and the global store, no USER column. */
+/* ps shows running processes, plus ended records with -a, across the user and
+ * system stores available to the caller. It omits the USER column. */
 int hold_cmd_ps(const struct hold_invocation *inv,
                   const struct hold_store *user_store,
                   const struct hold_store *system_store,
@@ -75,8 +74,8 @@ int hold_cmd_signal_action(const struct hold_invocation *inv,
                              bool graceful,
                              bool all,
                              bool print_cmd);
-/* A top-level word that is no verb, no call, and no program: the start of
- * exactly one verb (1, *verb_out) or, for a lone word, of one call's name
+/* A top-level word that is no verb, no process, and no program: the start of
+ * exactly one verb (1, *verb_out) or, for a lone word, of one process's name
  * (2, name_out); 0 when it is none of these (run it as a command); 6 when it
  * starts several (listed on stderr). */
 int hold_shorten_word(const char *word, bool lone, const char *const *verbs, size_t nverbs,
@@ -85,7 +84,7 @@ int hold_cmd_tail_action(const struct hold_invocation *inv,
                            const struct hold_store *user_store,
                            const struct hold_store *system_store,
                            const char *id_token);
-/* --tail <word>: when the word names a call, follow its log as tail does and
+/* --tail <word>: when the word names a process, follow its log as tail does and
  * return the exit status; otherwise return -1 (the word is a command). */
 int hold_cmd_tail_if_call(const struct hold_invocation *inv,
                           const struct hold_store *user_store,
@@ -115,7 +114,7 @@ int hold_cmd_wait_action(const struct hold_invocation *inv, const struct hold_st
                          const struct hold_store *system_store, int argc, char **argv);
 int hold_cmd_resize_action(const struct hold_invocation *inv, const struct hold_store *user_store,
                            const struct hold_store *system_store, int argc, char **argv);
-/* Operator inboxes (inbox.c): the name of a sender outside any call (0, or 1
+/* Operator inboxes (inbox.c): the name of a sender outside any process (0, or 1
  * when it has none and create is false), the note printed with its first
  * message, waiting on an inbox (forever_each: print every message until
  * stopped; else return after one; exit 0, 7 timed out, 8 the inbox expired),
@@ -158,7 +157,7 @@ int hold_cmd_purge_action(const struct hold_invocation *inv,
                             bool all,
                             bool force,
                             bool system_scope);
-/* A call's settings and the verbs around them (src/runtime/settings.c). */
+/* A process's settings and the verbs around them (src/runtime/settings.c). */
 int hold_cmd_set_action(const struct hold_invocation *inv, const struct hold_store *user_store,
                         const struct hold_store *system_store, int argc, char **argv, bool unset);
 int hold_cmd_info_action(const struct hold_invocation *inv, const struct hold_store *user_store,
@@ -169,8 +168,8 @@ int hold_cmd_delete_action(const struct hold_invocation *inv, const struct hold_
                            const struct hold_store *system_store, const char *token);
 int hold_cmd_purge_all_action(const struct hold_invocation *inv, const struct hold_store *user_store,
                               const struct hold_store *system_store, bool force, bool system_scope);
-/* Call-record operations (src/runtime/call.c): redial a retained recipe, save or
- * rename a call, and assign a generated adjective_noun name. */
+/* Process-record operations (src/runtime/call.c): redial a retained recipe, save or
+ * rename a process, and assign a generated adjective_noun name. */
 int hold_cmd_rename_action(const struct hold_invocation *inv,
                              const struct hold_store *user_store,
                              const struct hold_store *system_store,

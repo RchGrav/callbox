@@ -1,9 +1,8 @@
-backmux help tui - troubleshoot a terminal app
+backmux help tui - inspect and control a terminal application
 
-Use this when your command tool can launch a full-screen app but cannot
-operate its terminal. Give the app a detached terminal, look at its screen,
-send input, and check the result. You can inspect colors and the cursor as
-well as text; a person can attach to the same process to try it themselves.
+Launch an application in a detached terminal, inspect its screen, send
+input, and verify the result. Text, JSON, and image snapshots expose different
+parts of the screen state. A person can attach for interactive testing.
 
 START AND INSPECT
   This example requires a Vim-compatible vi. It opens an empty buffer with
@@ -15,9 +14,9 @@ START AND INSPECT
     backmux peek editor --ruler
     backmux peek editor --image before.png --cursor-ring
 
-  -dt starts a terminal without attaching you to it. --size makes the
-  starting layout repeatable. peek reads the visible screen; --ruler adds
-  zero-based coordinates, and --image writes a color PNG.
+  -dt starts a detached terminal process. --size sets its initial dimensions.
+  peek reads the visible screen; --ruler adds zero-based coordinates, and
+  --image writes a color PNG.
 
 ACT AND VERIFY
     backmux send editor i 'Backmux test' -k Escape --wait 300
@@ -33,10 +32,10 @@ ACT AND VERIFY
   reports the cursor position, input modes, size, and output counter.
   resize changes the terminal dimensions and notifies the app with SIGWINCH.
 
-  --wait 300 waits for output after the input, followed by 300 ms of quiet.
-  Quiet means ready to inspect, not correct: verify the text, cursor, or
-  image you expected. An input that draws nothing can time out even if it
-  was delivered. Screen waits default to 30 s; send --wait defaults to 10 s.
+  --wait 300 requires output after input, followed by 300 ms of idle output.
+  Inspect the resulting text, cursor, or image to verify the application.
+  Input that produces no output can time out even after successful delivery.
+  Screen waits default to 30 s; send --wait defaults to 10 s.
 
 FINISH OR HAND OVER
     backmux send editor ':q!' --enter
@@ -45,7 +44,8 @@ FINISH OR HAND OVER
     backmux purge editor
 
   wait without a condition waits for exit and prints the program's code.
-  --last-alt shows the saved full-screen frame after an app switches back.
+  --last-alt reads the saved alternate-screen frame after the app returns
+  to the primary screen.
   purge removes the ended process and frees its name.
 
   For your app, replace vi and its inputs with your reproduction steps.
@@ -54,7 +54,7 @@ FINISH OR HAND OVER
   Backmux cannot adopt a process that was started outside it.
 
 WHEN A SCREEN IS MISLEADING
-  To require a redraw after an input, capture its output counter:
+  To require output after input, capture the output counter before delivery:
 
     seq=$(backmux send app -k Down --seq)
     backmux wait app --since "$seq" --idle 300

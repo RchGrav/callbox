@@ -1,24 +1,30 @@
 usage: backmux attach <target> [--detach-keys KEYS]
 
-Pick a running process back up in this terminal: a PTY process (backmux <cmd>,
--it, -dt) or one placed with -i. Detach again with Ctrl-Space q. (console is
-an alias of attach.)
+Connect this terminal to a running process's console. Terminal processes
+and pipe-input processes (-i without -t) support attach. console is an alias.
 
-Without a terminal (piped), attach sends its input and then keeps showing the
-process's output until the process ends; it does not end the process's input, so
-a -di process can be fed again by the next attach. To drive a process from a
-script, backmux send, peek, and wait are usually what you want.
+TERMINAL PROCESS CONTROLS
+  Ctrl-Space q     detach the active pane; its process keeps running
+  Ctrl-Space ?     show keyboard shortcuts
+  Ctrl-Space p a   select another terminal process to attach as a pane
 
-Ctrl-Space is the prefix: it waits for the next key, with no time limit. q
-after it detaches; Ctrl-Space again sends one Ctrl-Space to the program;
-Ctrl-Space ? lists the other keys; any key that is not one of them is
-dropped, with the prefix. --detach-keys KEYS changes the keys for this attach
-(ctrl-a,ctrl-d; one key, such as ctrl-], detaches at once); with other keys
-than the prefix and q, a key that is not one sends both through.
+Ctrl-Space is a prefix: press and release it, then press the next key.
+The prefix has no timeout. Press it twice to send one Ctrl-Space to the
+program. An unrecognized prefix command is discarded.
 
-One terminal has a process at a time: a second attach is told who has it.
-Attached from inside another process (a backmux shell, say), the detach keys let
-go of the innermost attach first - the one on screen - and leave you in the
-process around it; press them again to detach that one. A console is free again
-as soon as its client is gone, however it went (a closed window, a killed
-process).
+--detach-keys KEYS changes the detach sequence for this attach. For example,
+--detach-keys ctrl-a,ctrl-d uses Ctrl-A as the prefix and Ctrl-D to detach.
+Two-key sequences retain pane and chat controls under the new prefix.
+A one-key sequence such as ctrl-] detaches immediately; sequences of other
+lengths do not provide pane or chat controls.
+
+Each process has one active attachment. A new attach replaces the previous
+client without stopping the process. A disconnected client releases the console.
+For nested attachments, the detach sequence acts on the innermost attachment
+first; repeating it detaches the enclosing attachment.
+
+PIPE INPUT
+Without an interactive terminal, attach forwards stdin and follows output
+until the process ends. End of stdin does not close the process's input;
+a later attach can send more input. For scripted control, see backmux help
+send, peek, and wait. For interactive controls, see backmux help panes.

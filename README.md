@@ -1,6 +1,6 @@
 # Backmux
 
-**Run terminal apps your agents can see and control.**
+**Run, inspect, and control named terminal programs.**
 
 [![CI](https://github.com/RchGrav/backmux/actions/workflows/ci.yml/badge.svg)](https://github.com/RchGrav/backmux/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/RchGrav/backmux?label=release)](https://github.com/RchGrav/backmux/releases/latest)
@@ -17,8 +17,8 @@ ordinary programs on your machine, with no central daemon to start.
 
 <img src="docs/images/vim-driven.png" alt="Backmux's color view of Vim, with a red cursor ring, cyan mouse marker, and coordinate rulers." width="900">
 
-*A terminal screen from `backmux peek --image`. Red marks show the cursor;
-cyan marks show the last mouse input. The footer gives their coordinates.*
+*Illustrative screenshot from an earlier revision. Red marks show the
+cursor; cyan marks show the last mouse input. The footer gives coordinates.*
 
 ## Install
 
@@ -55,9 +55,9 @@ to detach and leave it running. An agent can still inspect the screen and
 send input while you are attached.
 
 While attached, **Ctrl-Space p a** brings another running process in beside this
-one, as a pane; **Ctrl-Space c** opens your chat over whatever you are
-looking at; **Ctrl-Space ?** lists the rest. Nothing splits unless you ask:
-one process on one screen is exactly what it always was.
+one as a pane. **Ctrl-Space c** opens the chat window, and
+**Ctrl-Space ?** displays command help. Press `?` within a navigation or
+layout mode for its controls. See [Interactive controls](docs/backmux.md).
 
 When finished:
 
@@ -73,27 +73,27 @@ input, resizing, and verification.
 
 ## Choose how a program runs
 
-A **process** is a program managed by Backmux, with a name, an ID, and a log.
+A **managed process** has a name, a Backmux process ID, and a log.
 A process keeps its name after the program exits, until you purge its record.
 
 | You want to… | Start it with… | What you get |
 | --- | --- | --- |
 | Use a program yourself | `backmux call --name app PROGRAM` | An attached terminal; messages arrive as typed text. |
-| Work with an agent in your terminal | `backmux agent --name lead AGENT` | The same, with each message headed by who sent it and how to reply. |
+| Work with an agent in your terminal | `backmux agent --name lead AGENT` | An attached terminal; messages include the sender and reply command. |
 | Let an agent drive a terminal app | `backmux detach --name app PROGRAM` | A detached terminal you can inspect, control, and attach to later. |
 | Run a service or CI job | `backmux server -w --name job PROGRAM` | A background process with a log and a recorded exit code, without a terminal. |
 
-`server` without `-w` leaves nothing of Backmux behind; `-w` keeps a small
-waiter that records the exit code. Servers have logs but no screen for
-`peek` or `send`, and never become panes.
+A plain `server` launch retains its record and log but leaves no Backmux
+supervisor. `-w` keeps an exit waiter. Servers have no screen or input
+console, so use `logs`, `tail`, and `end` to inspect and manage them.
 
-`backmux list` shows running processes (`list all` adds stopped ones), `backmux
-info NAME` everything about one, and `backmux end NAME` stops it. `backmux
-recall NAME` starts an ended process again, same program, arguments and folder;
-`backmux set NAME args=...` or `working=...` changes what the next recall
-runs, and `backmux set NAME agent` switches how its messages arrive, at
-once. Docker's words (`run -d`, `ps`, `stop`, `start`, ...) still work:
-`backmux help aliases`.
+`backmux list` shows running processes and records with unknown status;
+`list all` includes stopped records. `backmux info NAME` shows process
+details, and `backmux end NAME` stops the process. `backmux recall NAME`
+relaunches a stopped process using its recorded program, arguments, and
+working directory. `set NAME args=...` and `set NAME working=...` change
+the next launch; `set NAME agent` enables sender and reply headers for
+subsequent messages. See `backmux help aliases` for Docker-style spellings.
 
 ## Find the next step
 
@@ -102,6 +102,7 @@ is available in the terminal and as a plain-text page in this repository.
 
 | Goal | In the terminal | Read here |
 | --- | --- | --- |
+| Navigate panes, windows, and chat | `backmux help panes` | [Interactive controls](docs/backmux.md) |
 | Inspect and troubleshoot a terminal UI | `backmux help tui` | [Drive a TUI](src/cli/help/guides/tui.txt) |
 | Debug a TUI with your coding agent, on a shared screen | `backmux help share` | [Work on the same app](src/cli/help/guides/share.txt) |
 | Start another agent, give it work, and check progress | `backmux help agents` | [Work with another agent](src/cli/help/guides/agents.txt) |
@@ -114,6 +115,7 @@ is available in the terminal and as a plain-text page in this repository.
 exit codes, and root-managed processes.
 
 [In-depth guide](docs/guide.md) · [Documentation index](docs/index.md) ·
+[Glossary](docs/glossary.md) ·
 [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
 ## License

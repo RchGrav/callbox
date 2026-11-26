@@ -2,16 +2,12 @@
 #ifndef HOLD_CONSOLE_OVERLAY_H
 #define HOLD_CONSOLE_OVERLAY_H
 
-/* A backmux shell's display, private to the console layer.
+/* Display composition and chat, private to the console layer.
  *
- * The broker keeps the one authoritative screen of the shell (the screen
- * layer, fed by the PTY). For a backmux shell, whoever attaches is not sent the
- * PTY's raw bytes: each frame is composed from that screen as the base layer
- * with the chat window drawn over it as a second pass, and only the
- * difference from what the terminal already shows is written (compose.c).
- * The chat window, its conversations, and the input from the attached
- * terminal are chat.c. Nothing drawn here ever reaches the screen, the log,
- * or the program. */
+ * Brokers maintain the authoritative program screens. The pane compositor
+ * mirrors those screens and draws panes, footers, help, and chat over them.
+ * Broker-hosted chat uses the same drawing primitives when enabled. Overlay
+ * cells do not enter the program's screen model, output log, or input. */
 
 #include "backmux/config.h"
 #include "backmux/types.h"
@@ -79,18 +75,18 @@ struct chat;
 struct chat_host {
     struct hold_screen *screen;     /* the shell's screen */
     int master;                     /* the PTY: where the shell's input goes */
-    const struct hold_store *store; /* where this call and its peers are recorded */
-    const char *run_id;             /* this call */
+    const struct hold_store *store; /* where this process and its peers are recorded */
+    const char *run_id;             /* this process */
     /* The keys chat reads for itself, out of what the terminal sends: the
      * lead key, then the detach key or the chat key (0 = the defaults). */
     unsigned char lead, detach_key, key;
     /* Any program in user mode, not a shell: the hints name the program
      * ("backmux", "typing in the program") instead of the shell. */
     bool program;
-    /* Hosted by the compositor (mux.c) instead of one call's broker: chat
+    /* Hosted by the compositor (mux.c) instead of one process's broker: chat
      * belongs to the person, and floats over whatever panes are on screen.
      * person: their chat name - what they send goes out from it (as backmux
-     * msg from outside any call does) and replies come to its inbox.
+     * msg from outside any process does) and replies come to its inbox.
      * to_app: keys that are not chat's (the focused pane's). app_pointer: a
      * pointer report (SGR b;x;y, release) outside the window, for the
      * compositor to route. screen (above) is the focused pane's, for
@@ -116,8 +112,8 @@ void chat_input(struct chat *c, const unsigned char *buf, size_t n, int64_t now)
 /* Did that input ask to detach (the lead key, then the detach key)? Reported
  * once: the broker lets go of the attach client, or of one nested in it. */
 bool chat_take_detach(struct chat *c);
-/* A message backmux msg delivered to this call: from the call sender_id
- * (label its name now), or, with sender_id NULL, from outside any call. */
+/* A message backmux msg delivered to this process: from the process sender_id
+ * (label its name now), or, with sender_id NULL, from outside any process. */
 void chat_inbound(struct chat *c, const char *sender_id, const char *label, bool operator, const char *text, size_t len);
 /* Timers (a lone Esc, the corner hint, a send in flight) and the descriptors
  * of sends in flight. */
@@ -141,7 +137,7 @@ void chat_ready(struct chat *c, int rows, int cols, int64_t now);
 /* The focused pane changed: its screen is what Ctrl-S sends. */
 void chat_set_screen(struct chat *c, struct hold_screen *screen, const char *name);
 /* The chat key (the prefix then c): open chat, or hand the keyboard between
- * chat and the program. chat_open_on: open it on a call's conversation. */
+ * chat and the program. chat_open_on: open it on a process's conversation. */
 void chat_toggle(struct chat *c);
 void chat_open_on(struct chat *c, const char *call_id, const char *label);
 void chat_put_away(struct chat *c);
@@ -149,7 +145,7 @@ bool chat_visible(const struct chat *c);
 /* How many messages are unread, across every conversation. */
 int chat_unread(const struct chat *c);
 bool chat_on_screen(const struct chat *c, int64_t now);
-/* The person moved to a call's pane: its conversation on show, if chat is
+/* The person moved to a process's pane: its conversation on show, if chat is
  * up, without taking the keyboard. */
 void chat_show_call(struct chat *c, const char *call_id, const char *label);
 /* What the compositor routes by: chat has the keyboard; (row, col) is over

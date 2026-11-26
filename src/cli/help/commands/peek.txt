@@ -2,25 +2,29 @@ usage: backmux peek <target> [--json] [--ruler] [--last-alt]
                  [--image FILE [--no-ruler] [--cursor-ring] [--scale N]
                                [--no-footer] [--no-mouse-marker] [--text]]
 
-Read a process's screen: the visible rows as plain text, one line per row.
-Terminal processes and -i pipe-input processes have a screen; plain -d and -dw
-processes do not. After a process ends, peek shows its last saved screen.
+Read the visible screen as plain text, one line per row. Terminal processes
+and pipe-input processes (-i without -t) have a screen model; plain -d and
+-dw processes do not. An ended process can retain its final screen.
 
-  --ruler          add zero-based column and row numbers
-  --json           add the cursor, terminal modes, title, output counter and
-                   idle time
-  --image FILE     write a color PNG instead, with a coordinate ruler that marks
-                   the cursor's column and row in red
+  --ruler          include zero-based column and row coordinates
+  --json           print screen text with cursor position, terminal modes,
+                   title, output counter, and idle time
+  --last-alt       read the saved alternate-screen frame from before the
+                   program returned to the primary screen
+
+IMAGE OPTIONS
+  --image FILE     write a color PNG with a coordinate ruler; cursor
+                   coordinates are highlighted in red
                    (-o FILE is equivalent; FILE - writes PNG to stdout)
-    --no-ruler     ...without the ruler
-    --cursor-ring  ...with a ring around the cursor
-    --scale N      ...N times the size (1-4; default 2 up to 100 columns,
-                   else 1)
-    --no-footer    ...without the cursor/size line under the screen
-    --no-mouse-marker ...without the mark at the last mouse event
-    --text         ...and print the screen as text too
-  --last-alt       the last full-screen (alternate-screen) frame a program such
-                   as vim or less showed before it switched back
+  --no-ruler       omit the coordinate ruler
+  --cursor-ring    draw a ring around the cursor
+  --scale N        scale the image by 1-4; default 2 up to 100 columns,
+                   otherwise 1
+  --no-footer      omit the cursor-position and size footer
+  --no-mouse-marker
+                   omit the marker for the last mouse event
+  --text           print screen text in addition to writing the image
 
-Run backmux wait first (or backmux send --wait) so you do not read a half-drawn
-frame.
+After sending input, use wait or send --wait before inspecting the screen
+when the program needs time to redraw. Output idle time does not establish
+application correctness. See backmux help tui for a complete workflow.

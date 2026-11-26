@@ -1,4 +1,6 @@
 usage: backmux manual
 
-The whole reference and the worked examples, as one document: backmux manual
-| less.
+Print the complete command and option reference followed by worked examples.
+To read it in a pager: backmux manual | less
+
+Workflow guides are separate topics listed by backmux help help.

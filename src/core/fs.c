@@ -203,10 +203,9 @@ int hold_open_append_no_symlink(const char *path) {
     return fd;
 }
 
-/* A call's supervisor (its broker, or a -d call's reaper) takes a shared lock
- * on the call's log for life; hold_eval_state reads it as "alive somewhere"
- * when the pid itself is not visible (another PID namespace). Close-on-exec,
- * so the call's program never inherits it. */
+/* Open a close-on-exec log descriptor and take a shared liveness lock for
+ * a broker or waiter. Direct detached launches acquire their output lock
+ * separately in runtime/start.c. */
 void hold_supervisor_lock_log(const char *log_path) {
     if (!log_path || !*log_path) return;
     int fd = open(log_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);

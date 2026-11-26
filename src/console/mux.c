@@ -1,35 +1,25 @@
-/* console/mux.c - the compositor: panes of TTY calls, and one floating window
- * over them, drawn into the person's terminal.
+/* console/mux.c - pane composition and floating windows.
  *
- * Nothing muxes by default. A call alone on the screen is shown by plain
- * attach (attach.c), byte for byte as always. The compositor runs only when
- * the person asks for more: the prefix (Ctrl-Space) then a brings another
- * running process in beside the one they are on, c opens chat, ? shows the
- * keys, and p t r m start a mode. When one pane is left and nothing floats
- * and no mode is on, it hands that process back to plain attach.
+ * A single process uses plain attach (attach.c) until a compositor command
+ * is requested. Ctrl-Space p a opens the attach picker; Ctrl-Space c opens
+ * chat; Ctrl-Space ? opens keyboard help. The compositor returns to plain
+ * attach when one pane remains with no floating window or active mode.
  *
- * Each pane is an ordinary attach to its call's broker (one connection per
- * call, so a call shown here is attached here and nowhere else). The broker
- * keeps the authoritative screen and answers the program's terminal queries
- * (the connection says NO_TERMINAL); this side mirrors the output into a
- * local screen per pane and composes all of them, plus what floats, into one
- * frame, writing only what changed (compose.c).
+ * Each pane attaches to one broker. The broker owns the authoritative
+ * screen and answers terminal queries for NO_TERMINAL clients. This layer
+ * mirrors each process's output and composes the panes and overlays, then
+ * writes only changed cells (compose.c).
  *
- * Panes are numbered in the order they arrive, four to a window: 1-4 are
- * window 1, 5-8 window 2. Within a window they fill in order, so there is no
- * 3 until there are a 1 and a 2. A-D always name the slots of the window on
- * screen. Placement is fixed, no layouts to choose; resize mode only moves
- * the lines between them:
+ * Each window contains up to four panes. Slot letters span windows: A-D in
+ * window 1, E-H in window 2, through Z. Later slots have no letter. Within a
+ * window, occupied slots are contiguous. Resize mode adjusts the dividers:
  *
  *     1 pane   2 panes   3 panes   4 panes
  *       A       A B       A B       A B
  *                         C         C D
  *
- * A left, B right, C under A, D under B: reading order, so the first pane
- * stays where it was (top left) and each new one lands where the eye goes
- * next. Why left/right first: screens are widescreen and a cell is about
- * twice as tall as wide, so rows are the scarce resource; splitting
- * left/right keeps every pane's full height until the third arrives. */
+ * The first split is left/right, preserving both panes' full height until
+ * a third pane is added. The letters above illustrate window 1. */
 #include "backmux/config.h"
 #include "backmux/types.h"
 #include "backmux/console.h"
@@ -40,8 +30,7 @@
 #include "backmux/console_internal.h"
 #include "overlay.h"
 
-#define MUX_MAX_WINDOWS 9 /* one per number key, 1-9. Why not 0 too: 0 sits after 9 on
-                             * the keyboard but means "none" to people; nine is plenty */
+#define MUX_MAX_WINDOWS 9 /* selected by number keys 1-9 */
 #define MUX_MAX_PANES (MUX_MAX_WINDOWS * 4)
 #define MUX_FRAME_MS 16      /* output is drawn at most this often */
 #define MUX_LOOK_MS 250      /* how often chat looks at the inbox and its owner */
@@ -52,11 +41,9 @@
 #define MUX_FIFO_PROBE_MS 250
 #define MUX_PICK_MAX 64
 
-/* The prefix (Ctrl-Space sends NUL), then one key. Why one plain key after
- * it: the Ctrl-P Ctrl-<letter> keys ran out of letters, and four of them
- * were other keys' bytes (Ctrl-M is Enter, Ctrl-J newline). */
+/* Ctrl-Space sends NUL; the following unmodified key selects a command. */
 #define KEY_PREFIX 0x00 /* the default; --detach-keys may name another lead key */
-#define MUX_RESIZE_STEP 5 /* percent of the screen per press, as Zellij's resize mode */
+#define MUX_RESIZE_STEP 5 /* percentage points per resize keypress */
 #define MUX_PCT_MIN 10    /* no pane narrower or shorter than this share */
 #define MUX_PCT_MAX 90
 
@@ -81,8 +68,7 @@ enum floater { FL_NONE, FL_ATTACH, FL_JUMP };
  * prefix before every press. ? in a mode shows that mode's keys. */
 enum mode { MODE_NONE, MODE_PANE, MODE_TAB, MODE_RESIZE, MODE_MOVE };
 
-/* A name asked for in the active pane's footer: Enter gives it (the name
- * it had, unchanged, is a fine answer), Esc gives up. */
+/* Profile name prompt in the active pane's footer: Enter confirms, Esc cancels. */
 enum prompt { PROMPT_NONE, PROMPT_RENAME, PROMPT_SAVE };
 
 struct pick {
@@ -101,7 +87,7 @@ struct mux {
     struct pane *slot[MUX_MAX_PANES]; /* window w holds slot[w*4 .. w*4+3], dense from its start */
     struct pane *full; /* the pane toggled full screen, NULL none */
     enum mode mode;
-    bool help;   /* the keys (?) are up, for the mode on or the prefix */
+    bool help;   /* keyboard help for the active mode or prefix commands */
     bool swapping;  /* prefix s: letters (and a number) say what goes where */
     int swap_first; /* the first pane chosen, -1 none yet */
     enum prompt prompt;
@@ -135,8 +121,7 @@ struct mux {
     int npicks, pick_sel;
     char notice[160];
     int64_t notice_until;
-    /* chat: the person's, the chat backmux shell always had (chat.c),
-     * floating over the panes */
+    /* The user's chat window, floating over the panes. */
     struct chat *chat;
     bool chat_loaded; /* the conversation log is replayed into it */
     off_t inbox_off;
@@ -172,9 +157,8 @@ static void set_locked(const struct pane *p, bool on) {
         }
 }
 
-/* A pane's letter: its slot, A-D in tab 1, E-H in tab 2 and on, so a
- * letter past the tab's four is a place in the next tab. Slots past Z have
- * none (a number still sends a pane there). */
+/* Slot letters span windows: A-D in window 1, E-H in window 2, through Z.
+ * Number keys can move panes to windows whose slots have no letter. */
 static char slot_letter(int slot) {
     return slot >= 0 && slot < 26 ? (char)('A' + slot) : 0;
 }
@@ -242,9 +226,8 @@ static void pane_free(struct pane *p) {
     free(p);
 }
 
-/* Attach to a call's console as a pane. A broker serves one attach at a
- * time: one just let go of (the plain attach that handed us the terminal)
- * may still be closing, so a refusal is retried for a moment. */
+/* Attach to a process's console as a pane, retrying connection-refused
+ * errors briefly. */
 static struct pane *pane_open(const char *id, const char *name, const char *sock, int rows, int cols, const char **why) {
     *why = NULL;
     for (int tries = 0; tries < 20; tries++) {
@@ -256,7 +239,7 @@ static struct pane *pane_open(const char *id, const char *name, const char *sock
                 nanosleep(&sl, NULL);
                 continue;
             }
-            *why = errno == ENOENT || errno == ECONNREFUSED ? "it has ended" : strerror(errno);
+            *why = errno == ENOENT || errno == ECONNREFUSED ? "console unavailable" : strerror(errno);
             return NULL;
         }
         struct pane *p = calloc(1, sizeof(*p));
@@ -277,7 +260,7 @@ static struct pane *pane_open(const char *id, const char *name, const char *sock
         if (hold_write_all(w, CONSOLE_ATTACH_MAGIC, CONSOLE_ATTACH_MAGIC_LEN) != 0 ||
             frame(w, CONSOLE_FRAME_NO_TERMINAL, NULL, 0) != 0) {
             pane_free(p);
-            *why = "it has ended";
+            *why = "console handshake failed";
             return NULL;
         }
         pane_resize(p, rows, cols);
@@ -291,12 +274,12 @@ static struct pane *pane_open(const char *id, const char *name, const char *sock
                 pane_free(p);
                 struct timespec sl = {0, 50 * 1000000L};
                 nanosleep(&sl, NULL);
-                *why = "it is attached somewhere else";
+                *why = "console already attached";
                 continue;
             }
             if (n == 0) {
                 pane_free(p);
-                *why = "it has ended";
+                *why = "console connection closed";
                 return NULL;
             }
             if (n > 0) hold_screen_feed(p->scr, p->held, (size_t)n);
@@ -307,7 +290,7 @@ static struct pane *pane_open(const char *id, const char *name, const char *sock
         (void)fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
         return p;
     }
-    if (!*why) *why = "it is attached somewhere else";
+    if (!*why) *why = "console busy";
     return NULL;
 }
 
@@ -560,7 +543,7 @@ static int move_pane(struct mux *m, int slot, int w) {
     return 0;
 }
 
-/* ---- the picker: running TTY calls ------------------------------------ */
+/* ---- the picker: running TTY processes ------------------------------------ */
 
 struct pick_walk {
     struct mux *m;
@@ -570,13 +553,13 @@ static int pick_cb(const char *id, const char *path, struct hold_run_record *r, 
     (void)path;
     struct mux *m = ((struct pick_walk *)ctx)->m;
     if (!r || m->npicks >= MUX_PICK_MAX) return 0;
-    /* Only TTY calls can be panes: a pane shows a screen, and a server's
+    /* Only TTY processes can be panes: a pane shows a screen, and a server's
      * output is a log. */
     if (!r->has_console || !r->recipe.mode_tty || r->has_exit_code || !hold_path_exists(r->console_sock) ||
         !hold_console_record_alive(r))
         return 0;
     if (has_pane(m, id)) return 0;
-    /* the call this terminal itself runs in: shown inside itself, it would
+    /* the process this terminal itself runs in: shown inside itself, it would
      * draw itself forever */
     const char *here = getenv("BACKMUX_ID");
     if (here && !strcmp(here, id)) return 0;
@@ -602,11 +585,9 @@ static void load_picks(struct mux *m) {
 }
 
 /* ---- chat --------------------------------------------------------------
- * Chat belongs to the person, not to any call: the chat window backmux shell
- * always had (chat.c), floating over whatever is on screen, split or not,
- * under the person's chat name (an inbox, as for any sender outside a call).
- * Only one terminal shows it: opening it in another moves it there, and the
- * conversation log (chat/<name>.log) carries the history along. */
+ * Compositor-hosted chat uses the user's chat name and inbox. Opening chat
+ * here claims display ownership from other terminals using that identity.
+ * The conversation log (chat/<name>.log) preserves history across terminals. */
 
 static int chat_path(const struct mux *m, const char *what, char *out, size_t n) {
     char dir[HOLD_PATH_MAX];
@@ -642,8 +623,8 @@ static bool chat_mine(const struct mux *m) {
     return atoi(text) == (int)getpid();
 }
 
-/* Who a name is: a call (its id, so a rename keeps the conversation) or a
- * sender outside any call (its inbox name). */
+/* Who a name is: a process (its id, so a rename keeps the conversation) or a
+ * sender outside any process (its inbox name). */
 struct find_walk {
     const char *name;
     char id[ID_STR_LEN];
@@ -765,14 +746,11 @@ static void chat_pointer(void *app, int b, int x, int y, bool release) {
     handle_mouse(app, b, x, y, release);
 }
 
-/* The prefix then c: chat here (it leaves any other terminal), opened on
- * the pane you are in, with the keyboard. Pressed again while typing in
- * chat, chat goes away; while chat is up but the keys are a pane's (a click
- * put them there), it takes them back. Why the same key to leave: chat is
- * entered and left by one key, and Esc stays a key for writing in it. */
+/* Open chat for the active pane, focus a visible chat window, or hide it
+ * when it already has keyboard focus. Claim this identity's chat display. */
 static void chat_key_pressed(struct mux *m) {
     if (!m->chat) {
-        notice(m, "chat needs a name: this terminal could not get one");
+        notice(m, "chat unavailable: could not initialize this terminal's chat identity");
         return;
     }
     char path[HOLD_PATH_MAX], text[32];
@@ -842,9 +820,9 @@ static void draw_pick(struct mux *m) {
     int w = m->tcols - 8 < 76 ? m->tcols - 8 : 76, h = m->trows - 4 < 20 ? m->trows - 4 : 20;
     if (w < 20 || h < 8) return;
     int x = (m->tcols - w) / 2, y = (m->trows - h) / 2;
-    draw_box(m, y, x, h, w, "attach a running process beside this one");
+    draw_box(m, y, x, h, w, "Attach Process");
     int list_h = (h - 2) / 2;
-    if (m->npicks == 0) put(m, y + 2, x + 2, w - 4, "No other running TTY processes.", &ST_BOX_DIM);
+    if (m->npicks == 0) put(m, y + 2, x + 2, w - 4, "No other terminal processes available.", &ST_BOX_DIM);
     int first = m->pick_sel >= list_h ? m->pick_sel - list_h + 1 : 0;
     m->pick_x = x, m->pick_w = w, m->pick_top = y + 1, m->pick_first = first, m->pick_rows = list_h;
     for (int i = first; i < m->npicks && i - first < list_h; i++) {
@@ -857,61 +835,74 @@ static void draw_pick(struct mux *m) {
     if (m->npicks > 0) {
         const struct pick *p = &m->picks[m->pick_sel];
         char line[HOLD_PATH_MAX + 32];
-        snprintf(line, sizeof(line), "program  %s", p->program);
+        snprintf(line, sizeof(line), "Program            %s", p->program);
         put(m, iy + 1, x + 2, w - 4, line, &ST_BOX);
-        snprintf(line, sizeof(line), "args     %s", p->args[0] ? p->args : "-");
+        snprintf(line, sizeof(line), "Arguments          %s", p->args[0] ? p->args : "-");
         put(m, iy + 2, x + 2, w - 4, line, &ST_BOX);
-        snprintf(line, sizeof(line), "working  %s", p->working[0] ? p->working : "-");
+        snprintf(line, sizeof(line), "Working directory  %s", p->working[0] ? p->working : "-");
         put(m, iy + 3, x + 2, w - 4, line, &ST_BOX);
-        snprintf(line, sizeof(line), "started  %s", p->started[0] ? p->started : "-");
+        snprintf(line, sizeof(line), "Started            %s", p->started[0] ? p->started : "-");
         put(m, iy + 4, x + 2, w - 4, line, &ST_BOX);
     }
-    put(m, y + h - 1, x + 2, w - 4, "Up/Down choose  Enter attach  s swap panes", &ST_BOX_DIM);
+    put(m, y + h - 1, x + 2, w - 4, "Up/Down: select  Enter: attach  Esc: cancel", &ST_BOX_DIM);
 }
 
-/* The keys (?): after the prefix, or the mode's own while one is on. What
- * each does, nothing more. Why a box only on ?: keys shown unasked cover
- * the programs, and a list of every key at once is read by nobody. */
+/* Keyboard help is contextual: prefix commands or the active mode's keys. */
 static const char *const keys_prefix[] = {
-    "", /* "<prefix>, then:" - the keys in force, filled in when drawn */
-    "", /* its detach key */
-    "  c           chat; again while typing in it, to put it away",
-    "  s           swap: two letters, or a letter then a tab number",
-    "  z           the active pane full screen, or back",
-    "  f           footers on or off",
-    "  n           rename the active pane",
-    "  ;           save the active pane, under a name",
-    "  \\           lock or unlock the active pane",
-    "  w           spread the panes over the tabs",
-    "  a           put the panes in name order",
-    "  d           pack the panes, four to a tab",
-    "  p t r m     pane, tab, resize, move mode",
-    "  ?           these keys",
-    "", /* the prefix again: one to the program */
-    "Alt-arrows    move between panes (not in a locked pane)",
+    "Backmux Controls",
+    "", /* prefix instruction, filled in when drawn */
+    "Navigation  p  Pane mode        t  Window mode",
+    "Layout      r  Resize mode      m  Move mode",
+    "            s  Swap panes       z  Toggle full screen",
+    "            w  Distribute panes across windows",
+    "            a  Sort by name     d  Pack windows",
+    "Display     f  Toggle pane footers",
+    "Profiles    n  Rename process   ;  Save profile",
+    "Input       \\  Toggle pane lock (forward Alt-arrows)",
+    "", /* detach command */
+    "Chat        c  Open/focus chat; repeat to hide",
+    "Help        ?  Keyboard help",
+    "", /* repeat prefix to send it to the program */
+    "Alt-arrows     Focus adjacent pane, unless locked",
+    "Esc            Close help",
+    "Details        backmux help panes",
 };
 static const char *const keys_pane[] = {
-    "PANE   (Esc or Enter: done)",
-    "  arrows, h j k l   move between panes",
-    "  a                 attach a running process beside this one",
-    "  g                 jump to a pane by its name",
-    "  z                 the active pane full screen, or back",
+    "Pane Navigation",
+    "Arrows, h j k l   Focus adjacent pane",
+    "a                 Open attach picker",
+    "g                 Select pane by name",
+    "z                 Toggle active pane full screen",
+    "?                 Toggle mode help",
+    "Esc               Close help; repeat to leave mode",
+    "Enter             Leave mode",
 };
 static const char *const keys_tab[] = {
-    "TAB   (Esc or Enter: done)",
-    "  1-9               go to that tab",
-    "  Left/Right, h l   the previous or next tab",
+    "Window Navigation",
+    "1-9               Select occupied window; leave mode",
+    "Left/Right, h l   Previous/next occupied window",
+    "?                 Toggle mode help",
+    "Esc               Close help; repeat to leave mode",
+    "Enter             Leave mode",
 };
 static const char *const keys_resize[] = {
-    "RESIZE   (Esc or Enter: done)",
-    "  arrows, h j k l          grow the active pane that way",
-    "  Shift-arrows, H J K L    shrink it from that side",
-    "  =                        even",
+    "Pane Resizing",
+    "Arrows, h j k l       Expand toward selected edge",
+    "Shift-arrows, H J K L Shrink from selected edge",
+    "=                     Reset window dividers to 50%",
+    "Each step moves a divider by 5 percentage points.",
+    "?                     Toggle mode help",
+    "Esc                   Close help; repeat to leave mode",
+    "Enter                 Leave mode",
 };
 static const char *const keys_move[] = {
-    "MOVE   (Esc or Enter: done)",
-    "  arrows, h j k l   swap with the pane that way",
-    "  1-9               send it to that tab",
+    "Pane Placement",
+    "Arrows, h j k l   Swap with adjacent pane",
+    "1-9               Move pane to window and leave mode",
+    "View stays unless the source window becomes empty.",
+    "?                 Toggle mode help",
+    "Esc               Close help; repeat to leave mode",
+    "Enter             Leave mode",
 };
 
 /* A key as a person reads it: NUL is Ctrl-Space, a control byte Ctrl-X, a
@@ -937,9 +928,9 @@ static void draw_help(struct mux *m) {
     char pk[16], dk[16], filled[3][72];
     key_label(m->prefix, pk);
     key_label(m->detach_key, dk);
-    snprintf(filled[0], sizeof(filled[0]), "%s, then:", pk);
-    snprintf(filled[1], sizeof(filled[1]), "  %-11s detach the active pane (the last one: leave)", dk);
-    snprintf(filled[2], sizeof(filled[2]), "  %-11s one %s to the program", pk, pk);
+    snprintf(filled[0], sizeof(filled[0]), "Prefix: %s, then a command key", pk);
+    snprintf(filled[1], sizeof(filled[1]), "Detach      %-2s Detach active pane; process continues", dk);
+    snprintf(filled[2], sizeof(filled[2]), "Literal key %s again sends the prefix", pk);
     int w = 66 < m->tcols - 2 ? 66 : m->tcols - 2, h = n + 2 < m->trows ? n + 2 : m->trows;
     int x = (m->tcols - w) / 2, y = (m->trows - h) / 2;
     for (int r = y; r < y + h; r++) comp_fill(m->comp, r, x, w, &ST_BOX);
@@ -961,19 +952,15 @@ static void draw_jump(struct mux *m) {
         if (!m->slot[i]) continue;
         const struct comp_style *st = k == m->pick_sel ? &ST_SEL : &ST_BOX;
         char line[ALIAS_MAX_LEN + 24];
-        snprintf(line, sizeof(line), " %-*s tab %d", w - 11, m->slot[i]->name, window_key(i / 4));
+        snprintf(line, sizeof(line), " %-*s window %d", w - 14, m->slot[i]->name, window_key(i / 4));
         comp_fill(m->comp, y + 1 + k, x + 1, w - 2, st);
         put(m, y + 1 + k, x + 1, w - 2, line, st);
         k++;
     }
 }
 
-/* A pane's footer: its letter and name, then whatever there is to say
- * about it - locked, the mode on, full screen, unread chat, the last
- * notice - or the name being asked for. Why here: status in one steady
- * place per pane, not things popping up in corners. With footers off it
- * shows only while something needs it (swap's letters, a prompt, a
- * notice), over the pane's last row. */
+/* Show the pane's slot letter, name, status, and active prompt in its footer.
+ * With footers disabled, temporary notices and prompts overlay the last row. */
 static void draw_footer(struct mux *m, struct pane *p, int slot, struct comp_want *want) {
     bool focus = p == focused(m);
     int row = p->frow, col = p->col, w = p->cols;
@@ -989,7 +976,7 @@ static void draw_footer(struct mux *m, struct pane *p, int slot, struct comp_wan
     }
     if (m->prompt != PROMPT_NONE && m->prompt_pane == p) {
         char q[ALIAS_MAX_LEN + 32];
-        snprintf(q, sizeof(q), " %s: %s", m->prompt == PROMPT_SAVE ? "save as" : "rename to", m->in);
+        snprintf(q, sizeof(q), " %s: %s", m->prompt == PROMPT_SAVE ? "Save profile" : "Rename process", m->in);
         int used = put(m, row, x, col + w - x, q, st);
         want->cursor_visible = true;
         want->cursor_row = row;
@@ -1008,7 +995,7 @@ static void draw_footer(struct mux *m, struct pane *p, int slot, struct comp_wan
         if (m->full == p) ADD(" FULL ");
         if (focus) {
             const char *mode = m->mode == MODE_PANE     ? "PANE"
-                               : m->mode == MODE_TAB    ? "TAB"
+                               : m->mode == MODE_TAB    ? "WINDOW"
                                : m->mode == MODE_RESIZE ? "RESIZE"
                                : m->mode == MODE_MOVE   ? "MOVE"
                                : m->swapping            ? "SWAP"
@@ -1059,9 +1046,7 @@ static void render(struct mux *m) {
         }
     }
     if (!full) draw_separators(m);
-    /* No labels of its own on screen: no names on arrival or focus, no mode
-     * name, no tab count, no lock note. Why: things popping up in corners
-     * cover the programs and were not wanted; ? shows the keys on request. */
+    /* Pane names and status use footers; help appears only on request. */
     struct comp_want want = {0};
     struct hold_screen_modes modes = {0};
     if (f) hold_screen_modes(f->scr, &modes);
@@ -1173,9 +1158,7 @@ static void handle_mouse(struct mux *m, int b, int x, int y, bool release) {
     } else if (m->fl != FL_NONE) {
         return;
     }
-    /* No name on hover: moving the mouse across panes flashed names that
-     * nobody asked for; they show on arrival, on focus, and while
-     * Ctrl-Space is held. */
+    /* A click changes focus; pointer motion alone does not. */
     int s = slot_at(m, row, col);
     if (!motion && !release && !wheel && s >= 0 && s != m->focus) {
         set_focus(m, s);
@@ -1218,7 +1201,7 @@ static void to_pane(struct mux *m, const unsigned char *b, size_t n) {
 
 static void open_floater(struct mux *m, enum floater f);
 
-/* A number key as a tab: 1-9. -1 if not one. */
+/* A number key as a window: 1-9. -1 if not one. */
 static int window_of_key(unsigned char c) {
     if (c >= '1' && c <= '9') return c - '1';
     return -1;
@@ -1237,7 +1220,7 @@ static void follow(struct mux *m, struct pane *p) {
 }
 
 /* After a pane was sent somewhere: focus stays with it while it is still on
- * this tab; sent to another tab, the view stays here. Why: sending a pane
+ * this window; sent to another window, the view stays here. Why: sending a pane
  * away is not going after it. */
 static void follow_here(struct mux *m, struct pane *p) {
     int s = slot_of(m, p);
@@ -1304,9 +1287,8 @@ static void prompt_open(struct mux *m, enum prompt kind) {
     m->dirty = true;
 }
 
-/* Enter: the name typed (or the one it had) is given. Rename renames (and
- * so saves: backmux rename does); save saves, renaming first when the name
- * was changed. */
+/* A changed name uses rename, which also saves the profile. An unchanged
+ * save prompt uses save; an unchanged rename prompt has no effect. */
 static void prompt_done(struct mux *m) {
     struct pane *p = m->prompt_pane;
     enum prompt kind = m->prompt;
@@ -1375,10 +1357,10 @@ static void swap_key(struct mux *m, const unsigned char *k, size_t n) {
     }
     if (n != 1) return;
     int w = window_of_key(k[0]);
-    if (w >= 0) { /* a number sends the pane to that tab */
+    if (w >= 0) { /* a number sends the pane to that window */
         int from = m->swap_first >= 0 ? m->swap_first : m->focus;
         struct pane *p = m->slot[from];
-        if (move_pane(m, from, w) != 0) notice(m, "tab %d is full", window_key(w));
+        if (move_pane(m, from, w) != 0) notice(m, "window %d is full", window_key(w));
         else follow_here(m, p);
         m->swapping = false;
         return;
@@ -1392,8 +1374,8 @@ static void swap_key(struct mux *m, const unsigned char *k, size_t n) {
     struct pane *p = m->slot[m->swap_first];
     if (m->slot[s]) {
         do_swap(m, m->swap_first, s);
-    } else if (move_pane(m, m->swap_first, s / 4) != 0) { /* past the panes there: to that tab */
-        notice(m, "tab %d is full", window_key(s / 4));
+    } else if (move_pane(m, m->swap_first, s / 4) != 0) { /* past the panes there: to that window */
+        notice(m, "window %d is full", window_key(s / 4));
     }
     follow_here(m, p);
     m->swapping = false;
@@ -1421,11 +1403,11 @@ static void arrange(struct mux *m, enum arrange how) {
         qsort(all, (size_t)n, sizeof(all[0]), by_pane_name);
         for (int i = 0; i < n; i++) m->slot[pos[i]] = all[i];
     } else if (how == ARRANGE_DENSE) {
-        /* four to a tab from the first: 12 fill tabs 1-3 */
+        /* four to a window from the first: 12 fill windows 1-3 */
         for (int i = 0; i < n; i++) m->slot[i] = all[i];
     } else {
-        /* every tab used before any splits: 12 put two in each of tabs 1-3
-         * and one in each of tabs 4-9 */
+        /* every window used before any splits: 12 put two in each of windows 1-3
+         * and one in each of windows 4-9 */
         int k = 0;
         for (int w = 0; w < MUX_MAX_WINDOWS; w++) {
             int here = n / MUX_MAX_WINDOWS + (w < n % MUX_MAX_WINDOWS);
@@ -1461,7 +1443,7 @@ static char arrow_of(const unsigned char *k, size_t n, int *mod, bool letters) {
     return to[hit - from];
 }
 
-/* The pane next to the active one that way, on screen; -1 if none. */
+/* Adjacent pane in the requested direction; -1 if none. */
 static int neighbor(const struct mux *m, char dir) {
     struct pane *f = focused(m);
     if (!f || m->full) return -1;
@@ -1522,7 +1504,7 @@ static void leave_mode(struct mux *m) {
 static void mode_key(struct mux *m, const unsigned char *k, size_t n) {
     m->dirty = true;
     if (n == 1 && (k[0] == 0x1b || k[0] == '\r' || k[0] == '\n')) {
-        if (m->help && k[0] == 0x1b) m->help = false; /* Esc puts the keys away first */
+        if (m->help && k[0] == 0x1b) m->help = false; /* Close help before leaving the mode. */
         else leave_mode(m);
         return;
     }
@@ -1553,10 +1535,10 @@ static void mode_key(struct mux *m, const unsigned char *k, size_t n) {
         return;
     case MODE_TAB:
         if (w >= 0) {
-            if (win_count(m, w) == 0) notice(m, "tab %d is empty", window_key(w));
+            if (win_count(m, w) == 0) notice(m, "window %d is empty", window_key(w));
             else {
                 set_focus(m, w * 4);
-                leave_mode(m); /* a number finishes the job */
+                leave_mode(m);
             }
         } else if (dir == 'D' || dir == 'C') {
             int to = dir == 'D' ? prev_window(m, m->view) : next_window(m, m->view);
@@ -1578,7 +1560,7 @@ static void mode_key(struct mux *m, const unsigned char *k, size_t n) {
                 follow(m, f);
             }
         } else if (w >= 0 && f) {
-            if (move_pane(m, m->focus, w) != 0) notice(m, "tab %d is full", window_key(w));
+            if (move_pane(m, m->focus, w) != 0) notice(m, "window %d is full", window_key(w));
             else {
                 follow_here(m, f);
                 leave_mode(m);
@@ -1590,8 +1572,8 @@ static void mode_key(struct mux *m, const unsigned char *k, size_t n) {
     }
 }
 
-/* Keys for the floating window that has the keyboard (the attach list, the
- * names). seq is one key: a byte, or a whole escape sequence. */
+/* Handle input for the attach or pane-name picker. seq is one byte or one
+ * complete escape sequence. */
 static void floater_key(struct mux *m, const unsigned char *seq, size_t n) {
     bool esc = n == 1 && seq[0] == 0x1b;
     bool up = n == 3 && seq[0] == 0x1b && (seq[1] == '[' || seq[1] == 'O') && seq[2] == 'A';
@@ -1612,10 +1594,10 @@ static void floater_key(struct mux *m, const unsigned char *seq, size_t n) {
             const struct pick *p = &m->picks[m->pick_sel];
             const char *why = NULL;
             if (pane_total(m) >= MUX_MAX_PANES) {
-                notice(m, "%d panes is the most", MUX_MAX_PANES);
+                notice(m, "pane limit reached (%d)", MUX_MAX_PANES);
             } else {
                 struct pane *np = pane_open(p->id, p->name, p->sock, m->trows, m->tcols, &why);
-                if (!np) notice(m, "cannot attach %s: %s", p->name, why ? why : "unknown");
+                if (!np) notice(m, "cannot attach %s: %s", p->name, why ? why : "console unavailable");
                 else (void)add_pane(m, np);
             }
             m->fl = FL_NONE;
@@ -1653,10 +1635,8 @@ static void open_floater(struct mux *m, enum floater f) {
     m->dirty = true;
 }
 
-/* The prefix, then this key. Returns 1 to leave the terminal. Anything
- * that is not a command cancels: both keys are dropped, since a wrong key
- * after the prefix is almost always a mistyped command, and passing it on
- * would hit the program with a stray Ctrl-Space. */
+/* Dispatch a key following the prefix. Return 1 to detach the last pane.
+ * Unrecognized command keys are consumed; repeating the prefix forwards it. */
 static int command(struct mux *m, unsigned char key) {
     struct pane *f = focused(m);
     m->help = false;
@@ -1735,9 +1715,8 @@ static int command(struct mux *m, unsigned char key) {
     }
 }
 
-/* Length of the escape sequence at s (n bytes there), 0 if not whole yet.
- * A lone ESC at the end of a read is the Esc key: terminals send a
- * sequence in one write. */
+/* Length of a recognized escape sequence, or 0 when incomplete. A lone
+ * ESC at a read boundary is treated as the Esc key. */
 static size_t esc_len(const unsigned char *s, size_t n, bool at_end) {
     if (n < 2) return at_end ? 1 : 0;
     if (s[1] == '[') {
@@ -1865,9 +1844,9 @@ static void drop_ended(struct mux *m) {
     for (int i = 0; i < MUX_MAX_PANES; i++) {
         struct pane *p = m->slot[i];
         if (p && p->ended) {
-            /* Its console still there: another terminal took the call; it
-             * runs on, so say nothing. Gone: it ended. */
-            if (!hold_path_exists(p->sock)) notice(m, "%s has ended", p->name);
+            /* A missing endpoint confirms console closure, not process exit.
+             * An existing endpoint may belong to a replacement attach. */
+            if (!hold_path_exists(p->sock)) notice(m, "%s: console closed", p->name);
             pane_free(p);
             m->slot[i] = NULL;
             any = true;
@@ -1916,7 +1895,7 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
     }
     int rc = 0;
 
-    /* the call this started on: its record names it */
+    /* the process this started on: its record names it */
     struct find_first {
         const char *sock;
         char id[ID_STR_LEN], name[ALIAS_MAX_LEN + 1];
@@ -1945,7 +1924,7 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
         if (d) closedir(d);
     }
     const char *why = NULL;
-    struct pane *first = pane_open(ff.id[0] ? ff.id : "", ff.name[0] ? ff.name : "call", first_sock, m->trows, m->tcols, &why);
+    struct pane *first = pane_open(ff.id[0] ? ff.id : "", ff.name[0] ? ff.name : "process", first_sock, m->trows, m->tcols, &why);
     if (!first) {
         free(m);
         return 3;

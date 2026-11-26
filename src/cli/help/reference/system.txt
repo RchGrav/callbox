@@ -1,22 +1,25 @@
-backmux help system - root, sudo, and the global store
+backmux help system - user and root-managed stores
 
-Root and sudo processes normally use the root-managed store:
+Root and sudo launches normally use the root-managed store:
 
   Linux: /var/lib/backmux
   macOS: /var/db/backmux
 
-A launch whose executable or path argument resolves inside the invoking
-user's home uses that user's store instead, including under sudo. Root
-without a sudo user uses its own home for this check. This routing also
-applies when --system is supplied.
+When an executable or path argument resolves inside the invoking user's
+home directory, the launch uses that user's store instead, including under
+sudo. Root without a sudo user uses its own home for this check. This routing
+also applies when --system is supplied.
 
-Private root records and logs stay root-only. Normal users see only the
-redacted public index, where a process's USER and COMMAND read 'hidden'.
-Acting on a root-managed target requires root; user-local targets win
-over root-public collisions.
+Root-managed records and logs remain private to root. Normal users see a
+redacted public index, with 'hidden' in the USER and COMMAND fields.
+Actions on root-managed targets require root. For a normal user, user-store
+matches take precedence over collisions in the root-managed public index.
 
-  sudo backmux <cmd...>           start with root privileges
-  sudo backmux list               list the global processes (authoritative)
-  sudo backmux list -a            global processes plus every user's processes
-  backmux list -s                 the redacted global view, as a normal user
-  backmux purge -s                sweep the global store (re-execs via sudo)
+  sudo backmux server PROGRAM     launch with root privileges
+  sudo backmux list               read root-managed process records
+  sudo backmux list -a            include user stores under /home or /Users
+  backmux list -s                 read the redacted root-managed listing
+  backmux purge -s                remove eligible root-managed records via sudo
+
+Store selection does not change the launched program's privilege level.
+See backmux help list, ps, targets, and launch.

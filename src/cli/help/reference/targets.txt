@@ -1,25 +1,32 @@
-backmux help targets - names, ids, and the start of either
+backmux help targets - process names, IDs, and prefixes
 
-  <target>          resolve in the current context
-  user:<target>     force user-local lookup
-  system:<target>   force root-managed lookup
+  <target>          resolve in the current invocation context
+  user:<target>     restrict lookup to the invoking user's store
+  system:<target>   restrict lookup to the root-managed store
 
-target = process id, leading id prefix, process name, or the start of a name
+target = Backmux process ID, ID prefix, process name, or unique name prefix
 
-A process id addresses one process directly, always. A process name resolves to
-the single process recorded under that name, narrowed by the verb: end/kill/logs
-look at running or logged processes, inspect looks at retained records, and
-purge looks at removable past process data. Failing a whole name or an id
-prefix, the start of a name works when one process the command can act on has it
-(backmux logs hel for helper). When more than one process matches, backmux lists
-them and exits 6 - it never picks one.
+The Backmux process ID is a 64-character hexadecimal identifier, distinct
+from the operating-system PID. Full IDs address a record directly.
+An exact process name takes precedence over an ID prefix. If neither
+matches, a unique name prefix can select a process.
 
-Outside inboxes have names too. msg, inbox, and monitor accept an inbox's
-complete name; process IDs, prefixes, and user:/system: scopes apply to
-processes. An active inbox name cannot be assigned to a process in the same
-store.
+Name lookup considers the command's applicable states: end/kill select
+running processes or Unknown processes with a console, logs selects records
+with logs, inspect selects retained records, and purge selects removable
+records. If several applicable processes match, the resolver lists candidates
+and exits 6. Use a longer prefix or the full name.
 
-Verbs shorten the same way: backmux li is backmux list, when nothing else
-has that meaning. The top-level word is tried in this order: a verb; a process
-by whole name or id prefix (redial); a program on PATH; then the start of
-exactly one verb or (alone) one process's name. Several fits are listed, exit 6.
+Inbox targets require complete inbox names. msg, inbox, and monitor accept
+those names; process-ID prefixes and user:/system: scopes apply to process
+targets. An active inbox name cannot also name a process in the same store.
+swap has its own pane lookup; see backmux help swap.
+
+COMMAND ABBREVIATIONS
+A unique command prefix is accepted, such as backmux li for backmux list.
+Top-level resolution checks a full command name, a lone process name or ID
+prefix, an executable, then command prefixes and lone process-name prefixes.
+Multiple matches produce an ambiguity error (exit 6). Names followed by
+arguments are treated as programs, not as requests to reconnect.
+
+See backmux help system for store selection and permissions.

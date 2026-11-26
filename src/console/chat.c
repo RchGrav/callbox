@@ -7,17 +7,14 @@
 #include "backmux/console_internal.h"
 #include "overlay.h"
 
-/* A backmux shell's chat: the floating window, its conversations, and the
- * routing of everything the attached terminal sends.
+/* Chat window, conversation history, and input routing for either a broker
+ * or the pane compositor. Managed processes have conversations keyed by
+ * Backmux ID; named inboxes have conversations keyed by inbox name.
+ * Messages without a reply address share a separate conversation.
  *
- * Conversations are kept per sender: a message from a call goes to that
- * call's conversation (keyed by its id, so a rename keeps it), and messages
- * from outside any call share one. What the person sends goes out over the ordinary backmux msg transport,
- * from this call, so an agent answers with a plain `backmux msg`.
- *
- * Nothing here writes to the shell except the person's own keystrokes and
- * the mouse events the shell's program asked for: an incoming message is
- * only ever shown. */
+ * Outgoing messages use the message transport. Incoming messages appear in
+ * the chat window; only forwarded keyboard and mouse input reaches the
+ * underlying program. */
 
 #define CHAT_MAX_THREADS 24
 #define CHAT_MAX_MSGS 300 /* per conversation; the oldest fall off */
@@ -32,11 +29,11 @@
 #define CHAT_PICK_REFRESH_MS 1000
 #define CHAT_MOUSE_TAIL_MS 300 /* reports still in flight after reporting is turned off */
 #define CHAT_MAX_PICK 64
-/* A conversation's key (the call's id) and its title. */
+/* A conversation's key (the process's id) and its title. */
 #define CHAT_KEY_LEN (ALIAS_MAX_LEN + ID_STR_LEN + 1)
 #define CHAT_LABEL_LEN (ALIAS_MAX_LEN + ID_STR_LEN + 16)
 
-/* TH_OPERATOR: an agent outside any call; its replies go to its inbox under
+/* TH_OPERATOR: an agent outside any process; its replies go to its inbox under
  * that name (store/inbox.c), not to a broker. */
 enum thread_kind { TH_CALL, TH_OPERATOR, TH_OUTSIDE };
 enum msg_state { MSG_IN, MSG_SENDING, MSG_SENT, MSG_FAILED };
@@ -86,7 +83,7 @@ enum grab { GRAB_NONE, GRAB_APP, GRAB_MOVE, GRAB_RESIZE, GRAB_CLOSE, GRAB_HELD }
 
 struct chat {
     struct chat_host host;
-    /* This call's name, as agents see it and reply to it: the label on your
+    /* This process's name, as agents see it and reply to it: the label on your
      * own messages. Looked up when the window opens (the record is written
      * after the broker starts, and a rename changes it). */
     char self[CHAT_LABEL_LEN];
@@ -106,7 +103,7 @@ struct chat {
     size_t in_len, in_cap, in_cur;
     bool include_screen;
 
-    bool picking; /* choosing who to talk to */
+    bool picking; /* recipient picker is open */
     char filter[ALIAS_MAX_LEN + 1];
     size_t filter_len;
     int pick_sel;
@@ -535,7 +532,7 @@ static int pick_record(const char *id, const char *path, struct hold_run_record 
     (void)path;
     struct chat *c = ((struct pick_scan *)vctx)->c;
     if (!r || c->npicks >= CHAT_MAX_PICK || (c->host.run_id && !strcmp(id, c->host.run_id))) return 0;
-    /* A call that can be messaged: on a PTY, not known to have ended, its
+    /* A process that can be messaged: on a PTY, not known to have ended, its
      * console still listening. */
     if (!r->has_console || r->has_exit_code || !r->has_state || strcmp(r->state, "running") != 0 ||
         !hold_path_exists(r->console_sock) || !hold_console_record_alive(r))
@@ -564,8 +561,8 @@ static void refresh_picks(struct chat *c) {
     c->picks_ms = c->now;
     struct pick_scan scan = {c};
     if (c->host.store) (void)hold_for_each_record(c->host.store->record_dir, pick_record, &scan);
-    /* Every conversation stays readable: one with a call that has since
-     * ended, and those backmux could not tie to a call. */
+    /* Every conversation stays readable: one with a process that has since
+     * ended, and those backmux could not tie to a process. */
     for (int i = 0; i < c->nthreads; i++) {
         struct chat_thread *t = c->threads[i];
         struct pick_entry *e = NULL;
@@ -627,8 +624,8 @@ static void start_picking(struct chat *c) {
 static void pick_confirm(struct chat *c) {
     const struct pick_entry *e = pick_at(c, c->pick_sel);
     if (!e) {
-        if (c->filter_len) set_notice(c, "no running process matches '%s'", c->filter);
-        else set_notice(c, "no other PTY process is running");
+        if (c->filter_len) set_notice(c, "no recipient matches '%s'", c->filter);
+        else set_notice(c, "no recipients available");
         return;
     }
     struct chat_thread *t = get_thread(c, e->kind, e->key, e->label);
@@ -652,7 +649,7 @@ static void hex_into(char *out, const char *s, size_t n) {
 /* The helper process of one send. backmux msg's transport is a blocking
  * request (the receiver answers once the text is typed into its prompt; a
  * busy console is retried for up to 10 s), so it runs beside the broker,
- * which must keep the shell's display alive. It names this call as the
+ * which must keep the shell's display alive. It names this process as the
  * sender (self_id), so the reply comes back to this chat. */
 static _Noreturn void send_helper(const char *sock, const char *self_id, bool op, const char *body, size_t body_len, int wfd) {
     for (int fd = 3; fd < 1024; fd++)
@@ -660,7 +657,7 @@ static _Noreturn void send_helper(const char *sock, const char *self_id, bool op
     signal(SIGTERM, SIG_DFL);
     signal(SIGPIPE, SIG_IGN);
     char head[160 + 2 * ID_STR_LEN];
-    /* op=1: from a person's chat name (an inbox), not from a call */
+    /* op=1: from a person's chat name (an inbox), not from a process */
     int hn = snprintf(head, sizeof(head), op ? "msg op=1 from=" : "msg from=");
     size_t idl = strlen(self_id);
     hex_into(head + hn, self_id, idl);
@@ -680,9 +677,9 @@ static _Noreturn void send_helper(const char *sock, const char *self_id, bool op
             bool again = false;
             if (hold_console_request(sock, req, req_len, &reply, &reply_len) != 0) {
                 if (errno == ECONNREFUSED && waited_ms < 10000) again = true; /* its accept queue is full */
-                else if (errno == ENOENT) snprintf(line, sizeof(line), "error it has ended\n");
+                else if (errno == ENOENT) snprintf(line, sizeof(line), "error console endpoint not found\n");
                 else if (errno == EMSGSIZE) snprintf(line, sizeof(line), "error the message is too large to send\n");
-                else snprintf(line, sizeof(line), "error its console cannot be reached: %s\n", strerror(errno));
+                else snprintf(line, sizeof(line), "error cannot connect to recipient console: %s\n", strerror(errno));
             } else if (!strcmp((const char *)reply, "error busy\n") && waited_ms < 10000) {
                 again = true;
             } else {
@@ -731,7 +728,7 @@ static char *with_screen(const struct chat *c, const char *text, size_t len, siz
     else self_label(c, name, sizeof(name));
     memcpy(out, text, len);
     size_t n = len;
-    n += (size_t)snprintf(out + n, cap - n, "\n\n[screen of %s: %u columns x %u rows, cursor at column %u, row %u]\n", name,
+    n += (size_t)snprintf(out + n, cap - n, "\n\n[screen of %s: %u columns x %u rows, cursor column %u, row %u (zero-based)]\n", name,
                           snap.cols, snap.rows, snap.cursor_col, snap.cursor_row);
     int last = snap.rows - 1;
     char *line = malloc(row_cap);
@@ -770,7 +767,7 @@ static void send_message(struct chat *c) {
         return;
     }
     if (t->kind == TH_OUTSIDE) {
-        set_notice(c, "sent from outside backmux: no process to answer");
+        set_notice(c, "cannot reply: sender has no reply address");
         return;
     }
     struct chat_msg *m = add_msg(t, MSG_SENDING, c->input, len);
@@ -806,7 +803,7 @@ static void send_message(struct chat *c) {
                                                      body ? body_len : m->len)
                                : -1;
         free(body);
-        if (rc != 0) fail_msg(c, m, "%s has no inbox now (it expires an hour after its last use)", t->label);
+        if (rc != 0) fail_msg(c, m, "cannot deliver to inbox '%s'", t->label);
         else {
             m->state = MSG_SENT;
             c->dirty = true;
@@ -816,7 +813,7 @@ static void send_message(struct chat *c) {
     struct hold_run_record r;
     char path[HOLD_PATH_MAX], sock[HOLD_PATH_MAX] = "";
     if (!c->host.store || hold_load_record_by_id(c->host.store->record_dir, t->key, &r, path, sizeof(path)) != 0) {
-        fail_msg(c, m, "%s is gone (its process was removed)", t->label);
+        fail_msg(c, m, "cannot read the process record for %s", t->label);
         free(body);
         return;
     }
@@ -825,7 +822,7 @@ static void send_message(struct chat *c) {
     if (reachable) snprintf(sock, sizeof(sock), "%s", r.console_sock);
     hold_free_run_record(&r);
     if (!reachable) {
-        fail_msg(c, m, "%s is not running", t->label);
+        fail_msg(c, m, "%s has no active console", t->label);
         free(body);
         return;
     }
@@ -834,12 +831,12 @@ static void send_message(struct chat *c) {
         if (!c->out[i].pid) o = &c->out[i];
     int fds[2] = {-1, -1};
     if (!o) {
-        fail_msg(c, m, "too many messages are still on their way; send it again");
+        fail_msg(c, m, "outgoing message limit reached; retry after a send completes");
         free(body);
         return;
     }
     if (pipe(fds) != 0) {
-        fail_msg(c, m, "could not start the send: %s", strerror(errno));
+        fail_msg(c, m, "cannot start message delivery: %s", strerror(errno));
         free(body);
         return;
     }
@@ -853,7 +850,7 @@ static void send_message(struct chat *c) {
     free(body);
     if (pid < 0) {
         close(fds[0]);
-        fail_msg(c, m, "could not start the send: %s", strerror(errno));
+        fail_msg(c, m, "cannot start message delivery: %s", strerror(errno));
         return;
     }
     (void)fcntl(fds[0], F_SETFL, fcntl(fds[0], F_GETFL) | O_NONBLOCK);
@@ -879,7 +876,7 @@ static void finish_send(struct chat *c, struct outbound *o, const char *forced) 
         if (forced) fail_msg(c, m, "%s", forced);
         else if (!strncmp(o->result, "ok", 2)) m->state = MSG_SENT;
         else if (!strncmp(o->result, "error ", 6)) fail_msg(c, m, "%s", o->result + 6);
-        else fail_msg(c, m, "%s", o->result[0] ? o->result : "the send was interrupted");
+        else fail_msg(c, m, "%s", o->result[0] ? o->result : "message delivery interrupted");
         c->dirty = true;
     }
 }
@@ -890,7 +887,7 @@ static void reap_sends(struct chat *c) {
         if (!o->pid) continue;
         if (o->fd >= 0 && c->now - o->started_ms > CHAT_SEND_LIMIT_MS) {
             kill(o->pid, SIGKILL);
-            finish_send(c, o, "no answer from its console in time");
+            finish_send(c, o, "message delivery timed out");
         }
         if (o->fd >= 0) continue;
         int st;
@@ -945,13 +942,11 @@ static void hide(struct chat *c) {
     c->visible = c->focused = false;
     c->picking = false;
     c->notice[0] = '\0';
-    set_tip(c, "chat hidden", "bring it back");
+    set_tip(c, "chat hidden", "open chat");
 }
 
-/* The Esc key in chat. In the compositor it does nothing: chat is left
- * only with the prefix then c, the key that opened it. Why: Esc is the
- * key every mode leaves by, and typing in chat is not a mode to fall out
- * of by accident with a half-written message. Elsewhere it hides chat. */
+/* Esc leaves compositor-hosted chat open. Its prefix command or close
+ * button hides it. Broker-hosted chat retains its Esc-to-hide behavior. */
 static void esc_key(struct chat *c) {
     if (!c->host.app_pointer) hide(c);
 }
@@ -966,7 +961,7 @@ static void set_focus(struct chat *c, bool chat) {
         if (c->notice_tip) c->notice[0] = '\0';
         if (c->current && !c->picking) c->current->unread = 0;
     } else if (c->visible) {
-        set_tip(c, c->host.program ? "typing in the program" : "typing in the shell", "chat");
+        set_tip(c, c->host.program ? "program has keyboard focus" : "shell has keyboard focus", "focus chat");
     }
     c->dirty = true;
 }
@@ -1468,7 +1463,7 @@ static void lead_menu(const struct chat *c, char *out, size_t n) {
     key_name(c->host.detach_key, detach);
     key_name(c->host.key, key);
     /* (in the window, kept short enough for its default width) */
-    if (c->visible) snprintf(out, n, "%s: detach | %s: %s | %s: itself", detach, key, c->focused ? "shell" : "chat", lead);
+    if (c->visible) snprintf(out, n, "%s: detach | %s: %s | %s: send prefix", detach, key, c->focused ? "program" : "chat", lead);
     else snprintf(out, n, "%s: detach | %s: chat | %s: send %s", detach, key, lead, lead);
 }
 
@@ -1505,7 +1500,7 @@ static void draw_history(struct chat *c, const struct layout *L) {
                 struct tm tmv;
                 if (localtime_r(&m->at, &tmv)) strftime(when, sizeof(when), "%H:%M", &tmv);
                 bool mine = m->state != MSG_IN;
-                /* Yours under your call's name, not "you": the name the
+                /* Yours under your process's name, not "you": the name the
                  * other side sees and answers. */
                 /* Padded to 15 (the longest generated name), so the time
                  * starts at one column; a longer name pushes it out, never
@@ -1526,7 +1521,7 @@ static void draw_history(struct chat *c, const struct layout *L) {
             const struct comp_style *st = &ST_BODY;
             if (k > text_lines) {
                 if (m->with_screen && k == text_lines + 1) {
-                    if (shown) put(c, row, c->x + 2, width - 1, "[the shell's screen went with this]", &ST_DIM);
+                    if (shown) put(c, row, c->x + 2, width - 1, "[screen snapshot included]", &ST_DIM);
                     continue;
                 }
                 from = m->note;
@@ -1541,14 +1536,14 @@ static void draw_history(struct chat *c, const struct layout *L) {
         below += lines;
     }
     if (t->count == 0) {
-        put(c, L->body_top, c->x + 1, width, "Nothing said yet. Type below; Enter sends.", &ST_DIM);
+        put(c, L->body_top, c->x + 1, width, "No messages. Enter sends a message.", &ST_DIM);
     }
 }
 
 static void draw_picker(struct chat *c, const struct layout *L) {
     int width = c->w - 2, row = L->body_top;
     if (L->body_rows < 1 || width < 4) return;
-    int used = put(c, row, c->x + 1, width, "to: ", &ST_DIM);
+    int used = put(c, row, c->x + 1, width, "To: ", &ST_DIM);
     used += put(c, row, c->x + 1 + used, width - used, c->filter, &ST_BODY);
     c->cur_row = row;
     c->cur_col = c->x + 1 + used;
@@ -1571,11 +1566,11 @@ static void draw_picker(struct chat *c, const struct layout *L) {
     }
     if (n == 0) {
         put(c, row + 1 < L->body_top + L->body_rows ? row + 1 : row, c->x + 1, width,
-            c->filter_len ? "no running process matches" : "no other process is running on a PTY", &ST_DIM);
+            c->filter_len ? "No matching recipients." : "No recipients available.", &ST_DIM);
     }
     if (L->body_rows >= 4)
         put(c, L->body_top + L->body_rows - 1, c->x + 1, width,
-            "\xe2\x86\x91\xe2\x86\x93 choose \xc2\xb7 Enter select \xc2\xb7 type to narrow", &ST_DIM);
+            "Up/Down: select  Enter: choose  Type: filter", &ST_DIM);
 }
 
 static void draw_window(struct chat *c) {
@@ -1599,7 +1594,7 @@ static void draw_window(struct chat *c) {
         used += put(c, c->y, c->x + 1 + used, room - used, " ", ts);
     }
     used += put(c, c->y, c->x + 1 + used, room - used, "chat", ts);
-    if (c->picking) used += put(c, c->y, c->x + 1 + used, room - used, " -> who to talk to", ts);
+    if (c->picking) used += put(c, c->y, c->x + 1 + used, room - used, " -> Select recipient", ts);
     else if (c->current) {
         used += put(c, c->y, c->x + 1 + used, room - used, " -> ", ts);
         used += put(c, c->y, c->x + 1 + used, room - used, c->current->label, ts);
@@ -1615,7 +1610,7 @@ static void draw_window(struct chat *c) {
     c->cur_row = -1;
     if (c->picking) draw_picker(c, &L);
     else if (c->current) draw_history(c, &L);
-    else if (L.body_rows > 0) put(c, L.body_top, c->x + 1, c->w - 2, "Tab chooses who to talk to.", &ST_DIM);
+    else if (L.body_rows > 0) put(c, L.body_top, c->x + 1, c->w - 2, "Tab: select recipient", &ST_DIM);
 
     if (L.rule >= 0) {
         for (int i = 0; i < c->w; i++) comp_put(c->comp, L.rule, c->x + i, 0x2500, &ST_DIM);
@@ -1646,7 +1641,7 @@ static void draw_window(struct chat *c) {
         if (c->in_len == 0 && i == 0) {
             char hint[CHAT_LABEL_LEN + 32];
             if (c->current && c->current->kind != TH_OUTSIDE) snprintf(hint, sizeof(hint), "message %s", c->current->label);
-            else snprintf(hint, sizeof(hint), "Tab: choose who to talk to");
+            else snprintf(hint, sizeof(hint), "Tab: select recipient");
             put(c, row, c->x + 3, text_w, hint, &ST_INPUT_HINT);
         }
         if (!c->picking && line == v.cur_line) {
@@ -1658,7 +1653,7 @@ static void draw_window(struct chat *c) {
     if (L.footer >= 0) {
         int u = put(c, L.footer, c->x + 1, c->w - 4, c->include_screen ? "[x] screen" : "[ ] screen", c->include_screen ? &ST_BODY : &ST_DIM);
         put(c, L.footer, c->x + 1 + u, c->w - 4 - u,
-            c->host.app_pointer ? "  ^S \xc2\xb7 Tab: to" : "  ^S \xc2\xb7 Tab: to \xc2\xb7 Esc: hide", &ST_DIM);
+            c->host.app_pointer ? "  Ctrl-S \xc2\xb7 Tab: recipient" : "  Ctrl-S \xc2\xb7 Tab: recipient \xc2\xb7 Esc: hide", &ST_DIM);
         comp_put(c->comp, L.footer, c->x + c->w - 1, 0x25e2, &ST_DIM); /* the corner to resize by */
     }
 }
@@ -1914,8 +1909,8 @@ int chat_unread(const struct chat *c) {
     return total_unread(c, NULL);
 }
 
-/* The conversation with a call on show, without taking the keyboard: the
- * person moved to that call's pane. */
+/* The conversation with a process on show, without taking the keyboard: the
+ * person moved to that process's pane. */
 void chat_show_call(struct chat *c, const char *call_id, const char *label) {
     if (!c->visible || !call_id || !*call_id) return;
     struct chat_thread *t = get_thread(c, TH_CALL, call_id, label ? label : call_id);

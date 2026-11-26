@@ -49,16 +49,16 @@ bool hold_record_matches_alias_intent(const char *command, const struct hold_run
     }
     if (!strcmp(command, "stop") || !strcmp(command, "kill")) {
         /* A console can answer even when this namespace cannot observe its
-         * process or log lock. signal_one routes foreign calls to the broker. */
+         * process or log lock. signal_one routes foreign processes to the broker. */
         return st == STATE_RUNNING || (st == STATE_UNKNOWN && r->has_console);
     }
-    /* tail of an ended call prints its whole log (backmux help tail), so it
-     * finds any call with a log, as logs does - and --tail of an ended call
+    /* tail of an ended process prints its whole log (backmux help tail), so it
+     * finds any process with a log, as logs does - and --tail of an ended process
      * must find it rather than fall through to a redial. */
     if (!strcmp(command, "view") || !strcmp(command, "tail")) {
         return r->has_log;
     }
-    /* Screen verbs, and attach, resolve any matching call and then explain
+    /* Screen verbs, and attach, resolve any matching process and then explain
      * what it lacks (no TTY, already ended) rather than claiming nothing
      * matched. */
     if (!strcmp(command, "inspect") || !strcmp(command, "wait") || !strcmp(command, "peek") ||
@@ -100,7 +100,7 @@ static int append_resolved_target(struct hold_resolved_target **targets,
     return 0;
 }
 
-/* ---- several calls match ------------------------------------------------ */
+/* ---- several processes match ------------------------------------------------ */
 
 enum ambiguous_kind {
     MATCH_ID_OR_NAME,   /* an id prefix, or a name exactly */
@@ -129,7 +129,7 @@ static int ambiguous_cb(const char *id, const char *path, struct hold_run_record
     return 0;
 }
 
-/* Several calls match: say so, and which, so the next try can be exact -
+/* Several processes match: say so, and which, so the next try can be exact -
  * "no process matches" would be false, and acting on one of them a guess. */
 int hold_report_ambiguous(const struct hold_store *store, const char *token, bool name_prefix) {
     fprintf(stderr, "backmux: error: more than one process matches '%s':\n", token ? token : "");
@@ -138,7 +138,7 @@ int hold_report_ambiguous(const struct hold_store *store, const char *token, boo
         hold_for_each_record(store->record_dir, ambiguous_cb, &w);
         if (w.shown > 8) fprintf(stderr, "  ... and %d more\n", w.shown - 8);
     }
-    fprintf(stderr, "  give more of the id, or the whole name\n");
+    fprintf(stderr, "  use a longer process ID prefix or the full process name\n");
     return 6;
 }
 
@@ -163,7 +163,7 @@ static int prefix_match_cb(const char *id, const char *path, struct hold_run_rec
     return 0;
 }
 
-/* How many calls in store have a name starting with prefix (that the
+/* How many processes in store have a name starting with prefix (that the
  * command could act on; NULL: any); the last one's id in matched. */
 int hold_count_name_prefix(const struct hold_store *store, const char *prefix, const char *command,
                            char matched[ID_STR_LEN]) {
@@ -234,7 +234,7 @@ static int append_public_run_name_target(struct hold_resolved_target **targets,
     if (matches == 0) return 0;
     if (matches > 1) {
         /* (the public projection is not walked for the list: other users'
-         * calls are named, not shown) */
+         * processes are named, not shown) */
         fprintf(stderr, "backmux: error: more than one process is named '%s'\n", name);
         return -2;
     }
@@ -343,7 +343,7 @@ static int resolve_action_token(const struct hold_invocation *inv,
             if (id_rc == -2) {
                 if (!report_missing) return 6;
                 if (cands[i].public_scan) {
-                    fprintf(stderr, "backmux: error: more than one process matches '%s'; give more of the id\n", token);
+                    fprintf(stderr, "backmux: error: more than one process matches '%s'; use a longer process ID prefix\n", token);
                     return 6;
                 }
                 return hold_report_ambiguous(&cands[i].store, atom, false);
@@ -351,12 +351,12 @@ static int resolve_action_token(const struct hold_invocation *inv,
         }
     }
 
-    /* The start of a name, when it is unique among the calls this verb can
+    /* The start of a name, when it is unique among the processes this verb can
      * act on: less typing (`backmux logs hel` for helper), and never a
      * guess - several matches are listed instead. Not for a redial
-     * ("start-existing"): there a word that names no call is a program to
+     * ("start-existing"): there a word that names no process is a program to
      * run, and the top level weighs name starts against PATH itself. Own
-     * stores only: other users' calls are reached by their whole name. */
+     * stores only: other users' processes are reached by their whole name. */
     if (hold_valid_alias(atom) && strcmp(command, "start-existing") != 0) {
         for (int i = 0; i < ncands; i++) {
             if (cands[i].public_scan) continue;
@@ -402,9 +402,9 @@ bool hold_token_resolves(const struct hold_invocation *inv,
 
 /* ---- a shortened word at the top level ------------------------------------
  *
- * `backmux <word>` where word is no verb: a call by its whole name or an id
+ * `backmux <word>` where word is no verb: a process by its whole name or an id
  * prefix (redial), else a program on PATH, else - only then - the start of
- * a verb or of a call's name, when exactly one fits. In that order so that
+ * a verb or of a process's name, when exactly one fits. In that order so that
  * nothing that worked before changes meaning: a whole name, an id, and a
  * program all still win; a shortened word is only ever what would have been
  * "command not found". Why at all: less typing (`backmux li`, `backmux
@@ -457,7 +457,7 @@ int hold_shorten_word(const char *word, bool lone, const char *const *verbs, siz
     size_t nverb_hits = 0;
     for (size_t i = 0; i < nverbs; i++)
         if (!strncmp(verbs[i], word, wl) && nverb_hits < 16) verb_hits[nverb_hits++] = verbs[i];
-    /* A call's name counts only for a lone word: with arguments after it,
+    /* A process's name counts only for a lone word: with arguments after it,
      * the word is a program to run (a redial takes no arguments). */
     struct short_name_walk w = {word, 0, {0}, {{0}}};
     if (lone && hold_valid_alias(word)) {
@@ -474,7 +474,7 @@ int hold_shorten_word(const char *word, bool lone, const char *const *verbs, siz
         snprintf(name_out, name_n, "%s", w.name);
         return 2;
     }
-    fprintf(stderr, "backmux: error: '%s' is the start of more than one thing:\n", word);
+    fprintf(stderr, "backmux: error: ambiguous command or process-name prefix '%s':\n", word);
     if (nverb_hits) {
         fprintf(stderr, "  commands:");
         for (size_t i = 0; i < nverb_hits; i++) fprintf(stderr, " %s", verb_hits[i]);
@@ -486,6 +486,6 @@ int hold_shorten_word(const char *word, bool lone, const char *const *verbs, siz
         if (w.matches > 8) fprintf(stderr, " ... and %d more", w.matches - 8);
         fprintf(stderr, "\n");
     }
-    fprintf(stderr, "  type more of it\n");
+    fprintf(stderr, "  use a longer prefix or the full name\n");
     return 6;
 }

@@ -1,33 +1,38 @@
 
- backmux call <program> [<args>...]     attached full screen tui app
- backmux agent <program> [<args>...]    applies chat formatting to messaging
- backmux server <program> [<args>...]   detached server console app
- backmux detach <program> [<args>...]   detached full screen tty app
- backmux shell                          backmux shell mode in a tty
- backmux agent --name <name> <program>  override generated name on first run
+LAUNCH PROGRAMS
+  backmux call PROGRAM [ARGS...]       start an attached terminal process
+  backmux agent PROGRAM [ARGS...]      start with agent message formatting
+  backmux server PROGRAM [ARGS...]     start a background process with a log
+  backmux detach PROGRAM [ARGS...]     start a detached terminal process
+  backmux shell [SHELL [ARGS...]]       start an attached shell
+  Add --name NAME before PROGRAM to choose a process name.
 
- backmux attach <name|id>               attach running process to your terminal
- backmux tail <name|id>                 tail a server console app
- backmux end <name|id>                  end any process gracefully
- backmux kill <name|id>                 big hammer ends any process forcefully
- backmux recall <name|id>               recall ended proc w/ same path and args
- backmux info <name|id>                 details on any process known to backmux
+MANAGE PROCESSES
+  backmux list [all]                   list active processes; all adds records
+  backmux attach TARGET               attach to a running process's console
+  backmux tail TARGET                 follow new output from a running process
+  backmux end TARGET...                send SIGTERM, then SIGKILL if needed
+  backmux kill TARGET...               send SIGKILL immediately
+  backmux recall TARGET                restart using recorded launch settings
+  backmux info TARGET                  show process details and settings
+  backmux purge                        remove ended, unsaved process records
+  backmux purge all                    stop and remove all unsaved processes
 
- backmux list                           list only running processes
- backmux list all                       list all running and stopped processes
- backmux purge                          purge stopped processes not saved
- backmux purge all                      end and purge all processes not saved
+MANAGE PROFILES
+  backmux save TARGET                  protect a process record from purge
+  backmux delete TARGET                remove an ended process, including saved
+  backmux set TARGET SETTING[=VALUE]    change a process setting
+  backmux unset TARGET SETTING         clear an optional process setting
 
- backmux save|delete <name|id>          saves (or deletes) a profile by name
- backmux set <name|id> <param>=<value>  edit profiles, args, start paths, name
- backmux unset <name|id> <param>        clear a profile setting, mode, arg, etc
+TERMINAL CONTROLS
+  Ctrl-Space q                         detach the active pane; keep it running
+  Ctrl-Space c                         open or hide the chat window
+  Ctrl-Space ?                         show keyboard shortcuts
+  backmux help panes                   pane navigation, windows, layout, chat
 
- Ctrl-Space q  detach process with durable handle, full reattach control or end
- Ctrl-Space c  recall floating user chat window after it has been dismissed
- Ctrl-Space ?  the rest of the control keys to control backmux
-
- backmux help aliases                   container aliases (100% less container)
- backmux help agents                    orchestration and tui debugging details
- backmux help all                       all our switches are belong to you
-
- backmux manual                         examples, documentation, and explanation
+HELP AND REFERENCE
+  backmux help COMMAND                 command syntax, options, and behavior
+  backmux help help                    index of workflow and reference topics
+  backmux help aliases                 Docker-style command and option mappings
+  backmux help all                     complete command and option reference
+  backmux manual                       reference and worked examples

@@ -2,17 +2,21 @@
 
 [Docs index](index.md) | Related: [Screens](screen.md), [Launcher](launcher.md)
 
-A process placed with `-t` - and every user-mode launch, `backmux <cmd>` with no
-session flags - runs on a pseudo-terminal owned by its **console broker**:
-`backmux <cmd>` and `backmux -it <cmd>` attach to it at once, `backmux -dt
-<cmd>` leaves it running in the background, and `backmux attach <target>`
-picks it back up later (`console` is an alias). A process placed with `-i` (no
-`-t`) has a broker too, holding its input pipe instead of a PTY (see [Programs
-on pipes](#programs-on-pipes)). `Ctrl-Space q` detaches without stopping the
-process; `--detach-keys` changes the sequence.
+`call`, `agent`, `detach`, and `shell` run terminal processes on a
+pseudoterminal (PTY) owned by a **console broker**. `call`, `agent`, and
+`shell` attach immediately; `detach` starts without an attached client.
+The bare launch and `-it` / `-dt` forms select the corresponding terminal
+modes. `backmux attach NAME` reconnects later (`console` is an alias).
 
-The broker is forked per process and lives exactly as long as the process. It owns
-the PTY master and a private socket under the store's `console/` directory
+A pipe-input process (`-i` without `-t`) also has a broker, which owns its
+input pipe rather than a PTY; see [Programs on pipes](#programs-on-pipes).
+An active restart policy uses the restart supervisor instead and does not
+provide that pipe-input console.
+Ctrl-Space q detaches without stopping the program. With several panes,
+it detaches the active pane. `--detach-keys` changes the sequence.
+
+The broker manages output and exit status for one managed process. For a
+terminal process it owns the PTY master and a private socket under the store's `console/` directory
 (0700 directory, 0600 socket). The broker admits root, the process's owner, or
 the sudo-named user, judged by peer credentials. The client in turn refuses a
 listener owned by anyone but root or the socket's owner, so a swapped-in
@@ -22,27 +26,24 @@ listener cannot impersonate the broker. The broker:
 - feeds the same bytes to a headless terminal, which `backmux peek`, `send`,
   `wait`, `resize`, and `msg` use (see [screen.md](screen.md));
 - serves one attach client at a time, plus short-lived control clients and
-  the registrations of nested attaches (below). A second attach is told
-  where the console is held: `backmux: web is already attached in another
-  terminal (pid N). Detach it there: Ctrl-Space q.`, or `...from inside the
-  call X...` when the holder runs inside another process;
+  nested-attach registrations. A new attach closes the previous client's
+  connection and takes over the console without stopping the program;
 - repaints a newly attached terminal from the live screen (cells, colors,
   input modes, cursor), so an idle reattach shows the real current state;
 - forwards window-size changes to the PTY (the kernel signals SIGWINCH);
 - stamps the process's exit status when the target ends and writes its final
   screen beside the log.
 
-### Letting go
+## Attachment and detachment
 
 `Ctrl-Space q` is read by the attach client, which sends a detach frame;
 the broker answers by closing the connection. `Ctrl-Space` is the prefix: it
-is held until the next key arrives, with no timer: not everyone types fast,
-and Docker and similar tools leave the lead key untimed too. `q` then
-detaches, `Ctrl-Space` again sends one `Ctrl-Space` to the program (the quick
-way through), one of the compositor's keys hands the terminal to it (with
+is buffered until the next key arrives, without a timeout. `q` then
+detaches, `Ctrl-Space` again sends one `Ctrl-Space` to the program, one of the compositor's keys hands the terminal to it (with
 whatever was typed after), and any other key is dropped with the prefix.
-With other `--detach-keys`, any other key sends both through. (A `backmux shell`'s broker reads these keys itself, so it can
-show what the lead key offers while it waits; see [shell.md](shell.md).)
+With a custom detach prefix, an unmatched sequence follows the attach
+client's configured key handling. Two-key configurations also provide the
+compositor prefix. See [Interactive controls](backmux.md).
 
 Ctrl-C means one thing wherever you are on a process: it goes to the program. On
 a PTY the key reaches the program's terminal, which signals it. For a program
@@ -73,19 +74,17 @@ nothing nested, they detach the outer process. And when an attach client goes
 away for any other reason while one is nested in its terminal, the nested
 one is detached the same way: nobody is looking at it any more.
 
-**A client that vanishes.** A closed window or a killed process sends no
-detach frame. The broker sees the connection's input end, which a client
-that only reads (`printf 'q\n' | backmux attach web`) also produces, so that
-alone is not the client leaving. It keeps watching for the connection to
-hang up, and for the client's process to stop existing (what macOS and FIFOs
-can report), on every pass and again before turning another client away. A
-quiet program prints nothing that would reveal a dead client by a failed
-write, so without these checks its console would stay "already attached".
+**Client disconnection.** A closed terminal window or killed client sends no
+detach frame. The broker monitors the connection and client liveness to
+release its attach state. Closing only the input side, as an output-only
+client may do, is not sufficient evidence that the client has gone. A new
+authorized attach replaces any current client independently of these probes.
 
-The attach client saves the terminal settings, switches to raw mode and the
-alternate screen, and on detach resets the modes a program may have left on
-(mouse reporting, bracketed paste, application keys, a hidden cursor) before
-restoring the terminal. Non-TTY attaches stream stdin/stdout without screen
+The attach client saves the terminal settings, enables raw input, and
+restores the settings on detach. It also resets terminal modes left by the
+program, including mouse reporting, bracketed paste, application keys, and
+cursor visibility. An attached launch can use the terminal inline; a split
+uses the alternate screen and restores the prior screen when it closes. Non-TTY attaches stream stdin/stdout without screen
 switching. A connection that sends nothing for 250 ms becomes a raw attach,
 so a client that only reads (`socat -u`) still sees the screen; anything it
 sends later is typed as raw input.
@@ -105,11 +104,12 @@ lets the attached client go at once, without waiting for the program to
 exit, and the client says so: `backmux: web has closed its terminal and runs
 on; there is nothing to attach - see 'backmux logs web'`.
 
-A `backmux shell` process uses the same broker, attach client, and wire protocol,
-with one difference in what travels: its attach client is sent frames the
-broker composes (the screen with the chat window over it) instead of the
-PTY's bytes, and what it sends back is routed between the shell and chat.
-See [shell.md](shell.md).
+Chat and split panes are composed by the attach client (`mux.c`) when
+requested. The broker still manages its own program's PTY, screen, and
+control connections. Chat uses a separate inbox identity rather than
+redirecting messages addressed to the shell process. Stored `mode.chat`
+records retain the earlier broker-composed path; current launches do not
+enable it. See [Shell and chat](shell.md).
 
 The terminal a process starts on is settled by the launcher before the broker
 exists — `--size COLS ROWS`, else the saved `detach-size` for a detached
@@ -171,9 +171,8 @@ introductions — `kind` (`C` control, `A` attach), the 6-character suffix of
 a private `<id>.sock.XXXXXX` directory the client made beside it, and the
 client's pid — which are atomic, so concurrent clients never interleave. The
 directory holds an `in`/`out` FIFO pair: the broker opens it, removes the
-directory, and answers on `out`: `R` ready, `D` denied, or `B` busy (every
-control slot is taken; for an attach refused because the console is held,
-`B` is followed by the holder's pid as 10 digits). From then on the pair is the connection, speaking the framed protocol above
+directory, and answers on `out`: `R` ready, `D` denied, or `B` busy when all control slots are occupied.
+An attach request replaces the current attach client. From then on the pair is the connection, speaking the framed protocol above
 (control clients skip the `holdctl1` magic; the kind already said it).
 
 Access follows the socket rules. The client accepts an endpoint it owns (root
@@ -186,15 +185,11 @@ unknown; this does not reject an otherwise authorized control request.
 Channels left half-made by a client that died are removed by the broker
 when it exits and by `backmux purge`.
 
-On macOS, `poll()` never reports end-of-file on a FIFO (Linux does), so on
-quiet passes the attach client and the broker probe their FIFOs with
-non-blocking reads to notice a party that has gone. The client probes every
-250 ms, so on a Mac over FIFOs the end of a process can reach it up to that
-late. This is compiled into the macOS build only; Linux needs no probe and
-has no delay. Kept rather than replaced with kqueue (which does report a
-FIFO's end on macOS): it is the fallback transport, a quarter second at a
-process's end costs nobody anything, and kqueue would add a second waiting
-mechanism to the client loop on one platform.
+The macOS FIFO path supplements `poll()` with nonblocking reads to detect
+closed peers. The attach client probes at 250 ms intervals; a quiet FIFO
+closure can therefore take up to one probe interval to detect. These probes
+are compiled only for macOS. The Linux path uses the FIFO events reported
+by `poll()`.
 
 When the program can produce no more output — it exited, or it closed its
 terminal and runs on — the broker stops listening at once (either transport)
@@ -207,9 +202,9 @@ Some sandboxes give each shell its own PID namespace over a shared
 filesystem. A process ID from another namespace may be invisible here, or
 may identify an unrelated process. Backmux records the launching namespace
 (`pid_ns`, the inode of `/proc/self/ns/pid`) and, from a different namespace,
-uses the shared store and the process's broker instead of consulting that pid:
+uses the shared store and the process's broker instead of consulting that PID:
 
-- **Alive?** Under the fallback (Unix sockets denied, or
+- **Liveness:** Under the fallback (Unix sockets denied, or
   `BACKMUX_CONSOLE_TRANSPORT=fifo`), a shared lock on the process's log, held for
   its life, says it runs. A supervisor holds it — the broker of a `-t` or
   `-i` process whose endpoint came up as a FIFO, or the waiter that a `-w`,
@@ -220,21 +215,21 @@ uses the shared store and the process's broker instead of consulting that pid:
   inspect a lock is not evidence that it was released. A plain `-d` process has
   no supervisor; its output descriptors carry the lock, but its program may
   close them, so even a successfully observed unlocked log proves no exit.
-- **Drive it.** `peek`, `send`, `wait`, `resize`, and `msg` talk to the broker
+- **Control:** `peek`, `send`, `wait`, `resize`, and `msg` talk to the broker
   through the console endpoint, a path both shells reach. `attach` uses the
   same endpoint. They can try that connection even when status is `Unknown`:
   a broker can still answer when this shell cannot inspect the process's pid or
   log lock. The connection uses the same access checks as usual.
-- **Stop it.** For a `-dt` or `-di` process, `end`/`kill` ask the broker (a
+- **Signaling:** For a `-dt` or `-di` process, `end`/`kill` ask the broker (a
   `signal sig=N` console request) to signal its program, which it can see.
   This can work when status is `Unknown` too. A plain `-d` or `-dw` process has
   no broker; end it from the environment that started it. An unreachable
   broker alone does not establish that the program exited.
-- **Can't tell.** No exit recorded and nothing vouching for the process — a
+- **Unknown state:** No exit recorded and nothing vouching for the process — a
   plain `-d` process whose lock is gone, a process with an unavailable lock probe,
   or a process placed without the fallback — reads `Unknown`. Purge sweeps
   leave it alone; a targeted `backmux purge NAME --force` removes its record.
-  Control goes through an available broker, never a foreign pid.
+  Control goes through an available broker, never a foreign PID.
 
 Without the fallback, nothing is added: no lock is taken, and processes run
 exactly as they do anywhere else. A plain `-d` process never opens a socket, so

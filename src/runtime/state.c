@@ -74,11 +74,11 @@ static enum run_state eval_local_state(const struct hold_run_record *r, const ch
     return STATE_UNKNOWN;
 }
 
-/* Under the socket-denied fallback, a call's broker or waiter holds a shared
- * lock on the call's log for as long as it lives. A process in another PID
- * namespace (some sandboxes give each shell its own) cannot see the call's
+/* Under the socket-denied fallback, a process's broker or waiter holds a shared
+ * lock on the process's log for as long as it lives. A process in another PID
+ * namespace (some sandboxes give each shell its own) cannot see the process's
  * pid, but it shares the filesystem, and the lock is in the kernel: held
- * means the call is alive somewhere. A failed observation is not a released
+ * means the process is alive somewhere. A failed observation is not a released
  * lock: the log may be missing or unreadable while the supervisor runs. */
 enum log_lock_state { LOG_LOCK_UNKNOWN, LOG_LOCK_HELD, LOG_LOCK_RELEASED };
 
@@ -97,12 +97,12 @@ static enum log_lock_state probe_log_lock(const struct hold_run_record *r) {
     return state;
 }
 
-/* What this process can tell about a call. Launched in another PID namespace,
- * the call's pid means nothing here - it may even name an unrelated process -
- * so it is never consulted: an exit stamp says the call ended, and otherwise
+/* What this process can tell about a process. Launched in another PID namespace,
+ * the process's pid means nothing here - it may even name an unrelated process -
+ * so it is never consulted: an exit stamp says the process ended, and otherwise
  * its supervisor's lock on the log says whether it still runs (*elsewhere).
  * In the launching namespace (and where there are none, macOS) local
- * evidence decides, as always: a call that just exited is ended even before
+ * evidence decides, as always: a process that just exited is ended even before
  * its waiter stamps it. */
 static enum run_state eval_state(const struct hold_run_record *r, const char *current_boot, bool *elsewhere) {
     if (elsewhere) *elsewhere = false;
@@ -119,7 +119,7 @@ static enum run_state eval_state(const struct hold_run_record *r, const char *cu
         return STATE_RUNNING;
     }
     /* Only a successfully observed release of a lifetime lock proves exit.
-     * An unavailable probe, or a plain -d call closing its own output, tells
+     * An unavailable probe, or a plain -d process closing its own output, tells
      * this namespace nothing about whether the program is still running. */
     return lock == LOG_LOCK_RELEASED && r->liveness_lock ? STATE_EXITED : STATE_UNKNOWN;
 }

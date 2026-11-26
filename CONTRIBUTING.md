@@ -1,13 +1,15 @@
-# Contributing to backmux
+# Contributing to Backmux
 
-backmux is a small, security-sensitive C11 tool. Every change should come
-with tests strong enough that a later change cannot regress it unnoticed.
+Backmux is a C11 process and terminal management tool. Validate changes
+with checks that exercise the affected behavior. Product wording follows
+[AGENTS.md](AGENTS.md), the [glossary](docs/glossary.md), and
+[help maintenance](docs/help.md).
 
 ## Checks
 
 | You want | Run | What it does |
 | --- | --- | --- |
-| The full local check (macOS or Linux) | `make ci` | Runs `scripts/ci.sh`: version-sync check, static and dynamic `-Werror` builds, `make test`, ASan/UBSan, cppcheck (if installed), and the layer lint. A missing tool is reported as SKIPPED, never passed. Refuses to run as root. |
+| The full local check (macOS or Linux) | `make ci` | Runs `scripts/ci.sh`: version-sync check, default-link and dynamic `-Werror` builds, `make test`, ASan/UBSan, cppcheck (if installed), and the layer lint. A missing tool is reported as SKIPPED, never passed. Refuses to run as root. |
 | Linux results from any host | `scripts/linux.sh` | Builds `docker/Dockerfile.linux-ci` with Apple `container`, Docker, or Podman (first found), copies your working tree into the container, and runs `scripts/ci.sh` there as the non-root `ci` user. Your tree is not changed. |
 | The privilege-delegation lane | `scripts/linux.sh root` | Runs `scripts/test_root.sh` in the container as the non-root `ci` user with passwordless sudo. Tests elevate one at a time, and `HOLD_REQUIRE_ROOT_TESTS=1` turns any skip into a failure. On a Linux host with passwordless sudo, `bash scripts/test_root.sh` runs it directly. |
 | Release tarballs | `scripts/linux.sh release [dir]` | Runs `scripts/release_build.sh` in the container. It builds the native-arch Linux `gnu-static` and `gnu-dynamic` tarballs and the musl matrix (amd64, arm64, armhf, mipsel, riscv64) into `dist/` (or `dir`). Each is packaged with `.github/scripts/package_tarball.sh`, the script CI uses. |
@@ -29,9 +31,9 @@ separate jobs, and adds lanes `make ci` does not have. See
 [docs/CI-PARITY.md](docs/CI-PARITY.md) for every lane.
 
 On macOS, `make ci` is the only place the `__APPLE__` code is sanitized, and
-GitHub's macOS job does not run `tests/test_backmux.sh`. cppcheck and the
-Linux code paths run only under `scripts/linux.sh` or Linux CI. Before a
-release, run `make ci` on a Mac and `scripts/linux.sh` as well.
+GitHub's macOS job does not run `tests/test_backmux.sh`. Linux runtime paths require Linux, through `scripts/linux.sh` or a Linux
+host. cppcheck runs locally wherever it is installed. Before a release,
+run `make ci` on a Mac and the Linux checks as well.
 
 ## Tests
 
@@ -41,7 +43,7 @@ release, run `make ci` on a Mac and `scripts/linux.sh` as well.
   description match.
 - `tests/screen_test.c` unit-tests the terminal screen, snapshots, input
   encoding, and the chat compositor (`make screen-test`).
-- `tests/test_040_dockerish.sh` checks the Docker-shaped surface against
+- `tests/test_040_dockerish.sh` checks the Docker-style command surface against
   `backmux-test` (`make test-040`).
 - `tests/test_version_makefile.sh` and `tests/test_release_installer.sh` cover
   version resolution and `install.sh`.
@@ -49,9 +51,8 @@ release, run `make ci` on a Mac and `scripts/linux.sh` as well.
 - Some suite tests drive real terminal programs: tmux, whiptail, vim, micro,
   and python3 (Debian/Ubuntu: `apt install tmux whiptail vim-tiny micro
   python3`). A test whose program is missing reports SKIP. Install them all,
-  because a skipped test checks nothing; CI's screen-test lanes install the
-  same list, and so does the Linux CI container
-  (`docker/Dockerfile.linux-ci`).
+  because a skipped test provides no validation. The Linux CI image includes
+  these dependencies; hosted Linux test jobs install the terminal programs.
 
 Conventions:
 

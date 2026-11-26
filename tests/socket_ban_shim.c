@@ -1,6 +1,5 @@
-/* LD_PRELOAD shim for tests: deny Unix-domain sockets with EPERM, as some
- * sandboxes do (ChatGPT's code environment refuses socket(AF_UNIX)), so the
- * FIFO console's automatic fallback runs for real. Linux, dynamic builds:
+/* LD_PRELOAD shim for tests: deny Unix-domain sockets with EPERM to exercise
+ * the FIFO console's automatic fallback. Linux, dynamic builds:
  *   cc -shared -fPIC -o socket-ban.so tests/socket_ban_shim.c -ldl
  *   LD_PRELOAD=$PWD/socket-ban.so HOLD_TEST_SOCKETS_DENIED=1 bash tests/test_backmux.sh */
 #define _GNU_SOURCE

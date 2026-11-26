@@ -2,10 +2,8 @@
 #include "backmux/core.h"
 #include "backmux/term.h"
 
-/* THE spawn engine. Every backmux process that starts a program under a
- * console broker - on a PTY, or on pipes - goes through term_spawn; there is
- * no second copy of the fork/setsid/dup2/exec ladder or of the errno
- * handshake anywhere else. */
+/* Shared spawn implementation for console-brokered PTY and pipe processes.
+ * Direct launches and restart supervision are handled by runtime/start.c. */
 
 /* Open a PTY pair. The master is O_CLOEXEC; the slave is opened O_NOCTTY so
  * the calling process (often a session leader without a controlling terminal)
@@ -93,8 +91,8 @@ struct term_stdio {
 };
 
 static int term_child_stdio(const struct term_stdio *io) {
-    /* Become a session leader: a call's process group is its own, so a
-     * signal for the call reaches exactly it. On a PTY, also claim the slave
+    /* Become a session leader: a process's process group is its own, so a
+     * signal for the process reaches exactly it. On a PTY, also claim the slave
      * as the controlling terminal, so Ctrl-C interrupts the child (not its
      * parent) and interactive shells can run job control. */
     if (setsid() < 0) return -1;

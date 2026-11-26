@@ -1,25 +1,30 @@
-CONTAINER ALIASES (100% less container)
+backmux help aliases - Docker-style commands and options
 
-Docker's words work, and do what backmux does. backmux contains nothing: no
-images, no volumes, no ports to publish - the program runs as you, here.
+Backmux accepts selected Docker-style command forms for host processes.
+It does not provide containers, images, volume mounts, or port publishing.
 
-  docker            backmux
+  Accepted form     Native Backmux command
   run -it           call
-  run -d            server            (run -dw: server -w, keeps the exit code)
+  run -d            server
+  run -dw           server -w (Backmux extension: record the exit code)
   run -dt           detach
   start             recall
   stop              end
   kill              kill
-  ps / ps -a        list / list all   (ps is machine-wide and running only)
-  logs [-f]         logs [-f]; tail follows a server
+  ps                ps (active processes)
+  ps -a             ps -a (include ended process records)
+  logs [-f]         logs [-f]
   attach            attach
-  inspect           inspect (the record as JSON); info is the readable view
-  rm                purge <name>      (delete removes a saved one)
-  rename            set <name> name=<new>
+  inspect           inspect (JSON); info provides a text summary
+  rm                purge TARGET
+  rename            rename TARGET NAME (also saves the profile)
 
-exec has no equivalent: there is no container to enter. Run the command
-itself: backmux call <program>.
+list provides store selection and an owner column; list all includes ended
+records. ps combines user and root-managed records for normal users; root's
+ps reads the root-managed store. See backmux help list and help ps.
 
-The flags of docker run that make sense here are taken as they are: --name,
--e, --env-file, --rm, --restart, --detach-keys. -p, -v, --privileged and
---cap-add are refused, with the reason.
+Supported launch options include --name, -e, --env-file, --rm, --restart,
+and --detach-keys. Container-specific options such as -p, -v, --privileged,
+and --cap-add are rejected.
+
+exec has no equivalent. Start another host process with backmux call PROGRAM.

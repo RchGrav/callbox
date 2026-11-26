@@ -5,9 +5,7 @@
 #include "backmux/core.h"
 #include "backmux/store.h"
 
-/* backmux config: a person's saved defaults (store/settings.c keeps the file).
- * Each setting has one grammar, checked here before anything is written, so
- * a refused value never replaces a saved one. */
+/* User defaults are validated before store/settings.c writes them. */
 
 static const char config_usage[] =
     "usage: backmux config get <setting>\n"
@@ -38,11 +36,11 @@ static int parse_size_value(int argc, char **argv, char *out, size_t n) {
     return 0;
 }
 
-/* chat-name: what you are called in chat and to agents that reply. Why a
- * setting: a generated name works, and some people want their own. */
+/* Preferred name when creating the account's chat inbox. */
 static int parse_name_value(int argc, char **argv, char *out, size_t n) {
     if (argc != 1 || !hold_valid_alias(argv[0])) {
-        fprintf(stderr, "backmux: error: a chat name is letters, digits, _ and -, up to %d of them\n", ALIAS_MAX_LEN);
+        fprintf(stderr, "backmux: error: chat-name requires 1-%d letters, digits, underscores, or hyphens; "
+                        "it cannot start with - or be a full process ID\n", ALIAS_MAX_LEN);
         return -1;
     }
     snprintf(out, n, "%s", argv[0]);
@@ -55,8 +53,8 @@ static const struct setting {
     const char *unset_note;
 } settings[] = {
     {"detach-size", parse_size_value,
-     "detach-size is not set: a detached PTY process takes the invoking terminal's size, or 80 24 without one"},
-    {"chat-name", parse_name_value, "chat-name is not set: chat gives you a generated name"},
+     "detach-size is unset: detached terminal processes use the invoking terminal's size, or 80 columns by 24 rows without one"},
+    {"chat-name", parse_name_value, "chat-name is unset: new chat inboxes receive generated names"},
 };
 
 static const struct setting *find_setting(const char *name) {
@@ -128,10 +126,10 @@ int hold_cmd_config_action(const struct hold_invocation *inv, int argc, char **a
         return 0;
     }
     if (set && s->parse(argc - 2, argv + 2, value, sizeof(value)) != 0) return 1;
-    /* A person's settings are changed as that person: root does not write
-     * into the invoking user's home on their say-so. */
+    /* Under sudo, config reads the invoking user's settings but does not
+     * write them as root. */
     if (inv && inv->euid_root && inv->have_sudo_user) {
-        fprintf(stderr, "backmux: error: these are %s's own settings; run backmux config %s without sudo\n",
+        fprintf(stderr, "backmux: error: settings belong to %s; run backmux config %s without sudo to change them\n",
                 inv->invoking_user, verb);
         return 2;
     }
@@ -139,7 +137,7 @@ int hold_cmd_config_action(const struct hold_invocation *inv, int argc, char **a
         fprintf(stderr, "backmux: error: cannot save settings: %s\n", strerror(errno));
         return 3;
     }
-    if (set) hold_sig_note(inv, "backmux: %s is %s for new processes; running processes keep their size\n", s->name, value);
+    if (set) hold_sig_note(inv, "backmux: %s set to %s\n", s->name, value);
     else hold_sig_note(inv, "backmux: %s cleared\n", s->name);
     return 0;
 }

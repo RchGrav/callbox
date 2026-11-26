@@ -3,13 +3,10 @@
 #include "backmux/screen.h"
 #include "overlay.h"
 
-/* The compositor of a backmux shell's display: one frame of cells per update,
- * built from the shell's screen (the base layer) and whatever is drawn over
- * it, then written to the attached terminal as the difference from what that
- * terminal already shows. It is the only writer to that terminal, so a
- * redraw by the shell can never paint over the chat window, and uncovering a
- * cell shows the shell's current content: every frame starts again from the
- * live screen. */
+/* Compose screen snapshots and overlays into a frame, then emit the cells
+ * and terminal modes that differ from the previous frame. Both pane
+ * composition and broker-hosted chat use this layer. Rebuilding from current
+ * snapshots restores program content when an overlay moves or closes. */
 
 struct term_state {
     bool app_cursor_keys, app_keypad, bracketed_paste, focus_report;

@@ -1,8 +1,8 @@
-backmux help share - fix a TUI while a person watches and tests
+backmux help share - collaborate on a terminal application
 
-Use this when you want your coding agent to reproduce and fix an issue
-without losing sight of the app. You stay attached; the agent inspects and
-drives the same screen. Take turns providing input to avoid overlapping keys.
+Keep an application attached while an agent inspects its screen and sends
+input through Backmux. Alternate human and agent input to avoid overlapping
+keystrokes.
 
 OPEN YOUR AGENT AND APP
   This example assumes Codex is installed and configured, and ./my-tui is
@@ -24,17 +24,17 @@ DESCRIBE AND REPRODUCE THE ISSUE
     In process app, Down skips a menu item. Reproduce it with peek and send,
     fix the navigation code, and tell me when to restart and test it.
 
-  Enter sends it; Esc hides chat. It reaches coder with your chat name and
-  the reply command, so coder answers with backmux msg <your name>, and the
-  answer lands in your chat. The agent can now use its command tool while
-  you watch:
+  Enter sends the message; Ctrl-Space c hides chat. The message includes your
+  chat name and a reply command. The agent replies with backmux msg using
+  your chat name; the reply appears in your chat window. The agent can use
+  its command tool while you watch:
 
     backmux peek app --image bug.png --cursor-ring
     backmux send app -k Down --wait 300
     backmux peek app --json
 
-  (A message to app itself would be typed into the app: app is a process, not
-  an agent. Agents talk to you, by your chat name.)
+  A message addressed to app is sent to the application's input. Direct
+  replies intended for you to your chat name.
 
 REBUILD AND TEST TOGETHER
   Quit the app normally so the agent can rebuild it; its pane closes and
@@ -43,8 +43,9 @@ REBUILD AND TEST TOGETHER
 
     backmux recall app
 
-  recall reuses the recorded command, arguments and folder, so the rebuilt
-  executable opens attached again. Test the fix and tell coder in chat.
+  recall reuses the recorded command, arguments, and working directory.
+  The rebuilt executable opens attached again. Test the fix and send the
+  result to coder in chat.
 
   When finished, quit the app and release both names:
 
@@ -57,8 +58,8 @@ JOIN AN APP YOUR AGENT ALREADY STARTED
 
     backmux attach app
 
-  Ctrl-Space q detaches and leaves it running. Only one interactive attach
-  is allowed at a time; peek, send, and resize still work while you are
-  attached.
+  Ctrl-Space q detaches and leaves it running. A new attach replaces the
+  previous client without stopping the process. peek, send, and resize
+  remain available while attached.
 
 Next: backmux help tui. Details: backmux help attach, swap, set.

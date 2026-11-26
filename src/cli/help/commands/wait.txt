@@ -1,43 +1,43 @@
 usage: backmux wait <target> [--idle [MS]] [--match TEXT | --regex RE]
                  [--since SEQ] [--exit] [--timeout MS]
 
-Wait for screen content, quiet output, or process exit. After input, the
-screen may still be drawing; backmux send --wait MS sends and waits in one
-step. For messages in an outside inbox, use inbox --wait or monitor.
+Wait for screen content, output idle time, or process exit. With no condition,
+wait for exit. For inbox messages, use inbox --wait or monitor.
 
-  --idle [MS]      the program has drawn something and the screen then stays
-                   quiet for MS (500 if MS is left out), counted from when the
-                   wait began. Silence before the first output never counts:
-                   on a program that prints nothing (cat, a quiet server)
-                   --idle runs to the timeout, with or without --since 0. Use
-                   --match, --exit or peek there.
-  --match TEXT     the text is on the screen (already there counts)
-  --regex RE       match a POSIX extended regular expression on the screen
-  --since SEQ      for a running process, require output past SEQ before
-                   testing --idle, --match, or --regex
-  --exit           the process ends. Also what a wait with no condition means.
-                   An exit-only wait prints its recorded exit code: -1 for
-                   plain -d, which keeps no waiter (use -dw to record it).
-  --timeout MS     bound the wait (0 = never). Default: 30s for screen
-                   conditions, no limit for an exit-only wait.
+SCREEN CONDITIONS
+  --idle [MS]      wait for idle output (default: 500 ms). The process must
+                   have produced output; without --since, the idle interval
+                   starts no earlier than this wait. A process that has
+                   never produced output does not meet this condition.
+  --match TEXT     succeed when TEXT appears on screen; existing text counts
+  --regex RE       match a POSIX extended regular expression on screen
+  --since SEQ      require output after SEQ before testing screen conditions
+                   on a running process; obtain SEQ with send --seq
 
-If several conditions are given, any one can finish the wait. --idle means
-quiet output, not that an agent's task is complete. Durations accept
-milliseconds or suffixes ms, s, m, up to 24 hours. Screen waits require a
-terminal or -i pipe-input console.
-A text match can also succeed on an ended process's saved final screen.
+PROCESS EXIT AND TIMEOUT
+  --exit           succeed when the process ends. An exit-only wait prints
+                   its recorded exit code; plain -d records none and prints
+                   -1. Use -dw when the program's exit code is required.
+  --timeout MS     limit the wait; 0 disables the timeout. Defaults: 30 s for
+                   screen conditions, no timeout for an exit-only wait.
 
-To wait for a redraw after input:
+When conditions are combined, any one can complete the wait. Screen
+conditions require a terminal or pipe-input console. A text match can also
+succeed against an ended process's saved final screen. Output idle time
+does not indicate task completion.
+
+Durations accept milliseconds or ms, s, m suffixes, up to 24 hours.
+Example: require output after input, then 300 ms of idle output:
 
   seq=$(backmux send app -k Down --seq)
   backmux wait app --since "$seq" --idle 300
 
-On an --rm process, wait returns once the process is removed, so its name is
-free; for a minute after that, wait still reports how it exited.
+For --rm processes, exit waits allow time for record removal. An exit note
+keeps the recorded code available to wait for one minute after removal.
 
-Exit status: 0 the condition held, 7 timed out, 8 the process ended first.
-A successful exit wait returns 0 even if the program failed; its printed
-exit code is separate. To pass a job's result to CI, capture and use it:
+Exit status: 0 condition met, 7 timeout, 8 process ended before the condition.
+A successful exit wait returns 0 even if the program failed. Its printed
+exit code is separate; capture that value to propagate a job's result:
 
   code=$(backmux wait job)
   exit "$code"

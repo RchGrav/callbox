@@ -2,7 +2,7 @@
 
 [Docs index](index.md) | [Previous: Store](store.md) | Related: [Launcher](launcher.md), [backmux identity](backmux-identity.md)
 
-Backmux records process identity at launch and checks it before signaling a local process. A process ID or name selects a record, which must match the live process before Backmux sends a signal. From another PID namespace, Backmux asks the process's broker to signal its own program instead.
+Backmux records process identity at launch and checks it before signaling a local process. A Backmux process ID or name selects a record, which must match the live process before Backmux sends a signal. From another PID namespace, Backmux asks the process's broker to signal its own program instead.
 
 An unavailable process or lock probe does not mean that a process has exited. When status is `Unknown`, its console may still be reachable through the authenticated broker connection.
 
@@ -10,7 +10,7 @@ An unavailable process or lock probe does not mean that a process has exited. Wh
 
 A record stores:
 
-- `pid`: the program's process. With `--restart`, the restart supervisor.
+- `pid`: the program leader's PID, or the restart supervisor's PID under `--restart`.
 - `pgid`: the process group to signal.
 - `sid`: the session the program's process created with `setsid`.
 - `boot_id`: a boot marker, when one can be read.
@@ -25,7 +25,8 @@ A probe can fail: the process may already be gone, permission may be denied, or 
 
 ## State evaluation
 
-`hold_eval_state` computes a process's state from its record and available liveness evidence each time a command asks: the local process table, or the log lock across PID namespaces. Nothing stores the result. The record's `state` field holds only what the launcher (`running`) or an exit stamp (`exited`) wrote.
+`hold_eval_state` computes a process's state from its record and available liveness evidence each time a command asks: the local process table, or the log lock across PID namespaces. Nothing stores the result. The record's `state` field records launch or exit information; it is
+separate from the state evaluated by each command.
 
 ```mermaid
 flowchart TD
@@ -81,11 +82,12 @@ Notes on the diagram:
 - **Leader present:** the leader's stat is readable and it is not a zombie, or `kill(pid, 0)` succeeds or fails with `EPERM`.
 - **Process identity:** compare the recorded starttime, or the executable device and inode when no starttime was recorded and the executable can be inspected.
 
-**Zombie leader.** A zombie leader is not automatically done. The process-group leader can exit while useful descendants remain, which is common with launchers and shell wrappers. If live members of the same group and session remain, the process is running; if the group is empty or holds only zombies, it has exited.
+**Zombie leader.** A zombie leader does not establish that the process group has exited. The process-group leader can exit while useful descendants remain, which is common with launchers and shell wrappers. If live members of the same group and session remain, the process is running; if the group is empty or holds only zombies, it has exited.
 
-**Another PID namespace.** Some sandboxes give each shell its own PID namespace. There the recorded pid means nothing, and may even name an unrelated process, so it is never consulted. The filesystem is shared, and `flock` locks are held in the kernel, so a lock on the log can still show that the process is alive.
+**Another PID namespace.** Some sandboxes give each shell its own PID namespace. A PID recorded in another namespace may refer to no process or an unrelated
+process in the current namespace, so local signaling does not use it. The filesystem is shared, and `flock` locks are held in the kernel, so a lock on the log can still show that the process is alive.
 
-These processes hold the lifetime lock: the waiter or restart supervisor of a process started under the console fallback (Unix sockets denied, or `BACKMUX_CONSOLE_TRANSPORT=fifo`), and a broker whose endpoint is a FIFO. This includes both TTY processes (`-t`) and processes with input on a pipe (`-i`). These processes record `liveness_lock: true`.
+These processes hold the lifetime lock: the waiter or restart supervisor of a process started under the console fallback (Unix sockets denied, or `BACKMUX_CONSOLE_TRANSPORT=fifo`), and a broker whose endpoint is a FIFO. This includes both terminal processes (`-t`) and processes with input on a pipe (`-i`). These processes record `liveness_lock: true`.
 
 The probe has three outcomes: held, successfully checked and unlocked, or unavailable. A held lock shows the process is running. An unlocked lifetime lock gives `Exited (?)` when no exit was recorded. A missing or unreadable log, or an error from the lock operation, gives `Unknown`; it does not establish that a live supervisor released its lock.
 
@@ -110,7 +112,7 @@ Purge uses these states. Signaling checks the live process itself (below); the s
 
 - A `-t` or `-i` process is signaled through its broker, which can see its program. This can work even when this shell reports `Unknown` because it cannot inspect the log lock.
 - A plain `-d` or `-dw` process has no broker to ask, so it is refused (exit 3).
-- `--print` is refused (exit 3), because the pid means nothing in this shell.
+- `--print` is refused (exit 3), because the recorded PID is not a valid local signal target.
 - A failed broker connection is reported as a failure to reach the process, not as proof that it exited.
 
 Otherwise `validate_signal_target` checks the live process before any signal:
@@ -143,7 +145,7 @@ Afterwards, `hold_report_session_escapees` warns about processes still in the se
 
 ## Why this design works
 
-PID reuse is the core hazard. Backmux has no daemon to keep live state, so it records identity at launch and combines it with live probes before every signal. When the machine state is ambiguous, refusing is the safe result.
+PID reuse is the core hazard. Backmux has no central daemon to keep live state, so it records identity at launch and combines it with live probes before every signal. When the machine state is ambiguous, refusing is the safe result.
 
 ## Implementation map
 

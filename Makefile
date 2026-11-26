@@ -77,8 +77,8 @@ obj/%.o: src/%.c Makefile
 	@mkdir -p $(dir $@)
 	$(CC) $(ALL_CPPFLAGS) $(DEPFLAGS) $(CFLAGS) -c -o $@ $<
 
-# A static link uses its own build of paths.c that never references getpwuid
-# (glibc cannot load NSS modules into a static binary, and warns).
+# Static builds use a paths.c variant that reads /etc/passwd instead of
+# calling getpwuid, avoiding dependence on dynamically loaded NSS modules.
 STATIC_OBJS := $(if $(strip $(STATIC_LDFLAGS)),$(filter-out obj/platform/paths.o,$(OBJS)) obj/platform/paths-static.o,$(OBJS))
 
 obj/platform/paths-static.o: src/platform/paths.c Makefile
@@ -114,10 +114,8 @@ screen-test: tests/screen_test.c src/screen/screen.c src/console/compose.c src/c
 	$(CC) $(ALL_CPPFLAGS) $(TEST_CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o screen-test tests/screen_test.c src/screen/screen.c src/console/compose.c src/term/line.c $(VTERM_OBJS)
 	@./screen-test
 
-# The test build: only it honors HOLD_TEST_SYSTEM_STATE_DIR, so run as root
-# (the root CI lane) a release build wrote into the machine's real system
-# store. It used to pass by reusing a test-flag backmux-dynamic the suite's
-# build test left in the tree; that test now builds in a copy.
+# Use the test binary so root-run tests honor HOLD_TEST_SYSTEM_STATE_DIR
+# instead of writing into the real system store.
 test-040: backmux-test
 	@HOLD_BIN=./backmux-test bash tests/test_040_dockerish.sh
 
@@ -126,9 +124,9 @@ print-version:
 
 check: test
 
-# Full local CI mirror (one command, same rigor as GitHub CI): static + dynamic
-# -Werror builds, the regression suite, ASan/UBSan, cppcheck, and
-# the layer-dependency lint. Skips (visibly) only what the local toolchain lacks.
+# Local CI checks: default-link and dynamic -Werror builds, regression tests,
+# ASan/UBSan, cppcheck, and dependency lint. Platform linking differs and
+# missing tools are reported; separate CI lanes are described in docs/CI-PARITY.md.
 ci:
 	@bash scripts/ci.sh
 

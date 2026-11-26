@@ -220,7 +220,7 @@ int hold_console_peer_uid(int fd, uid_t *uid_out) {
 }
 
 /* The connecting process's pid (Linux SO_PEERCRED, macOS LOCAL_PEERPID);
- * used to verify a backmux msg sender's claimed call. ENOTSUP elsewhere. */
+ * used to verify a backmux msg sender's claimed process. ENOTSUP elsewhere. */
 int hold_console_peer_pid(int fd, pid_t *pid_out) {
 #if defined(__linux__)
     struct ucred cred;

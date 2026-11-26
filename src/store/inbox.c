@@ -3,9 +3,9 @@
 #include "backmux/core.h"
 #include "backmux/store.h"
 
-/* Operator inboxes: where replies go for an agent that runs outside any call
+/* Operator inboxes: where replies go for an agent that runs outside any process
  * (a Claude Code session in a plain terminal, a script). Such a sender has no
- * call to type a reply into, so it gets a name like any call's and an inbox
+ * process to type a reply into, so it gets a name like any process's and an inbox
  * under that name in the store's inbox/ directory:
  *
  *   <name>.who    who the name belongs to (the harness process: name, pid,

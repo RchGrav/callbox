@@ -1,4 +1,11 @@
 usage: backmux delete <name|id>
 
-Remove a process and its record - saved or not - so its name is free again. It
-never stops a program: a running process is ended first with backmux end.
+Remove a process record and its log, saved screens, message history, and
+console artifacts, including a saved profile. This releases its name.
+
+The initial check rejects a target reported as running. Removal then uses
+the same path as purge TARGET --force: an Unknown record can be removed,
+and a process found running on the next check is stopped before removal.
+
+Use backmux end first to request shutdown. Removing an Unknown record does
+not establish that the program has ended.

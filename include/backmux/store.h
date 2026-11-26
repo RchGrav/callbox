@@ -36,8 +36,8 @@ int hold_reserve_run_id(const struct hold_store *store,
                         int64_t start_unix_ns,
                         char out_id[ID_STR_LEN]);
 void hold_abort_run_reservation(const struct hold_store *store, const char *id);
-/* Redial's claim on an existing call: the same .<id>.reserve, held under an
- * exclusive flock for the whole launch. A second redial of the call waits
+/* Redial's claim on an existing process: the same .<id>.reserve, held under an
+ * exclusive flock for the whole launch. A second redial of the process waits
  * here, then sees the first one's record, so one id never gets two
  * programs (checking "not running" and launching are otherwise separate
  * steps, and a burst of redials all passed the check). A lock, not O_EXCL
@@ -48,14 +48,13 @@ void hold_abort_run_reservation(const struct hold_store *store, const char *id);
 int hold_claim_existing_run(const struct hold_store *store, const char *id);
 void hold_release_existing_run(const struct hold_store *store, const char *id, int fd);
 /* For purge, under the store lock: true while a redial is launching the
- * call (its claim is held). Why: the redial wrote its running record only at
- * the end of the launch, so a purge in between removed a call that was
+ * process (its claim is held). Why: the redial wrote its running record only at
+ * the end of the launch, so a purge in between removed a process that was
  * starting. An unheld claim is a dead launcher's litter, removed here, since
  * the record it belongs to is about to go and nothing else would. */
 bool hold_existing_run_claimed(const struct hold_store *store, const char *id);
-/* The running-record base builder: stamps every field the launch and adoption
- * paths set identically (ids, group identity, timestamps, state, owner, log).
- * Callers add their own provenance (recipe/observed/boot/name/console). */
+/* Initialize common launch fields: IDs, group identity, timestamps, state,
+ * owner, and log path. Callers add recipe and observed metadata. */
 void hold_record_init_running(struct hold_run_record *r,
                               const char *id,
                               const char *log_path,
@@ -90,7 +89,7 @@ int hold_settings_path(const char *home, char *out, size_t n);
 int hold_settings_get(const char *home, const char *name, char *value, size_t n);
 int hold_settings_put(const char *home, const char *name, const char *value);
 
-/* Operator inboxes (inbox.c): replies for a sender outside any call, under a
+/* Operator inboxes (inbox.c): replies for a sender outside any process, under a
  * generated name, in <store base>/inbox/. A name and its messages expire after
  * HOLD_INBOX_TTL_S unused. find: 0 and the name already given to key, 1 none
  * (expired names are removed on the way). claim: give name to key (fails with

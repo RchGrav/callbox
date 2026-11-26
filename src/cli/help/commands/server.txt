@@ -1,12 +1,14 @@
 usage: backmux server [--name NAME] [-w] [options] <program> [<args>...]
 
-Run a program in the background, its output going to a log: a server, a
-build, a job. Not a TTY: backmux tail NAME follows its output, and it never
-becomes a pane or gets a floating window.
+Start a background process with output captured in a log and no terminal or
+input console. Use tail to follow new output, or logs to read captured output.
+Server processes cannot be attached as panes or receive input with send/msg.
 
-  -w    keep its exit code: a small waiter stays and records how it ended
-        (without -w nothing of backmux stays behind; list shows only that
-        it has stopped)
+  -w    retain a waiter to record the program's exit code for backmux wait
 
-Options: --name, -e, --env-file, --rm, --restart. Docker's spelling:
-backmux run -d.
+A plain server launch without -w, --rm, or an active restart policy leaves
+no Backmux helper and does not record an exit code. --rm and active restart
+policies also retain exit tracking.
+
+Options include --name, -e KEY=VALUE, --env-file, --rm, and --restart.
+Equivalent launch: backmux run -d. See backmux help launch and help service.

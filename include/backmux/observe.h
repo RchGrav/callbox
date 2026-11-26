@@ -5,7 +5,7 @@
 #include "backmux/config.h"
 #include "backmux/types.h"
 
-/* Live observation of a call's process group, orchestrated over platform's
+/* Live observation of a process's process group, orchestrated over platform's
  * /proc-shaped primitives (never signals or ptrace); a no-op that reports
  * "nothing observed" on platforms without /proc. This is the one
  * implementation behind the PORTS column, `backmux ports`, and `backmux stats`. */
@@ -17,7 +17,7 @@ struct hold_port_list {
 };
 void hold_port_list_free(struct hold_port_list *list);
 
-/* Collect the non-zombie pids that belong to the call's process group
+/* Collect the non-zombie pids that belong to the process's process group
  * (matching both pgid and sid). Caller frees *pids_out with free(). *denied is
  * set true when /proc exists but the pids' details are unreadable. */
 int hold_observe_run_pids(const struct hold_run_record *r,
@@ -25,9 +25,9 @@ int hold_observe_run_pids(const struct hold_run_record *r,
                           size_t *count_out,
                           bool *denied);
 
-/* Collect the listening sockets held by the call's process group: tcp/tcp6 in
+/* Collect the listening sockets held by the process's process group: tcp/tcp6 in
  * the LISTEN state and bound udp/udp6. Caller frees the list. *denied is set
- * true when the pids' fd tables could not be read (another user's call). */
+ * true when the pids' fd tables could not be read (another user's process). */
 int hold_observe_run_ports(const struct hold_run_record *r,
                            struct hold_port_list *out,
                            bool *denied);

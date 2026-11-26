@@ -90,13 +90,9 @@ struct hold_screen *hold_screen_new(int rows, int cols) {
     vterm_screen_set_callbacks(s->vs, &screen_callbacks, s);
     vterm_screen_reset(s->vs, 1);
     s->live = true;
-    /* The 16 ANSI colors: VS Code's Dark+ terminal palette instead of
-     * libvterm's saturated defaults, whose blue (0,0,224) is near-invisible
-     * on the screenshot background (1.8:1). Every color but black reads at
-     * 3:1 or better there, and blue also works as a background behind light
-     * text (lazygit's selection). Real terminals differ anyway; this one is
-     * common and balanced (bright white made pure white, to differ from
-     * white). 256-color and truecolor values are untouched. */
+    /* Set the first 16 ANSI palette entries for screen rendering. Bright white
+     * is distinct from normal white; other indexed and truecolor values
+     * retain their existing values. */
     static const uint8_t palette[16][3] = {
         {0x00, 0x00, 0x00}, {0xcd, 0x31, 0x31}, {0x0d, 0xbc, 0x79}, {0xe5, 0xe5, 0x10},
         {0x24, 0x72, 0xc8}, {0xbc, 0x3f, 0xbc}, {0x11, 0xa8, 0xcd}, {0xe5, 0xe5, 0xe5},

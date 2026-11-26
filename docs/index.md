@@ -12,6 +12,7 @@ New to Backmux? [Install it](install.md), then run the
 
 | Goal | Terminal help | Guide |
 | --- | --- | --- |
+| Navigate panes, windows, and chat | `backmux help panes` | [Interactive controls](backmux.md) |
 | Troubleshoot a terminal UI | `backmux help tui` | [Drive a TUI](../src/cli/help/guides/tui.txt) |
 | Debug with your coding agent while using the app yourself | `backmux help share` | [Share a terminal app](../src/cli/help/guides/share.txt) |
 | Launch another agent and check its work | `backmux help agents` | [Work with another agent](../src/cli/help/guides/agents.txt) |
@@ -38,7 +39,9 @@ is available without a network connection or separate documentation files.
 
 ## Understand the design
 
-- [Backmux identity](backmux-identity.md): the product model and command vocabulary.
+- [Product model](backmux-identity.md): managed processes, launch modes, and command groups.
+- [Interactive controls](backmux.md): pane and window navigation, resizing, movement, and help.
+- [Glossary](glossary.md): definitions and consistent product terminology.
 - [Docker familiarity contract](docker-familiarity-contract.md): shared flag and table conventions.
 - [Console](console.md): terminal and pipe-backed processes, attaching, and detaching.
 - [Screens](screen.md): screen state, the control protocol, snapshots, and messages.
@@ -49,7 +52,7 @@ is available without a network connection or separate documentation files.
 - [Implementation invariants](SPEC.md): the on-disk contract.
 - [CI parity](CI-PARITY.md): local checks and their CI counterparts.
 - [Help maintenance](help.md): page organization, source evidence, and validation.
-- [Release readiness](release-readiness.md): evidence and limits of the onboarding review.
+- [Historical release review](release-readiness.md): recorded evidence and limits of the 2026-11-23 review.
 
 ## Find the implementation
 

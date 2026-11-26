@@ -1,22 +1,26 @@
 usage: backmux purge [<target>|all] [-a|--all] [-s|--system] [-u|--user]
                      [--force]
 
-Remove ended processes and their stored records, logs, and screens.
-Without a target, sweep eligible processes; with a target, remove that process.
+Remove process records and their stored logs, screens, and message history.
+Without a target, remove eligible ended records from the selected store.
+With a target, remove that process's record.
 
-  -a, --all        include stale processes (widens state, not store scope)
-  -u, --user       sweep personal processes (the default)
-  -s, --system     sweep root-managed processes; invokes sudo if needed
-  --force          with a target: remove it even if saved or running
-                   without a target: include stale processes, as -a does
+  -a, --all        include stale records; does not change store selection
+  -u, --user       select the invoking user's store (the default)
+  -s, --system     select the root-managed store; invoke sudo if needed
+  --force          with a target: allow removal when saved or running
+                   without a target: include stale records, as -a does
 
-With a target, --force stops a running process before removing it. A sweep
-never removes saved or running processes, even with --force.
+TARGETED REMOVAL
+With a target, --force stops a running process before removing its record.
+An ordinary sweep preserves saved profiles and running processes, including
+when --force is used without a target.
 
-purge all ends every running process that is not saved and removes them all,
-with the ended ones, and names the processes it ended. Saved processes are kept:
-backmux save is how a process is kept.
+REMOVE ALL UNSAVED PROCESSES
+purge all stops running, unsaved processes and removes unsaved records in
+the selected store. It reports the number stopped and records removed.
+Saved profiles are preserved.
 
-Ordinary purge leaves saved processes alone. --name at launch does not save
-a process; save and rename do. Removing a record frees its name.
-Aliases: rm, prune, drop. To stop a process and retain its record, use end.
+--name assigns a name at launch; it does not save the profile. save and
+rename mark profiles as saved. Removing a record releases its name.
+Aliases: rm, prune, drop. Use end to stop a process without requesting removal.

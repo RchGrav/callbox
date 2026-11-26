@@ -4,9 +4,9 @@
 #include "backmux/console_internal.h"
 
 /* Client side of the broker's control protocol (see console_internal.h):
- * magic, one be32-length request, one be32-length reply. Blocking; the
- * broker bounds every wait it serves, so a reply always comes or the socket
- * closes. */
+ * magic, one be32-length request, one be32-length reply. Reads block until
+ * the broker replies or the connection closes. A wait without a timeout
+ * can remain pending indefinitely. */
 
 static int read_full(int fd, void *buf, size_t n) {
     unsigned char *p = buf;

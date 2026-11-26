@@ -1,92 +1,100 @@
-backmux help launch - every flag for starting a process
+backmux help launch - launch modes and options
 
   backmux call|agent|server|detach [options] PROGRAM [ARGS...]
   backmux shell [options] [SHELL [ARGS...]]
-  backmux [options] [--] PROGRAM [ARGS...]      (Docker's form; also run ...)
-  backmux [options] CALL
+  backmux [options] [--] PROGRAM [ARGS...]      (also backmux run ...)
+  backmux [options] TARGET
 
-The verbs say how it runs: call (attached terminal), agent (the same, with
-messages formatted for an agent), server (background, a log; -w keeps its
-exit code), detach (background terminal). After a verb the next word is
-always the program, and -d/-i/-t are refused: the verb already said it.
+LAUNCH COMMANDS
+  call       attached terminal process
+  agent      attached terminal process with agent message formatting
+  server     background process with a log; -w records its exit code
+  detach     detached terminal process
+  shell      attached shell; see backmux help shell
 
-Put options before PROGRAM; everything after it is passed to that program.
--- forces a fresh program launch, even if its name is a Backmux command or
-an existing process. Shell expressions need an explicit shell: sh -c '...'.
-A lone CALL reconnects if running, or restarts its recorded command and mode
-if ended. A running process without a console is followed through its log.
+Put launch options before PROGRAM; subsequent arguments go to the program.
+After call, agent, server, or detach, the next non-option argument is always
+the program. These commands select the launch mode and reject -d/-i/-t;
+-w is accepted only by server.
 
-CHOOSE A MODE
-  No session flags: run attached on a terminal (PTY), as backmux call does.
-  In a script, output streams with terminal line endings, stderr merged.
-  Use -i for pipe input. A PTY is a virtual terminal for the program.
+In the bare form, -- forces a program launch even if its name matches a
+Backmux command or process. Shell expressions require a shell: sh -c '...'.
+A lone TARGET reconnects to a running process, or restarts an ended one
+using its recorded settings. A running process without an input console is
+followed through its log.
 
-  -d, --detach     return immediately with the process ID on stdout
-  -w, --wait       keep an exit-code waiter; with -d, launch still returns now
-  -t, --tty        give the program a terminal screen
-  -i, --interactive
-                   keep input open; without -t, relay it through a pipe
+MODE FLAGS
+Without mode flags, launch an attached terminal process on a pseudoterminal
+(PTY). In a script, its output streams with terminal line endings and merged
+stdout/stderr. Use -i without -t for pipe input.
 
-  -it              attached terminal (backmux call)
-  -dt              detached terminal; inspect and control it with peek/send
-  -d               detached process, no terminal or recorded exit code
-  -dw              detached process with a recorded exit code
-  -di              detached pipe input; attach can feed it later
+  -d, --detach       return immediately; print the Backmux process ID
+  -w, --wait         retain exit tracking; with -d, launch still returns now
+  -t, --tty          give the program a pseudoterminal
+  -i, --interactive  keep input open; without -t, use a pipe
 
-  Pipe-input processes also support peek, send, and msg. Their screen models
-  the captured output, but the program itself does not have a terminal.
+  -it    attached terminal process (call)
+  -dt    detached terminal process (detach)
+  -d     background process without recorded exit status (plain server)
+  -dw    background process with recorded exit status (server -w)
+  -di    detached pipe-input process; attach can supply input later
 
-  Terminal and pipe-input processes record exit codes. --rm and active restart
-  policies also retain a waiter. Plain -d alone leaves no Backmux helper.
+Terminal and pipe-input processes support peek, send, and msg, and record
+exit codes. Pipe-input mode requires no active restart policy; it provides
+a screen model without a terminal.
+--rm and active restart policies also retain exit tracking. Plain -d without
+those options leaves no Backmux helper.
 
-SET UP THE PROGRAM
-  --name NAME      assign a name (one is generated otherwise)
-                   Names stay reserved after exit until purge; --name alone
-                   does not protect a record from purge. save and rename do.
-  --size COLS ROWS set terminal dimensions, each 1-1000; COLSxROWS also works
-                   Default: --size, then saved detach-size for detached
-                   terminals, then invoking terminal size, then 80 24.
+PROGRAM SETTINGS
+  --name NAME      assign a name; otherwise generate one. Names remain
+                   reserved until record removal. Naming does not save a
+                   profile; save and rename do.
+  --size COLS ROWS set dimensions, each 1-1000; COLSxROWS also works.
+                   Precedence: --size, saved detach-size for detached
+                   terminals, invoking terminal size, then 80 24.
   -e, --env KEY=VALUE
                    set an environment variable; repeat for more variables
-  --env-file FILE  read KEY=VALUE lines from a file
-  --rm             remove the record, log, and screens when the process ends
-  --restart POLICY no (default), always, unless-stopped, on-failure[:N]
-                   Active policies run without a PTY; they cannot use -t.
+  --env-file FILE  read KEY=VALUE entries from a file
+  --rm             remove the record, log, and saved screens after exit
+  --restart POLICY
+                   no (default), always, unless-stopped, or on-failure[:N].
+                   Active policies require a non-terminal process.
   --restart-delay SECONDS
-                   fixed delay between restarts, 0 for none; requires an
-                   active policy. Default: 1 s, doubling to 30 s, reset to
-                   1 s after a run of at least 10 s.
+                   set a fixed delay for an active restart policy; 0 means
+                   no delay. Default: 1 s, doubling to 30 s; reset after
+                   a run lasting at least 10 s.
 
-CONTROL AN ATTACHED CALL
-  Ctrl-C           send the interrupt to the program
-  Ctrl-Space q     detach; the process keeps running
-  Ctrl-D           end pipe input with -i
+ATTACHMENT AND LOGS
+  Ctrl-Space q     detach the active pane; its process keeps running
+  Ctrl-Space ?     show keyboard shortcuts; see backmux help panes
+  Ctrl-C           send interrupt input to the attached program
+  Ctrl-D           with pipe input, submit buffered input or signal EOF
   --detach-keys KEYS
-                   change detach keys (default ctrl-space,q); one key such
-                   as ctrl-] detaches immediately. Panes and chat need the
-                   default keys: Ctrl-Space, then a key (Ctrl-Space ? lists
-                   them).
-  -f, --tail NAME  follow a process's new log output, without attaching or
-                   redial; Ctrl-C stops following, leaving it running
+                   set the detach sequence (default: ctrl-space,q).
+                   With two keys, the first is also the pane/chat prefix.
+                   A single key, such as ctrl-], detaches immediately.
+                   Other sequence lengths provide detach only.
+  -f, --tail NAME  follow new log output without restarting the process;
+                   Ctrl-C stops following and leaves the process running
 
 COMMON OPTIONS
-  --quiet          suppress status notes on stderr, keeping data on stdout
-  --system         select root-managed state; actions require root
+  --quiet          suppress normal status notes on stderr
+  --system         request the root-managed store; see help system for routing
   -h, --help       show help (also backmux COMMAND --help)
   -V, --version    print the version
 
-Value options accept --flag=value. Every PTY process gets TERM=xterm-256color,
-whatever your own TERM is; -e TERM=... sets another. The detach-size
-setting applies only to new detached terminal processes; see backmux config -h.
+Launch value options accept --flag=value. Terminal processes default to
+TERM=xterm-256color; -e TERM=... overrides it. Saved detach-size applies only
+to new detached terminal processes; see backmux help config.
 
 COMPATIBILITY
-  --console        start a detached terminal (the older spelling of -dt)
-                   This launch flag differs from the console command, which
-                   is an alias for attach.
+  --console        start a detached terminal process (equivalent to -dt).
+                   The console command is a separate alias for attach.
 
-Backmux runs host programs with the invoker's rights. It does not provide
-container images, port publishing, volume mounts, or capability management.
-The program normally starts in your current directory; a launch under sudo
-starts in /. Pass an explicit working directory to the program when needed.
+Backmux launches host programs with the invoker's privileges. It does not
+provide container images, port publishing, volume mounts, or capability
+management. Programs normally start in the current working directory;
+launches under sudo start in /. Use a shell or program option to change
+directories when needed.
 
-More: backmux help targets, backmux help system, backmux help scripting
+See backmux help targets, system, scripting, and aliases.

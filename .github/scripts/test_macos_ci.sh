@@ -31,7 +31,7 @@ run_native_smoke() {
     fail "macOS smoke launch failed"
   }
   id=$(printf '%s\n' "$out" | extract_call_id)
-  [ -n "$id" ] || { printf '%s\n' "$out" >&2; fail "macOS smoke did not print the 64-hex call id"; }
+  [ -n "$id" ] || { printf '%s\n' "$out" >&2; fail "macOS smoke did not print the 64-hex process ID"; }
 
   sleep 0.2
   env HOME="$home" ./backmux logs -p "$id" >"$tmp/logs.out"
@@ -42,29 +42,29 @@ run_native_smoke() {
   env HOME="$home" ./backmux inspect "$id" >"$tmp/inspect.json"
   grep -Fq '"name": "mac-smoke"' "$tmp/inspect.json" || {
     cat "$tmp/inspect.json" >&2
-    fail "macOS smoke inspect did not preserve the call name"
+    fail "macOS smoke inspect did not preserve the process name"
   }
   env HOME="$home" ./backmux list -a >"$tmp/list.out"
-  grep -Eq '^CALL ID[[:space:]]+USER[[:space:]]+COMMAND[[:space:]]+CREATED[[:space:]]+STATUS[[:space:]]+PORTS[[:space:]]+NAMES' "$tmp/list.out" || {
+  grep -Eq '^PROCESS ID[[:space:]]+USER[[:space:]]+COMMAND[[:space:]]+CREATED[[:space:]]+STATUS[[:space:]]+PORTS[[:space:]]+NAMES' "$tmp/list.out" || {
     cat "$tmp/list.out" >&2
-    fail "macOS smoke call table header is wrong"
+    fail "macOS smoke process table header is wrong"
   }
 
   env HOME="$home" ./backmux save mac-smoke 2>/dev/null
   if env HOME="$home" ./backmux purge mac-smoke >/dev/null 2>"$tmp/refusal.err"; then
-    fail "purge of a saved call unexpectedly succeeded"
+    fail "purge of a saved process unexpectedly succeeded"
   fi
   grep -Fq 'is saved' "$tmp/refusal.err" || {
     cat "$tmp/refusal.err" >&2
-    fail "saved-call purge refusal message missing"
+    fail "saved-process purge refusal message missing"
   }
   env HOME="$home" ./backmux end mac-smoke >/dev/null 2>&1 || true
   env HOME="$home" ./backmux purge mac-smoke --force >/dev/null 2>&1 ||
-    fail "purge --force of the saved call failed"
+    fail "purge --force of the saved process failed"
   rm -rf "$tmp"
 }
 
-# The screen verbs on a TTY call: -dt, wait --match, send, peek text and PNG,
+# The screen verbs on a TTY process: -dt, wait --match, send, peek text and PNG,
 # the saved final screen, and docker-wait exit codes.
 run_screen_smoke() {
   local tmp home h
@@ -78,7 +78,7 @@ run_screen_smoke() {
   h send scr hello --enter --wait 300 --timeout 10000 >/dev/null 2>&1 || true
   h wait scr --timeout 10000 >"$tmp/code" || fail "screen smoke: exit wait failed"
   [ "$(cat "$tmp/code")" = 3 ] || fail "screen smoke: exit code $(cat "$tmp/code"), want 3"
-  h peek scr >"$tmp/screen" || fail "screen smoke: peek of the ended call failed"
+  h peek scr >"$tmp/screen" || fail "screen smoke: peek of the ended process failed"
   grep -qx 'got:hello' "$tmp/screen" || { cat "$tmp/screen" >&2; fail "screen smoke: typed line missing"; }
   h peek scr --image "$tmp/scr.png" || fail "screen smoke: peek --image failed"
   head -c 8 "$tmp/scr.png" | od -An -c | grep -q 'P   N   G' || fail "screen smoke: image is not a PNG"

@@ -1,8 +1,8 @@
-backmux help agents - start an agent and give it work
+backmux help agents - launch agents and assign work
 
-Use this to delegate a review, investigation, or test run to another
-terminal-based agent. Each agent gets its own process and screen. Its harness
-must already be installed, configured, and able to work on your project.
+Delegate a review, investigation, or test run to a terminal-based agent.
+Each agent runs as a separate process with its own screen. Its harness must
+be installed, configured, and able to access the project.
 
 START THE TWO AGENTS
   In your terminal, start the agent you work with:
@@ -39,7 +39,7 @@ ASSIGN WORK AND CHECK PROGRESS
   submits the text. Delivery means the input reached the process, not that the
   task finished. Whether a busy harness queues input depends on that
   harness. Judge progress from its screen and completion from its report;
-  --idle only measures quiet output. wait with no condition waits for the
+  --idle measures output idle time. wait with no condition waits for the
   agent process to exit.
 
 STOP THE REVIEWER WHEN ITS WORK IS FINISHED
@@ -47,7 +47,7 @@ STOP THE REVIEWER WHEN ITS WORK IS FINISHED
     backmux end reviewer
     backmux purge reviewer
 
-  end sends TERM, then KILL after five seconds if needed. It retains the
+  end sends SIGTERM, then SIGKILL after five seconds if needed. It retains the
   record and log; purge removes them and frees the name. Keep the process
   instead if you want to inspect it later or start it again with backmux
   recall reviewer.

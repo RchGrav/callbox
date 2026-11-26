@@ -28,7 +28,7 @@ bool hold_current_boot_id(char *buf, size_t n) {
     /* No pseudo-file: kern.bootsessionuuid is macOS's boot id - new at each
      * boot, fixed until the next, whatever the clock does. Why not the boot
      * time (kern.boottime): macOS recomputes it when it adjusts the clock,
-     * so the same boot read differently later and every call turned stale. */
+     * so the same boot read differently later and every process turned stale. */
     char uuid[64];
     size_t ulen = sizeof(uuid);
     if (sysctlbyname("kern.bootsessionuuid", uuid, &ulen, NULL, 0) == 0 && ulen > 1 && ulen <= sizeof(uuid)) {

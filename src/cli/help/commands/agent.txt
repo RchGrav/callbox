@@ -1,12 +1,13 @@
 usage: backmux agent [--name NAME] [options] <program> [<args>...]
 
-backmux call, with messages formatted for an agent: each one arrives with a
-header naming the sender and how to reply,
+Start an attached terminal process with the agent setting enabled. Messages
+include the sender's name and a reply command before the message text:
 
-  [msg from NAME; reply: backmux msg NAME "..."] the text
+  [msg from NAME; reply: backmux msg NAME "..."] TEXT
 
-so the agent knows who wrote and can answer. agent is a setting, not a kind
-of process: backmux set NAME agent / backmux unset NAME agent turn it on and off
-from the next message, with no relaunch.
+The agent setting controls message formatting. Change it on a running or
+ended process with backmux set NAME agent or backmux unset NAME agent.
+The change applies to the next message without restarting the process.
 
-Options: as for backmux call. backmux help agents shows the whole loop.
+Launch options are the same as for call. See backmux help launch for options
+and backmux help agents for a delegation workflow.

@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# One entrypoint, same rigor everywhere. Runs the full local mirror of the
-# GitHub CI matrix against the current tree:
-#   version sync -> static -Werror build -> dynamic -Werror build ->
+# Run local build, regression, and analysis checks against the current tree:
+#   version sync -> default-link -Werror build -> dynamic -Werror build ->
 #   regression suite + Docker-shaped smoke -> ASan/UBSan build+test ->
 #   cppcheck -> layer-dependency lint.
 #
-# Runs identically on macOS and Linux. Each check that the local toolchain
-# genuinely lacks (e.g. cppcheck not installed) is reported as SKIPPED with a
-# visible notice, never silently. For full Linux parity from a Mac, run
-# scripts/linux.sh (which executes this script inside the committed CI image).
+# The Makefile selects platform-specific linking and the tests report missing
+# dependencies. Sanitizers and cppcheck are skipped with a notice when absent.
+# This does not run every GitHub CI lane: root, privilege-delegation, FIFO,
+# and macOS-specific jobs have separate entry points. scripts/linux.sh runs
+# these local checks in the repository's Linux CI container image.
 #
 # Env:
 #   CC                     compiler to use (default: cc)
-#   HOLD_REQUIRE_ROOT_TESTS=1   turn test skips into failures (set when root)
+#   HOLD_REQUIRE_ROOT_TESTS=1   require privilege-sensitive tests to run
 set -uo pipefail
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
@@ -39,7 +39,7 @@ step "version sync"
 must bash scripts/check_version_sync.sh
 mark_ok "version-sync"
 
-step "static, -Werror (CC=$CC_BIN)"
+step "default-link build, -Werror (CC=$CC_BIN)"
 must make clean
 must make CC="$CC_BIN" CFLAGS="$WERROR"
 mark_ok "static-build"

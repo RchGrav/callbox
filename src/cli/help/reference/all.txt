@@ -1,19 +1,21 @@
 backmux help all - complete command and option reference
 
 This reference includes launch options, target resolution, store selection,
-scripting conventions, and every command's full help. Command and help-topic
-aliases are listed at the end. Each section is also available on its own.
+scripting conventions, and every command's help. Command and help-topic
+aliases are listed at the end. Sections are also available individually.
 
-  backmux help COMMAND              one command (or backmux COMMAND --help)
-  backmux help launch               start, detach, and restart programs
+  backmux help COMMAND              command syntax, options, and behavior
+  backmux COMMAND --help            the same command reference
+  backmux help launch               launch modes, options, and restart policies
   backmux help targets              names, IDs, prefixes, and lookup order
   backmux help system               user and root-managed stores
   backmux help scripting            output conventions and exit codes
 
-Workflows, one guide each:
-  backmux help tui                  troubleshoot a terminal app
-  backmux help share                fix a TUI while a person watches and tests
-  backmux help agents               start an agent and give it work
-  backmux help messaging            exchange messages from any harness
-  backmux help service              run background services and CI jobs
-  backmux help aliases              Docker's words, and what they map to
+WORKFLOW GUIDES
+  backmux help panes                pane navigation, windows, layout, and chat
+  backmux help tui                  inspect and control a terminal application
+  backmux help share                collaborate with an agent on an application
+  backmux help agents               launch agents and assign work
+  backmux help messaging            send messages and receive inbox replies
+  backmux help service              run background services and capture results
+  backmux help aliases              Docker-style command and option mappings

@@ -1,6 +1,11 @@
-# Onboarding and 1.0 readiness review
+# Historical onboarding and 1.0 readiness review
 
 [Docs index](index.md) | [Help maintenance](help.md) | [CI parity](CI-PARITY.md)
+
+This is the recorded review of an earlier revision. Its command counts,
+architecture descriptions, and test results are historical; they do not
+validate the current branch. See [language audit](language-audit.md) for the
+current wording review.
 
 Reviewed on 2026-11-23, starting from `deb3ac3` (`v0.9.12`). This review
 covers the onboarding, help, command surface, messaging fixes, and validation

@@ -1,12 +1,13 @@
 usage: backmux shell [--name NAME] [--size COLS ROWS] [-e KEY=VALUE]... [--rm]
                      [shell [args...]]
 
-Your shell (or the one you name) on a PTY, under backmux: it keeps running
-when you detach, and recall brings it back as a shell. Backmux's flags come
-before the shell's name; every word after it is the shell's own (backmux
-shell zsh -l). With no shell named: an executable $SHELL, else your login
-shell, else /bin/sh.
+Start an attached shell on a pseudoterminal (PTY). It continues running after
+detachment. recall restarts an ended shell using its recorded launch settings.
 
-It is a process like any other: chat and panes are not part of it. Ctrl-Space
-c brings up chat over whatever you are attached to, and Ctrl-Space p a
-puts another process beside it (Ctrl-Space ? for the keys).
+Backmux options precede the shell name; subsequent arguments go to the shell.
+Example: backmux shell zsh -l
+If no shell is specified, use an executable absolute $SHELL path, then the
+account's login shell if available, then /bin/sh.
+
+Ctrl-Space c opens chat; Ctrl-Space p a attaches another terminal process
+as a pane. See backmux help panes for interactive controls.
