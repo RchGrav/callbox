@@ -319,15 +319,18 @@ void mux_open_floater(struct mux *m, enum floater f) {
 /* Dispatch a key following the prefix. Return 1 to detach the last pane.
  * Unrecognized command keys are consumed; repeating the prefix forwards it. */
 /* A view toggle changed: lay out again with the active pane still in view
- * (the view follows it to wherever the new arrangement put it). */
+ * (the view follows it to wherever the new arrangement put it). No notice:
+ * the panes move and the toggle's button shows on or off, so a line saying
+ * so only repeated it. */
 static void view_changed(struct mux *m, const char *what, bool on) {
+    (void)what;
+    (void)on;
     mux_relayout(m);
     if (m->active) {
         m->active->visible = false;
         mux_relayout(m);
         mux_set_focus(m, m->active);
     }
-    mux_notice(m, "%s %s", what, on ? "on" : "off: the base again");
 }
 
 int mux_command(struct mux *m, unsigned char key) {

@@ -237,7 +237,6 @@ the keys do. From the left:
 | `[N]` red | Ended processes | The launcher's Ended list |
 | Your chat name | Chat: highlighted while open, red with a count while messages wait | Open or put away chat |
 | Info | Highlighted while name bars are on | Name bars on or off |
-| Mode, notices | The prefix waiting, a mode, the last notice | Mode: the keys |
 | Minimap | Two braille cells: a dot for each window of the 3×3 grid in view | |
 | Window numbers | Windows with panes; those in view highlighted (1, 2 or 4) | Go to that window |
 | Layout | The layout loaded (`*`: changed since) | The Layouts panel |
@@ -246,6 +245,15 @@ the keys do. From the left:
 | Zoom, Lock | Highlighted while on, for the active pane | Toggle |
 | `?` | | The keys |
 | CPU, MEM, time | The machine's load and memory | |
+
+Nothing passing is printed on or above the bar, so its layout never
+changes: the prefix waiting or a mode lights the `?` button (in a mode, `?`
+shows that mode's keys under its name); a notice (an error, or a result
+with nothing else to show it) shows for three seconds in the blank part of
+the active pane's name bar. Toggles print nothing: their button's colour
+shows on or off. Why: printed text re-centered and shortened the buttons
+each time it came and went (Rich: "I don't see any point in messing up the
+layout to print text").
 
 Toggles have two looks, on and off. When the terminal is narrow, items take
 short forms (the least useful first), then the least useful go (the clock,

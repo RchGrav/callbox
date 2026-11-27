@@ -191,9 +191,11 @@ static void draw_name_bar(struct mux *m, struct pane *p, struct comp_want *want)
         lx += mux_put(m, row, lx, lend - lx, flags[i], &ST_NB_FLAG);
         lx++;
     }
-    if (focus && !mux_bar_on(m) && m->now < m->notice_until && lx + 4 < lend) {
+    if (focus && m->now < m->notice_until && lx + 4 < lend) { /* a notice: in the name bar's blank space */
+        int room = lend - lx - 2, nw = mux_text_cols(m->notice);
         lx += mux_put(m, row, lx, lend - lx, " ", &ST_NOTE);
-        lx += mux_put(m, row, lx, lend - lx - 1, m->notice, &ST_NOTE);
+        lx += mux_put(m, row, lx, nw > room ? room - 1 : room, m->notice, &ST_NOTE);
+        if (nw > room) lx += mux_put(m, row, lx, 1, "\xe2\x80\xa6", &ST_NOTE); /* cut, and shown to be */
         mux_put(m, row, lx, lend - lx, " ", &ST_NOTE);
     }
     /* right: what it runs, its CPU and memory - the least needed go first */

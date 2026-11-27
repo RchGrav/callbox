@@ -75,7 +75,7 @@ test_splits_make_the_shape_named() {
   mux_slots | grep -Eq '^1A:solo 1C:[a-z0-9_-]+ 1D:[a-z0-9_-]+ $' || { echo "E split right did not make ACD: $(mux_slots)" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   # D (bottom right) split down: no shape has room
   "$HOLD_BIN" send term -k C-Space -k - || return 1
-  "$HOLD_BIN" wait term --match 'no room to split down' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" wait term --match 'window full' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
   names=$(mux_slots | tr ' ' '\n' | sed -n 's/^1[CD]://p' | tr '\n' ' ')
   # shellcheck disable=SC2086
   "$HOLD_BIN" end solo term $names >/dev/null 2>&1 || true

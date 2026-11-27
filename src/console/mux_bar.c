@@ -65,22 +65,12 @@ void mux_draw_bar(struct mux *m) {
                        : m->mode == MODE_MOVE   ? "MOVE"
                        : m->swapping            ? "SWAP"
                                                 : NULL;
-    if (m->lead) {
-        char pk[16];
-        mux_key_label(m->prefix, pk);
-        b = ITEM(1, 12, &ST_MODE, BA_HELP, 0);
-        snprintf(b->full, sizeof(b->full), " %s \xe2\x80\xa6 ? keys ", pk);
-        snprintf(b->brief, sizeof(b->brief), " %s ", pk);
-    } else if (mode) {
-        b = ITEM(1, 12, &ST_MODE, BA_HELP, 0);
-        snprintf(b->full, sizeof(b->full), " %s  ? keys  Esc ", mode);
-        snprintf(b->brief, sizeof(b->brief), " %s ", mode);
-    }
-    if (m->now < m->notice_until) {
-        b = ITEM(1, 11, &ST_NOTE, BA_NONE, 0);
-        snprintf(b->full, sizeof(b->full), "%s", m->notice);
-        snprintf(b->brief, sizeof(b->brief), "%.30s", m->notice);
-    }
+    /* The prefix waiting or a mode lights the ? button (the keys); no text.
+     * Why: printed state moved and shortened the buttons each time it came
+     * and went, and colour says it without touching the layout (Rich:
+     * "Having the buttons change colors, fine"). In a mode, ? shows that
+     * mode's keys under its name. */
+    bool keys_lit = m->lead || mode;
     /* the windows in view: one, two side by side or stacked, or four */
     bool in_view[MUX_MAX_WINDOWS] = {false};
     for (int q = 0; q < 4; q++) in_view[((m->vy + q / 2) / 2) * 3 + (m->vx + q % 2) / 2] = true;
@@ -139,7 +129,7 @@ void mux_draw_bar(struct mux *m) {
     b = ITEM(2, 1, g_slide ? &ST_BTN_ON : &ST_BTN_OFF, BA_SLIDE, 0);
     snprintf(b->full, sizeof(b->full), " Slide ");
     snprintf(b->brief, sizeof(b->brief), " ~ ");
-    b = ITEM(2, 6, &ST_BTN_OFF, BA_HELP, 0);
+    b = ITEM(2, 6, keys_lit ? &ST_MODE : &ST_BTN_OFF, BA_HELP, 0);
     snprintf(b->full, sizeof(b->full), " ? ");
     if (m->sys_cpu >= 0) {
         b = ITEM(2, 5, &ST_BAR, BA_NONE, 0);
@@ -192,6 +182,8 @@ void mux_draw_bar(struct mux *m) {
             m->hits[m->nhits++] = (struct bar_hit){x[g], x[g] + w, it[i].act, it[i].arg};
         x[g] += w + 1;
     }
+    /* A notice is never drawn here: it goes in the blank space of the active
+     * pane's name bar (mux_draw.c), so the bar's layout never changes. */
 }
 
 /* A button on the bar: what its key does. */
@@ -226,8 +218,7 @@ void mux_bar_click(struct mux *m, enum bar_act act, int arg) {
     case BA_SLIDE: /* the slide on or off, kept in the config for next time */
         g_slide = !g_slide;
         if (hold_console_home()) (void)hold_settings_put(hold_console_home(), "slide", g_slide ? "on" : "off");
-        mux_notice(m, "slide %s", g_slide ? "on" : "off");
-        return;
+        return; /* the button shows on or off: no notice repeats it */
     case BA_HELP:
         m->fl = FL_NONE;
         m->help = true;

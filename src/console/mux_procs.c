@@ -311,7 +311,7 @@ void mux_new_terminal(struct mux *m, char split) {
         return;
     }
     if (split && !mux_can_split(m, split)) {
-        mux_notice(m, "no room to split %s here: a window holds four", split == 'r' ? "right" : "down");
+        mux_notice(m, "window full"); /* short: it shows in the name bar's blank space */
         return;
     }
     const char *shell = getenv("SHELL");
