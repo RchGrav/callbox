@@ -40,3 +40,19 @@ errors, documentation, examples, tests, scripts, comments, and docstrings.
    broader coverage than the review establishes.
 
 The help-source organization is documented in [docs/help.md](docs/help.md).
+
+# File size
+
+**No file over 500 lines.** Every first-party source, header, script and
+test file stays at or under 500 lines. Why: a file a person or an agent can
+read whole is one they can change safely; past that, a file holds more than
+one responsibility and its parts hide each other. Split by responsibility
+(one concern per file, in its layer; `make lint` still checks the layer
+direction), never mechanically at line 500.
+
+- Not first-party, so not counted: generated files marked "Do not edit"
+  (`src/screen/font_data.h`, `gen/`) and vendored code (`third_party/`).
+- Files over the limit when the rule began are listed in
+  `scripts/lint_lines.allow` with their size then as a ceiling. They may
+  shrink, never grow, and leave the list once split. Nothing new joins it.
+- `scripts/lint_lines.sh` checks it, in `make lint` and `scripts/ci.sh`.

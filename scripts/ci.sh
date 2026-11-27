@@ -89,6 +89,10 @@ step "layer dependency lint"
 must bash scripts/lint_layers.sh
 mark_ok "layer-lint"
 
+step "file size lint (500 lines)"
+must bash scripts/lint_lines.sh
+mark_ok "line-lint"
+
 make clean >/dev/null 2>&1 || true
 
 printf '\n================ ci.sh summary ================\n'

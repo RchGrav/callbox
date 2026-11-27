@@ -133,6 +133,7 @@ ci:
 # Layer dependency-direction lint, shared verbatim with the GitHub CI job.
 lint:
 	@bash scripts/lint_layers.sh
+	@bash scripts/lint_lines.sh
 
 -include $(wildcard obj/*.d obj/*/*.d obj-test/*.d obj-test/*/*.d)
 
