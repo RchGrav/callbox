@@ -1,7 +1,6 @@
 # Files over 500 lines when the rule began (2026-11-27): lines then, path.
 # They may shrink, never grow; a file leaves this list once it is split.
 7273 tests/test_backmux.sh
-2862 src/console/mux.c
 2025 src/console/chat.c
 1915 src/console/broker.c
 1298 src/runtime/start.c
