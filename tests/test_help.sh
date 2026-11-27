@@ -185,9 +185,12 @@ test_help_for_its_reader() {
   full=$(HOLD_TEST_HELP_READER=agent BACKMUX_ID="$id" BACKMUX_NAME=sleek_carbon "$HOLD_BIN" help --full agents) || return 1
   [[ $full == *"As an agent running inside backmux"* && $full == *"As an agent outside backmux"* && $full == *"An agent can:"* && $full != *"{"* && $full != *"Sleek Carbon"* ]] || { echo "--full: $full" >&2; return 1; }
 
-  # Detection: a harness among the parents (here sh, copied as claude).
-  cp /bin/sh "$TEST_ROOT/claude" || return 1
-  out=$(env -u HOLD_TEST_HELP_READER -u BACKMUX_ID -u BACKMUX_NAME "$TEST_ROOT/claude" -c '"$1" help; :' sh "$HOLD_REAL_BIN") || return 1
+  # Detection: a harness among the parents - here a script named claude, run
+  # by python3 as harnesses installed by npm or pip are (a copied /bin/sh
+  # would do on Linux, but macOS kills a renamed copy of a system binary).
+  printf '#!/usr/bin/env python3\nimport subprocess, sys\nsubprocess.run([sys.argv[1], "help"])\n' >"$TEST_ROOT/claude" || return 1
+  chmod +x "$TEST_ROOT/claude" || return 1
+  out=$(env -u HOLD_TEST_HELP_READER -u BACKMUX_ID -u BACKMUX_NAME "$TEST_ROOT/claude" "$HOLD_REAL_BIN") || return 1
   [[ $out == *"outside backmux"* && $out == *"Your Agent ID: "* ]] || { echo "a claude parent did not make an agent reader: $out" >&2; return 1; }
 }
 
