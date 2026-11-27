@@ -907,7 +907,7 @@ test_argument_edges() {
   "$HOLD_BIN" --help >/dev/null || return 1
   "$HOLD_BIN" help >/dev/null || return 1
   "$HOLD_BIN" help --help >/dev/null || return 1
-  "$HOLD_BIN" help targets | grep -q 'Backmux process ID, ID prefix, process name, or unique name prefix' || return 1
+  "$HOLD_BIN" help targets | grep -q 'target = place, Backmux process ID, ID prefix, process name, or unique' || return 1
   "$HOLD_BIN" help scripting | grep -q 'Exit codes:' || return 1
   "$HOLD_BIN" end -h | grep -q 'usage: backmux end' || return 1
   out=$("$HOLD_BIN" --version) || return 1
@@ -7091,6 +7091,7 @@ run_test "the grid: half-window slides, o and O, a new terminal at the next plac
 run_test "splits: the active pane halved, the window takes the shape named (AE, ACD)" test_splits_make_the_shape_named
 run_test "the slide: a move between windows passes through frames in between" test_slide_shows_frames_between
 run_test "layouts: save, load back (nothing ended, ended ones started), the default for backmux shell" test_layouts_save_load_default
+run_test "places name panes for every verb (peek 1B, msg 1b); a place that is also a name is refused" test_places_name_panes_for_every_verb
 run_test "backmux shell: a cleared screen of its own, chat up, the bar, f, Esc, the keys framed" test_shell_is_the_persons_screen
 run_test "chat lists running agent harnesses only; --agent remembers one; Assist asks for help with the app" test_chat_agents_only_and_assist
 run_test "the bar's counters open the launcher: attach, open a log, start again" test_bar_counters_launch

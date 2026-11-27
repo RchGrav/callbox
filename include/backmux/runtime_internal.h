@@ -44,6 +44,8 @@ int hold_count_name_prefix(const struct hold_store *store, const char *prefix, c
  * retains styles; redirected output is plain text. -1 if no frame is available. */
 int hold_print_final_screen(const struct hold_store *store, const char *id, FILE *f);
 enum run_state hold_eval_state(const struct hold_run_record *r, const char *current_boot);
+/* A place ("2C") on the terminal showing panes, as its process (mux_cmd.c). */
+int hold_place_to_id(const struct hold_store *user_store, const char *word, char *id, size_t idn, char *name, size_t nn);
 /* Whether a running process was launched in a different PID namespace.
  * Brokered processes can receive control requests through their console. */
 bool hold_call_elsewhere(const struct hold_run_record *r, const char *current_boot);

@@ -191,9 +191,11 @@ Ctrl-Space L opens the Layouts panel; the bar shows the layout's name, with
 default NAME` (or d in the panel) is what `backmux shell` opens with; its
 own shell joins it. See `backmux help layout`.
 
-**One way to name a pane.** `backmux swap` (and the compositor's own
-requests) take a place, a process name, or a process id, by the shortest
-prefix that is unique. An exact name or id wins; anything that could mean
+**One way to name a pane.** Every command takes a place as a target
+(`backmux msg 2c "..."`, `backmux peek 1B`), read from the terminal it runs
+in or the only one showing panes, as well as a process name or id by the
+shortest prefix that is unique (`backmux help targets`); `backmux swap` and
+the compositor's requests resolve the same way. An exact name or id wins; anything that could mean
 two things is refused, naming both. Ids start with a letter, so a word
 starting with a digit is never an id. Places only mean something on a
 particular terminal: run the command inside a pane when several terminals

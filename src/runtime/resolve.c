@@ -297,14 +297,14 @@ static int build_scope_candidates(const struct hold_invocation *inv,
     return n;
 }
 
-static int resolve_action_token(const struct hold_invocation *inv,
-                                const struct hold_store *current_user_store,
-                                const struct hold_store *system_store,
-                                const char *command,
-                                const char *token,
-                                bool report_missing,
-                                struct hold_resolved_target **targets_out,
-                                int *count_out) {
+static int resolve_name_or_id(const struct hold_invocation *inv,
+                              const struct hold_store *current_user_store,
+                              const struct hold_store *system_store,
+                              const char *command,
+                              const char *token,
+                              bool report_missing,
+                              struct hold_resolved_target **targets_out,
+                              int *count_out) {
     *targets_out = NULL;
     *count_out = 0;
 
@@ -373,6 +373,40 @@ static int resolve_action_token(const struct hold_invocation *inv,
     return report_missing ? hold_report_not_found(token) : 5;
 }
 
+/* A word as a target: a place on the terminal showing panes ("2C", as its
+ * name bars show it), or a process name or id (resolve_name_or_id). A place
+ * that is also a name or the start of an id is refused, not guessed. Why
+ * places: every verb takes the words a person sees on the screen. */
+static int resolve_action_token(const struct hold_invocation *inv,
+                                const struct hold_store *current_user_store,
+                                const struct hold_store *system_store,
+                                const char *command,
+                                const char *token,
+                                bool report_missing,
+                                struct hold_resolved_target **targets_out,
+                                int *count_out) {
+    const char *atom = NULL;
+    char place_id[ID_STR_LEN + 2], place_name[ALIAS_MAX_LEN + 2], resolved[ID_STR_LEN];
+    if (hold_parse_id_token(token, &atom) == ID_TOKEN_PLAIN &&
+        hold_place_to_id(current_user_store, atom, place_id, sizeof(place_id), place_name, sizeof(place_name)) == 0 &&
+        hold_resolve_record_id(current_user_store->record_dir, place_id, resolved, sizeof(resolved)) == 0) {
+        struct hold_resolved_target *other = NULL;
+        int nother = 0;
+        int orc = resolve_name_or_id(inv, current_user_store, system_store, command, token, false, &other, &nother);
+        free(other);
+        if (orc != 5) {
+            if (report_missing)
+                fprintf(stderr, "backmux: error: '%s' is both place %c%c (%s) and a process name or id: give more of it\n",
+                        token, atom[0], toupper((unsigned char)atom[1]), place_name);
+            return 6;
+        }
+        *targets_out = NULL;
+        *count_out = 0;
+        return append_resolved_target(targets_out, count_out, RESOLVE_USER_LOCAL, current_user_store, resolved, false) == 0 ? 0 : 3;
+    }
+    return resolve_name_or_id(inv, current_user_store, system_store, command, token, report_missing, targets_out, count_out);
+}
+
 int hold_resolve_action_token(const struct hold_invocation *inv,
                                 const struct hold_store *current_user_store,
                                 const struct hold_store *system_store,
@@ -398,94 +432,4 @@ bool hold_token_resolves(const struct hold_invocation *inv,
     int rc = resolve_action_token(inv, current_user_store, system_store, command, token, false, &targets, &count);
     free(targets);
     return rc != 5;
-}
-
-/* ---- a shortened word at the top level ------------------------------------
- *
- * `backmux <word>` where word is no verb: a process by its whole name or an id
- * prefix (redial), else a program on PATH, else - only then - the start of
- * a verb or of a process's name, when exactly one fits. In that order so that
- * nothing that worked before changes meaning: a whole name, an id, and a
- * program all still win; a shortened word is only ever what would have been
- * "command not found". Why at all: less typing (`backmux li`, `backmux
- * pee term`, `backmux hel` for helper), and never a guess - several fits are
- * listed instead, and nothing runs. */
-
-struct short_name_walk {
-    const char *prefix;
-    int matches;
-    char name[ALIAS_MAX_LEN + 1];
-    char shown[8][ALIAS_MAX_LEN + 1];
-};
-
-static int short_name_cb(const char *id, const char *path, struct hold_run_record *r, void *vctx) {
-    (void)id;
-    (void)path;
-    struct short_name_walk *w = vctx;
-    if (!r || !r->has_name || strncmp(r->name, w->prefix, strlen(w->prefix)) != 0) return 0;
-    for (int i = 0; i < w->matches && i < 8; i++)
-        if (!strcmp(w->shown[i], r->name)) return 0; /* the same name in both stores */
-    if (w->matches < 8) snprintf(w->shown[w->matches], sizeof(w->shown[0]), "%s", r->name);
-    snprintf(w->name, sizeof(w->name), "%s", r->name);
-    w->matches++;
-    return 0;
-}
-
-int hold_shorten_word(const char *word, bool lone, const char *const *verbs, size_t nverbs,
-                      const char **verb_out, char *name_out, size_t name_n) {
-    *verb_out = NULL;
-    if (name_out && name_n) name_out[0] = '\0';
-    if (!word || !*word || strchr(word, '/') || word[0] == '-') return 0;
-    struct hold_invocation inv;
-    if (hold_detect_invocation(&inv, false) != 0) return 0;
-    struct hold_store user_store, system_store;
-    memset(&user_store, 0, sizeof(user_store));
-    memset(&system_store, 0, sizeof(system_store));
-    (void)hold_init_system_store(&system_store);
-    const char *home = inv.euid_root && inv.have_sudo_user && inv.invoking_home[0] ? inv.invoking_home : getenv("HOME");
-    if (home && *home) (void)hold_init_user_store_from_home(home, &user_store);
-
-    /* What already has a meaning keeps it. */
-    if (lone && (hold_valid_alias(word) || hold_valid_id_prefix(word)) &&
-        hold_token_resolves(&inv, &user_store, &system_store, "start-existing", word))
-        return 0;
-    char found[HOLD_PATH_MAX];
-    if (hold_resolve_binary_path(word, found, sizeof(found)) == 0) return 0;
-
-    size_t wl = strlen(word);
-    const char *verb_hits[16];
-    size_t nverb_hits = 0;
-    for (size_t i = 0; i < nverbs; i++)
-        if (!strncmp(verbs[i], word, wl) && nverb_hits < 16) verb_hits[nverb_hits++] = verbs[i];
-    /* A process's name counts only for a lone word: with arguments after it,
-     * the word is a program to run (a redial takes no arguments). */
-    struct short_name_walk w = {word, 0, {0}, {{0}}};
-    if (lone && hold_valid_alias(word)) {
-        if (user_store.record_dir[0]) hold_for_each_record(user_store.record_dir, short_name_cb, &w);
-        if (inv.euid_root && system_store.record_dir[0]) hold_for_each_record(system_store.record_dir, short_name_cb, &w);
-    }
-    size_t total = nverb_hits + (size_t)w.matches;
-    if (total == 0) return 0;
-    if (total == 1) {
-        if (nverb_hits == 1) {
-            *verb_out = verb_hits[0];
-            return 1;
-        }
-        snprintf(name_out, name_n, "%s", w.name);
-        return 2;
-    }
-    fprintf(stderr, "backmux: error: ambiguous command or process-name prefix '%s':\n", word);
-    if (nverb_hits) {
-        fprintf(stderr, "  commands:");
-        for (size_t i = 0; i < nverb_hits; i++) fprintf(stderr, " %s", verb_hits[i]);
-        fprintf(stderr, "\n");
-    }
-    if (w.matches) {
-        fprintf(stderr, "  processes:");
-        for (int i = 0; i < w.matches && i < 8; i++) fprintf(stderr, " %s", w.shown[i]);
-        if (w.matches > 8) fprintf(stderr, " ... and %d more", w.matches - 8);
-        fprintf(stderr, "\n");
-    }
-    fprintf(stderr, "  use a longer prefix or the full name\n");
-    return 6;
 }

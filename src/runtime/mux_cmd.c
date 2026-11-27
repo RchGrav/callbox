@@ -62,6 +62,58 @@ struct mux_seen {
     bool has_here;
 };
 
+/* The pane list of the terminal showing panes (the one this runs inside, or
+ * the only one), read into buf. The terminal's pid, or -1 (nothing read). */
+static pid_t read_pane_list(const struct hold_store *user_store, char *buf, size_t n) {
+    char dir[HOLD_PATH_MAX];
+    if (hold_checked_snprintf(dir, sizeof(dir), "%s/chat", user_store->base) != 0) return -1;
+    const char *here = getenv("BACKMUX_ID");
+    DIR *d = opendir(dir);
+    struct dirent *e;
+    pid_t found = -1;
+    int count = 0;
+    while (d && (e = readdir(d))) {
+        int pid = 0;
+        char tail[8] = "", path[HOLD_PATH_MAX], text[16384];
+        if (sscanf(e->d_name, "mux.%d%7s", &pid, tail) != 1 || pid <= 1) continue;
+        if ((kill(pid, 0) != 0 && errno == ESRCH) || hold_checked_snprintf(path, sizeof(path), "%s/%s", dir, e->d_name) != 0) continue;
+        int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+        if (fd < 0) continue;
+        ssize_t got = read(fd, text, sizeof(text) - 1);
+        close(fd);
+        if (got < 0) continue;
+        text[got] = '\0';
+        count++;
+        if ((here && *here && strstr(text, here)) || found < 0) {
+            snprintf(buf, n, "%s", text);
+            found = pid;
+            if (here && *here && strstr(text, here)) count = 1; /* the one we are in decides */
+        }
+    }
+    if (d) closedir(d);
+    return count == 1 ? found : -1;
+}
+
+/* A place ("2C", either case) as the process at it, on the terminal showing
+ * panes: 0 and id/name set; 1 the word is not a place, no terminal says,
+ * or nothing is there. */
+int hold_place_to_id(const struct hold_store *user_store, const char *word, char *id, size_t idn, char *name, size_t nn) {
+    if (!word || strlen(word) != 2 || word[0] < '1' || word[0] > '9' || toupper((unsigned char)word[1]) < 'A' ||
+        toupper((unsigned char)word[1]) > 'E')
+        return 1;
+    char list[16384], want[3] = {word[0], (char)toupper((unsigned char)word[1]), 0};
+    if (read_pane_list(user_store, list, sizeof(list)) < 0) return 1;
+    for (char *line = strtok(list, "\n"); line; line = strtok(NULL, "\n")) {
+        char place[8], pid[ID_STR_LEN + 2], pname[ALIAS_MAX_LEN + 2];
+        if (sscanf(line, "%7s %65s %64s", place, pid, pname) == 3 && !strcmp(place, want)) {
+            snprintf(id, idn, "%s", pid);
+            snprintf(name, nn, "%s", pname);
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /* Ask the terminal showing panes: from inside a pane, that pane's terminal;
  * otherwise the one terminal with panes (several: the caller must say from
  * inside one). The request goes in chat/mux.<pid>.ask; the answer comes in

@@ -300,3 +300,26 @@ test_layouts_save_load_default() {
   [ ! -e "$f" ] || return 1
   "$HOLD_BIN" end y1 y2 y3 extra myshell sterm >/dev/null 2>&1 || true
 }
+
+# A place is a target for every verb: 1B is the process at 1B on the
+# terminal showing panes. A place that is also a process's name is refused,
+# not guessed; with no terminal showing panes, the word is just a word.
+test_places_name_panes_for_every_verb() {
+  local rc
+  "$HOLD_BIN" detach --name pa -- sh -c 'echo PA-UP; exec cat' >/dev/null || return 1
+  "$HOLD_BIN" detach --name pb -- sh -c 'echo PB-UP; exec cat' mark-pb >/dev/null || return 1
+  start_term term pa 120 30 || return 1
+  pick_pane term mark-pb || return 1
+  out_has 'PB-UP' "$HOLD_BIN" peek 1B || { echo "peek 1B did not reach pb" >&2; return 1; }
+  BACKMUX_ID= BACKMUX_NAME= "$HOLD_BIN" msg 1b 'to the place' >/dev/null 2>&1 || { echo "msg 1b failed" >&2; return 1; }
+  "$HOLD_BIN" wait pb --match 'to the place' --timeout 5000 >/dev/null || { echo "msg 1b did not reach pb" >&2; return 1; }
+  # a process named like a place: refused
+  "$HOLD_BIN" detach --name 1a -- sh -c 'exec cat' >/dev/null || return 1
+  rc=0; "$HOLD_BIN" info 1a >/dev/null 2>"$TEST_ROOT/amb.err" || rc=$?
+  [ "$rc" -eq 6 ] && grep -q "both place 1A (pa)" "$TEST_ROOT/amb.err" || { echo "a place and a name alike were not refused (rc=$rc)" >&2; cat "$TEST_ROOT/amb.err" >&2; return 1; }
+  # no terminal showing panes: 1a is the process named 1a
+  "$HOLD_BIN" end term >/dev/null 2>&1 || true
+  for rc in $(seq 1 30); do [ -z "$(mux_slots)" ] && break; sleep 0.1; done
+  out_has '^name: *1a$' "$HOLD_BIN" info 1a || { echo "with no panes shown, 1a is not the process 1a" >&2; "$HOLD_BIN" info 1a >&2; return 1; }
+  "$HOLD_BIN" end pa pb 1a >/dev/null 2>&1 || true
+}
