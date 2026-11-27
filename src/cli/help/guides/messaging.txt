@@ -8,13 +8,12 @@ PREPARE A RECEIVER
   This example uses an installed, configured Codex harness:
 
     backmux detach --name reviewer codex
-    backmux set reviewer agent
     backmux wait reviewer --idle 1000
     backmux peek reviewer
 
   Check that its prompt is ready. If it is already running as a process, use
-  that process's name instead (backmux set NAME agent if it was started as a
-  plain process). backmux list shows running processes, not inboxes.
+  that process's name instead. backmux list shows running processes, not
+  inboxes.
 
 SEND FROM A HARNESS OUTSIDE BACKMUX
   Run this in your existing harness's command tool:
@@ -53,11 +52,11 @@ WAIT FOR A REPLY OR FOLLOW THE CONVERSATION
   text before treating a message as the answer to a particular task.
 
 UNDERSTAND WHERE A MESSAGE GOES
-  Terminal and pipe-input processes receive message text as program input,
-  followed by Enter by default. The agent setting adds a sender/reply header;
-  without it, no header is added. set NAME agent and unset NAME agent change
-  the format for subsequent messages. Address messages to a person by their
-  chat name; the messages appear in their chat window (Ctrl-Space c).
+  Terminal and pipe-input processes receive a message as program input,
+  behind a header naming the sender and how to reply, followed by Enter by
+  default. backmux send types text as it is. Address messages to a person
+  by their chat name; the messages appear in their chat window
+  (Ctrl-Space c).
   server processes have no input console and refuse messages. Backmux delivers
   input; it does not manage a harness's work queue.
 

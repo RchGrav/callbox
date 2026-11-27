@@ -31,7 +31,6 @@ const struct hold_record_field hold_record_fields[] = {
     FH("chat_key", RF_INT, 0, recipe.chat_key, recipe.has_chat_key), /* backmux shell: lead key, then this */
     FH("lead_key", RF_INT, 0, recipe.lead_key, recipe.has_keys),     /* backmux shell: keys its broker reads */
     FH("detach_key", RF_INT, 0, recipe.detach_key, recipe.has_keys),
-    F("agent", RF_BOOL, 0, recipe.mode_agent),    /* messages formatted for an agent; absent = raw */
     SH("working", RF_ABS, recipe.working, recipe.has_working), /* recall working directory; absent = current directory */
     F("version", RF_INT, RF_REQ, version),
     S("id", RF_REQ, id),

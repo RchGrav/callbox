@@ -3,9 +3,17 @@
 [Docs index](index.md) | [Product model](backmux-identity.md) | [Shell and chat](shell.md) | [Glossary](glossary.md)
 
 Backmux attaches one terminal process initially. Panes are added when you
-select another running terminal process in the attach picker. The attach
-client composes the panes, help panels, and chat window; each process's
-broker continues to maintain its screen and handle control requests.
+select another running terminal process in the process launcher. The attach
+client composes the panes, name bars, the bar along the bottom, help panels,
+and the chat window; each process's broker continues to maintain its screen
+and handle control requests.
+
+`backmux shell` is the exception to "one process, plain attach": it opens on
+a cleared screen of its own (the alternate screen, so the lines from before
+come back on leaving), with the bar, the shell's name bar, and chat up with
+the keyboard left on the shell. Reattaching to a shell brings that back.
+Why: the shell is the one launch meant for a person rather than a script,
+and the bar is how the mouse reaches everything the keys do.
 
 This reference describes the controls in `src/console/attach.c` and
 `src/console/mux.c`. The terminal reference is `backmux help panes`.
@@ -20,7 +28,8 @@ sending either byte to the program.
 | Task | Keys | Result |
 | --- | --- | --- |
 | Detach pane | Ctrl-Space q | Detach the active pane and leave its process running. Detaching the last pane returns to the invoking terminal. |
-| Open or hide chat | Ctrl-Space c | Open chat, focus it if visible, or hide it when it already has keyboard focus. |
+| Open or hide chat | Ctrl-Space c | Open chat, focus it if visible, or hide it when it already has keyboard focus. Esc also hides it. |
+| Open a process | Ctrl-Space o | Open the process launcher: running terminals, consoles that scroll, ended processes. |
 | Command help | Ctrl-Space ? | Display the prefix-command reference. |
 | Pane Navigation | Ctrl-Space p | Enter pane navigation mode. |
 | Window Navigation | Ctrl-Space t | Enter window navigation mode. |
@@ -28,7 +37,8 @@ sending either byte to the program.
 | Pane Placement | Ctrl-Space m | Enter pane placement mode. |
 | Swap panes | Ctrl-Space s | Select two pane letters, or a pane letter and destination window number. |
 | Maximize pane | Ctrl-Space z | Toggle the active pane between its window layout and full-window display. |
-| Pane footers | Ctrl-Space f | Toggle persistent pane footers. |
+| Bottom bar | Ctrl-Space f | Hide or show the bar along the bottom. |
+| Info | Ctrl-Space i | Hide or show every pane's name bar and stats. |
 | Rename process | Ctrl-Space n | Prompt for the active pane's process name; renaming also saves its profile. |
 | Save profile | Ctrl-Space ; | Prompt for a name and save the active pane's process record. |
 | Pane lock | Ctrl-Space \\ | Toggle whether Alt-arrow keys are forwarded to the active program. Prefix commands remain available. |
@@ -49,7 +59,7 @@ input until it exits, so repeated navigation or resizing needs no prefix.
 | Mode | Control | Operation |
 | --- | --- | --- |
 | Pane Navigation | Arrow keys or h/j/k/l | Focus the adjacent pane in that direction. |
-| Pane Navigation | a | Open the attach picker for another running terminal process. |
+| Pane Navigation | a | Open the launcher on its list of running terminal processes. |
 | Pane Navigation | g | Open the pane list and select a pane by process name. |
 | Pane Navigation | z | Toggle the active pane's maximized view. |
 | Window Navigation | 1–9 | Select a nonempty window and exit the mode. |
@@ -68,11 +78,19 @@ sequences are not pane navigation.
 
 ## Add and select panes
 
-Press **Ctrl-Space p a**, use Up/Down to select a process, then Enter to
-attach it. Esc cancels. The picker includes terminal processes with usable
-console endpoints, excluding those already present in this compositor.
-Selecting a process already attached in another terminal transfers its
-console here and disconnects the previous attach client.
+Press **Ctrl-Space o** (or **Ctrl-Space p a**, or click a counter on the
+bar) to open the process launcher. Tab or Left/Right steps through its three
+lists, Up/Down selects, Enter acts, Esc cancels:
+
+| List | Holds | Enter |
+| --- | --- | --- |
+| Terminals | Running terminal processes with usable console endpoints, except those already panes here | Attach it as a pane. Selecting a process attached in another terminal transfers its console here. |
+| Consoles | Running processes whose output scrolls: programs on pipes (`-i`) and servers | Open it in a viewer pane: a terminal process running `backmux attach` (pipes: its input too) or `backmux logs -f` (a server), named `NAME-view` or `NAME-log`, started with `--rm` so it leaves no record once closed. |
+| Ended | Processes that have ended | Start it again in the background (`-dt`, `-di` or `-d`, as it first ran); a terminal process becomes a pane. A shell comes back with `backmux NAME` instead. |
+
+Why three lists in one window: what can be shown on this screen is a
+running terminal, a console that scrolls, or something to start again, and
+the bar's three counters say how many of each there are.
 
 Clicking a pane focuses it. Ctrl-Space p g opens a list of the panes already
 attached; Up/Down and Enter select one, and Esc cancels.
@@ -97,34 +115,73 @@ four characters. Both processes must already have panes in the selected
 terminal. Run the command inside a pane when several terminals have active
 compositors; see `backmux help swap`.
 
-## Footers and prompts
+## Name bars and prompts
 
-With more than one pane attached, each pane's footer displays its letter,
-process name, and relevant state: active mode, lock, maximized view, unread
-chat count, or a status message. Ctrl-Space f toggles persistent footers.
-Temporary prompts and status messages can still use the last pane row when
-persistent footers are disabled.
+With Info on (Ctrl-Space i, or Info on the bar), each pane has a name bar on
+the line above it: its letter and state (LOCKED, ZOOM, the active mode) at
+the left, its name in a box in the middle, and at the right what it runs -
+the agent harness, or the program - with its CPU and memory (its terminal's
+foreground job: a harness started from a shell is what is busy, not the
+shell). The bar sits on the split line where there is one, so it costs a row
+only at the top of the screen. Why: the name is what `msg`, `attach` and every
+agent take, and status belongs in one steady place per pane; nothing else
+puts names on the screen (no names on attach, focus or click).
 
-Rename and save prompts accept Enter to confirm and Esc to cancel.
-`save` protects the process record from ordinary cleanup; it does not save
-an entire window layout. See `backmux help save` and `backmux help delete`.
+Click the name box, or press Ctrl-Space n, to type a new name over it: the
+first key replaces the name, Backspace edits it, Enter renames (renaming also
+saves the profile), and Esc or a click anywhere else keeps the name as it
+was. Ctrl-Space ; asks the same way and saves. `save` protects the process
+record from ordinary cleanup; it does not save an entire window layout. See
+`backmux help save` and `backmux help delete`.
+
+Name bars and the bar show while the screen is the compositor's for good -
+`backmux shell`, or more than one pane - never while chat or a list is up for
+a moment over one program. Why: a row taken from that program and given
+back would make it redraw twice for nothing.
+
+## The bar
+
+The bar along the bottom (Ctrl-Space f hides it) is the mouse's way to what
+the keys do. From the left:
+
+| Item | Shows | Click |
+| --- | --- | --- |
+| `[N]` green | Running terminal processes | The launcher's Terminals list |
+| `[N]` blue | Running consoles that scroll (`-i`, servers) | The launcher's Consoles list |
+| `[N]` red | Ended processes | The launcher's Ended list |
+| Your chat name | Chat: highlighted while open, red with a count while messages wait | Open or put away chat |
+| Info | Highlighted while name bars are on | Name bars on or off |
+| Mode, notices | The prefix waiting, a mode, the last notice | Mode: the keys |
+| Window numbers | Windows with panes; the current one highlighted | Go to that window |
+| Zoom, Lock | Highlighted while on, for the active pane | Toggle |
+| `?` | | The keys |
+| CPU, MEM, time | The machine's load and memory | |
+
+Toggles have two looks, on and off. When the terminal is narrow, items take
+short forms (the least useful first), then the least useful go (the clock,
+Lock, Zoom, the machine's load), so what is left is always whole.
 
 ## Chat and display lifetime
 
-Ctrl-Space c opens chat over the active pane and selects its process as the
-initial recipient. Chat is associated with the person's inbox identity.
+Ctrl-Space c opens chat over the panes; when the active pane is an agent
+harness, its conversation is the one shown. Chat lists agent harnesses only,
+with each harness's name beside the process's (`reviewer  codex`). Esc hides
+chat, as the prefix then c and its close button do. Chat is associated with
+the person's inbox identity. See [Shell and chat](shell.md) for how a
+harness is told and for Assist.
 Opening the same chat in another terminal transfers the visible chat window
 there. Conversation entries are recorded under the store's `chat/` directory
 and replayed when the window opens. Unsent drafts and window geometry are
 local to the active compositor; they are not a saved workspace layout.
 
 The compositor displays one floating selection window or chat window at a
-time. Opening the attach picker or pane list hides chat. Hiding chat leaves
+time. Opening the launcher or pane list hides chat. Hiding chat leaves
 the managed programs running. See [Shell and chat](shell.md) for message
 controls and delivery status.
 
 When only one pane remains and no compositor interaction is active, Backmux
-can return to the ordinary attach path. Opening a split from an inline
+returns to the ordinary attach path - except in `backmux shell`, which keeps
+its bar. Opening a split from an inline
 terminal display switches to the alternate screen; leaving restores the
 invoking terminal's screen. Pane arrangements are held in the attach client;
 there is no command to save and restore a complete multiwindow workspace.

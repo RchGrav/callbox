@@ -135,6 +135,16 @@ bool hold_console_was_inline(void) {
     return g_was_inline;
 }
 
+static bool g_resident;
+
+void hold_console_set_resident(bool on) {
+    g_resident = on;
+}
+
+bool hold_console_is_resident(void) {
+    return g_resident;
+}
+
 /* The program's own alternate-screen switches, seen in its output. */
 static void track_alt(const char *buf, size_t n) {
     static const struct { const char *seq; bool on; } sw[] = {
@@ -713,10 +723,46 @@ static int attach_once(const char *sock_path) {
     return rc;
 }
 
+/* backmux shell: the terminal raw, on a cleared alternate screen, and the
+ * compositor from the start with chat up - no plain attach first. Why a
+ * cleared screen: the shell is the person's own screen from here, with the
+ * bar along its bottom; their lines from before come back when they leave. */
+static bool own_terminal_for_resident(void) {
+    struct hold_console_term *term = &g_console_term;
+    if (term->owned) return true;
+    struct hold_term_saved saved;
+    memset(&saved, 0, sizeof(saved));
+    if (hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_RAW, &saved) != 0 || !saved.saved) return false;
+    if (hold_write_all(STDOUT_FILENO, "\033[?1049h\033[H\033[2J", 15) != 0) {
+        hold_term_input_restore(&saved);
+        return false;
+    }
+    term->owned = true;
+    term->saved = saved;
+    term->alt_screen = true;
+    start_guard(term);
+    return true;
+}
+
 int hold_run_native_console(const char *sock_path) {
     char cur[HOLD_PATH_MAX];
     snprintf(cur, sizeof(cur), "%s", sock_path);
     g_attached_name[0] = '\0';
+    bool resident = g_resident && g_mux_store && g_detach_key_count == 2 && !g_line_mode && !g_composited &&
+                    isatty(STDIN_FILENO) && isatty(STDOUT_FILENO) && own_terminal_for_resident();
+    if (resident) {
+        g_inline = g_was_inline = false;
+        g_refused = g_gone = g_heard = g_reader_gone = g_detached = false;
+        g_detached_names[0] = '\0';
+        char back[HOLD_PATH_MAX] = "";
+        bool handed_back = false;
+        static const unsigned char none[1];
+        int rc = hold_mux_run(g_mux_store, g_chat_name, cur, 'c', none, 0, back, sizeof(back), &handed_back);
+        hold_console_term_release();
+        if (rc == 3) g_gone = true; /* the console was not there to attach */
+        return rc;
+    }
+    g_resident = false; /* the compositor that starts from a key below hands back as usual */
     for (;;) {
         int rc = attach_once(cur);
         if (!g_mux_cmd) return rc;

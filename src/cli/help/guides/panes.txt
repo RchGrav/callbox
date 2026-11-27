@@ -3,9 +3,10 @@ backmux help panes - terminal controls, panes, windows, and chat
 A pane displays one attached terminal process. A numbered window holds up to
 four panes, with the first split arranged left/right. There are nine windows.
 Pane controls require an interactive terminal and a two-key detach sequence.
-From a single-process attach, press Ctrl-Space p to enter the pane interface;
-press a to attach another terminal process. The controls below apply while
-the pane interface is active.
+From a single-process attach, press Ctrl-Space o to open the process
+launcher and attach another terminal process. The controls below apply
+while the pane interface is active. backmux shell starts with it: a cleared
+screen, chat open, the bar along the bottom.
 
 PREFIX AND HELP
 The default prefix is Ctrl-Space: press and release it, then press a command
@@ -15,6 +16,7 @@ program. Unrecognized prefix commands are discarded. A custom two-key
 configured keys.
 
   Ctrl-Space ?     show keyboard shortcuts
+  Ctrl-Space o     open the process launcher
   Ctrl-Space p     enter Pane Navigation mode
   Ctrl-Space t     enter Window Navigation mode
   Ctrl-Space r     enter Pane Resizing mode
@@ -29,13 +31,19 @@ PANE NAVIGATION
 
 In Pane Navigation mode:
   arrows, h j k l   focus an adjacent pane (h left, j down, k up, l right)
-  a                select a running terminal process to attach as a pane
+  a                open the launcher on its running terminals
   g                select an attached pane by name
   z                toggle the active pane's full-screen view
 
-To attach another process: Ctrl-Space p a, Up/Down to select, Enter to attach.
-Esc cancels the selection. Only terminal processes appear in this picker;
-server and pipe-input processes cannot be added as panes.
+THE LAUNCHER
+Ctrl-Space o, or a counter on the bar. Tab or Left/Right steps through its
+lists, Up/Down selects, Enter acts, Esc cancels:
+  Terminals        running terminal processes: attach one as a pane
+  Consoles         pipe-input processes and servers: open one in a viewer
+                   pane (NAME-view runs backmux attach, NAME-log backmux
+                   logs -f; either leaves no record once closed)
+  Ended            ended processes: start one again; a terminal becomes a
+                   pane (a shell comes back with backmux NAME)
 
 WINDOW NAVIGATION
 In Window Navigation mode:
@@ -63,11 +71,25 @@ Additional prefix commands:
   Ctrl-Space a     sort panes by process name in existing occupied positions
   Ctrl-Space d     pack panes into windows, up to four per window
   Ctrl-Space z     toggle the active pane's full-screen view
-  Ctrl-Space f     toggle pane footers
+  Ctrl-Space f     hide or show the bar along the bottom
+  Ctrl-Space i     hide or show the name bars (Info)
 
 Moving a pane to another window leaves the current window selected when it
 still contains panes. Layout changes preserve the running processes.
 For scripted swaps by process name or ID, see backmux help swap.
+
+NAME BARS AND THE BAR
+With Info on, each pane's name bar shows its letter and state at the left,
+its name boxed in the middle, and what it runs with its CPU and memory at
+the right. Click the name box (or Ctrl-Space n) to type a new name over it:
+Enter renames, Esc or a click elsewhere keeps the name.
+
+The bar along the bottom, from the left: running terminals (green),
+consoles that scroll (blue), ended processes (red) - click one for its list
+in the launcher - then your chat name (opens or hides chat; red while
+messages wait), Info, the windows (click one to go there), Zoom, Lock, ?,
+and the machine's CPU and memory. Toggles look different on and off. On a
+narrow terminal items shorten, then the least useful go.
 
 PROFILES AND INPUT
   Ctrl-Space n     rename the active pane's process; also save its profile
@@ -79,18 +101,21 @@ Prefix commands remain available. Saving preserves a process profile from
 purge; it does not save the window layout.
 
 CHAT
-  Ctrl-Space c     open chat for the active process; hide it when chat has
-                   keyboard focus, or return focus to an open chat window
+Chat lists agent harnesses only (claude, codex, gemini, ...; see backmux
+help shell), each with its harness's name.
+  Ctrl-Space c     open chat (on the active pane's agent, if it is one); hide
+                   it when chat has keyboard focus, or return focus to it
+  Esc             hide chat
   Tab             open the recipient picker; type to filter, Up/Down to
                    select, Enter to confirm
   Enter           send the message
   Ctrl-J          insert a newline
-  Ctrl-S          include the active pane's screen text with the next message
+  Ctrl-S          Assist: ask the agent for help with the app on screen
   Up/Down         scroll conversation history; PageUp/PageDown scroll a page
 
 Drag the chat title bar to move the window or its lower-right corner to
 resize it. Click its close control to hide it. Click a pane to return
-keyboard focus to that program. Esc does not close chat.
+keyboard focus to that program.
 
 DETACH
 Ctrl-Space q detaches the active pane and leaves its process running. Other

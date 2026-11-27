@@ -1,19 +1,18 @@
 backmux help launch - launch modes and options
 
-  backmux call|agent|server|detach [options] PROGRAM [ARGS...]
+  backmux call|server|detach [options] PROGRAM [ARGS...]
   backmux shell [options] [SHELL [ARGS...]]
   backmux [options] [--] PROGRAM [ARGS...]      (also backmux run ...)
   backmux [options] TARGET
 
 LAUNCH COMMANDS
   call       attached terminal process
-  agent      attached terminal process with agent message formatting
   server     background process with a log; -w records its exit code
   detach     detached terminal process
   shell      attached shell; see backmux help shell
 
 Put launch options before PROGRAM; subsequent arguments go to the program.
-After call, agent, server, or detach, the next non-option argument is always
+After call, server, or detach, the next non-option argument is always
 the program. These commands select the launch mode and reject -d/-i/-t;
 -w is accepted only by server.
 
@@ -56,6 +55,8 @@ PROGRAM SETTINGS
                    set an environment variable; repeat for more variables
   --env-file FILE  read KEY=VALUE entries from a file
   --rm             remove the record, log, and saved screens after exit
+  --agent          the program is an agent harness: chat lists it, and its
+                   name is added to the config's agents for next time
   --restart POLICY
                    no (default), always, unless-stopped, or on-failure[:N].
                    Active policies require a non-terminal process.

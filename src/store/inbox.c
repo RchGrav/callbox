@@ -63,6 +63,21 @@ static void drop_inbox(const struct hold_store *s, const char *name) {
     if (inbox_path(s, name, ".who", path, sizeof(path)) == 0) unlink(path);
 }
 
+/* The program that owns an inbox: the first word of its .who key ("claude
+ * 1234 5678" names the harness that sent from outside any process). */
+int hold_inbox_owner(const struct hold_store *s, const char *name, char *program, size_t n) {
+    char path[HOLD_PATH_MAX];
+    if (!hold_valid_alias(name) || inbox_path(s, name, ".who", path, sizeof(path)) != 0) return -1;
+    char *text = NULL;
+    size_t tlen = 0;
+    if (hold_read_owned_file_capped(path, 512, &text, &tlen) != 0) return -1;
+    size_t w = strcspn(text, " \n");
+    int rc = w > 0 && w < n ? 0 : -1;
+    if (rc == 0) snprintf(program, n, "%.*s", (int)w, text);
+    free(text);
+    return rc;
+}
+
 int hold_inbox_find(const struct hold_store *s, const char *key, char *name, size_t n) {
     char dir[HOLD_PATH_MAX];
     if (hold_inbox_dir(s, dir, sizeof(dir)) != 0) return -1;

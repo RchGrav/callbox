@@ -9,5 +9,8 @@ Example: backmux shell zsh -l
 If no shell is specified, use an executable absolute $SHELL path, then the
 account's login shell if available, then /bin/sh.
 
-Ctrl-Space c opens chat; Ctrl-Space p a attaches another terminal process
-as a pane. See backmux help panes for interactive controls.
+A shell opens on a cleared screen of its own (your lines come back when you
+leave), with the bar along the bottom, its name bar, and chat open with the
+keyboard on the shell. Esc hides chat; Ctrl-Space c brings it back;
+Ctrl-Space o attaches another process as a pane. Reattaching to a shell
+brings all of it back. See backmux help panes for interactive controls.

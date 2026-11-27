@@ -3,8 +3,6 @@ usage: backmux set <name|id> <setting>[=<value>]
 
 Change settings on a running or ended process.
 
-  agent              include a sender header in messages; unset removes
-                     the header. Applies to the next message.
   working=DIR        working directory for the next launch; unset uses
                      the directory from which recall is invoked
   program=PROGRAM    executable path or name on PATH for the next launch;
@@ -22,6 +20,6 @@ Examples:
   backmux set worker working=/srv/project
   backmux set worker 'args=--port 8080'
   backmux set worker args -- --title "Build results"
-  backmux unset worker agent
+  backmux unset worker working
 
 See backmux help rename and help recall.

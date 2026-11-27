@@ -44,7 +44,7 @@ struct chat_msg {
     char *text;
     size_t len;
     uint32_t serial;
-    bool with_screen;
+    bool with_assist; /* sent with the Assist request (the box ticked) */
     char note[128]; /* why it failed */
     int wrap_width; /* text_lines is for this width; 0 = not counted yet */
     int text_lines;
@@ -58,6 +58,7 @@ struct chat_thread {
     int count, cap;
     int unread;
     int scroll; /* lines up from the newest */
+    char agent[AGENT_NAME_MAX]; /* the harness it runs (claude, codex), "" if not known */
     int64_t active_ms;
 };
 
@@ -67,6 +68,7 @@ struct pick_entry {
     char label[CHAT_LABEL_LEN];
     bool running;
     int unread;
+    char agent[AGENT_NAME_MAX];
 };
 
 struct outbound {
@@ -101,7 +103,7 @@ struct chat {
 
     char *input; /* the message being written, UTF-8 */
     size_t in_len, in_cap, in_cur;
-    bool include_screen;
+    bool assist; /* the Assist box: the next message asks for help with the app on screen */
 
     bool picking; /* recipient picker is open */
     char filter[ALIAS_MAX_LEN + 1];
@@ -111,6 +113,7 @@ struct chat {
     int npicks;
     int pick_first; /* the first entry the last frame listed */
     int64_t picks_ms;
+    int64_t prune_ms; /* when ended conversations were last dropped */
 
     enum grab grab;
     int grab_dx, grab_dy;
@@ -134,7 +137,7 @@ struct chat {
 
     bool dirty, screen_dirty;
     void (*on_sent)(void *app, const char *label, const char *text, size_t len);
-    char screen_name[ALIAS_MAX_LEN + 1]; /* whose screen Ctrl-S sends (hosted: the focused pane's process) */
+    char screen_name[ALIAS_MAX_LEN + 1]; /* the process Assist asks about (hosted: the app pane last in focus) */
     int cur_row, cur_col; /* where the chat's own cursor was last drawn */
     int badge_col;        /* the corner badge's first column, -1 = none shown */
     int body_rows;        /* of the last frame, for paging */
@@ -154,6 +157,8 @@ static const struct comp_style ST_INPUT = {0, 255, 238};
 static const struct comp_style ST_INPUT_HINT = {0, 246, 238};
 static const struct comp_style ST_SEL = {HOLD_ATTR_BOLD, 231, 24};
 static const struct comp_style ST_BADGE = {HOLD_ATTR_BOLD, 231, 25};
+static const struct comp_style ST_AGENT = {0, 179, 235};  /* the harness's name: a quiet amber */
+static const struct comp_style ST_ASSIST = {HOLD_ATTR_BOLD, 16, 179};
 
 /* ---- small helpers ---------------------------------------------------------- */
 
@@ -347,8 +352,8 @@ static int count_lines(const char *text, size_t len, int width, bool words) {
     return n;
 }
 
-/* A message in the conversation: a header line, its text, and a note when a
- * screen went with it. */
+/* A message in the conversation: a header line, its text, and a note when
+ * the Assist request went with it. */
 /* A message's text never changes, so its wrapped line count is kept for the
  * width it was counted at: a frame does not re-wrap the whole history. */
 static int msg_text_lines(struct chat_msg *m, int width) {
@@ -360,7 +365,7 @@ static int msg_text_lines(struct chat_msg *m, int width) {
 }
 
 static int msg_lines(struct chat_msg *m, int width) {
-    return 1 + msg_text_lines(m, width) + (m->with_screen ? 1 : 0) +
+    return 1 + msg_text_lines(m, width) + (m->with_assist ? 1 : 0) +
            (m->state == MSG_FAILED ? count_lines(m->note, strlen(m->note), width - 1, true) : 0);
 }
 
@@ -533,12 +538,16 @@ static int pick_record(const char *id, const char *path, struct hold_run_record 
     struct chat *c = ((struct pick_scan *)vctx)->c;
     if (!r || c->npicks >= CHAT_MAX_PICK || (c->host.run_id && !strcmp(id, c->host.run_id))) return 0;
     /* A process that can be messaged: on a PTY, not known to have ended, its
-     * console still listening. */
+     * console still listening - and an agent harness (agents.c), since chat
+     * is for talking to agents. */
     if (!r->has_console || r->has_exit_code || !r->has_state || strcmp(r->state, "running") != 0 ||
         !hold_path_exists(r->console_sock) || !hold_console_record_alive(r))
         return 0;
+    char agent[AGENT_NAME_MAX];
+    if (!hold_agent_of_record(r, agent, sizeof(agent))) return 0;
     struct pick_entry *e = &c->picks[c->npicks++];
     memset(e, 0, sizeof(*e));
+    snprintf(e->agent, sizeof(e->agent), "%s", agent);
     e->kind = TH_CALL;
     snprintf(e->key, sizeof(e->key), "%s", id);
     if (r->has_name && r->name[0]) snprintf(e->label, sizeof(e->label), "%s", r->name);
@@ -556,28 +565,97 @@ static int pick_order(const void *a, const void *b) {
     return strcmp(x->label, y->label);
 }
 
+/* Which harness a conversation is with, looked up from its process's record
+ * (or, outside any process, its inbox's owner). Why looked up and kept: the
+ * title and the list say which agent it is - two codex agents read alike by
+ * name alone. */
+static bool thread_is_agent(struct chat *c, struct chat_thread *t) {
+    if (t->agent[0]) return true;
+    if (!c->host.store) return false;
+    if (t->kind == TH_CALL) {
+        struct hold_run_record r;
+        char path[HOLD_PATH_MAX];
+        if (hold_load_record_by_id(c->host.store->record_dir, t->key, &r, path, sizeof(path)) != 0) return false;
+        bool agent = hold_agent_of_record(&r, t->agent, sizeof(t->agent));
+        hold_free_run_record(&r);
+        return agent;
+    }
+    if (t->kind == TH_OPERATOR) {
+        char program[64];
+        if (hold_inbox_owner(c->host.store, t->key, program, sizeof(program)) == 0 &&
+            hold_agent_name(program, t->agent, sizeof(t->agent)))
+            return true;
+        /* a sender outside any process is an agent's harness (runtime/inbox.c
+         * names its inbox after the first program above backmux) */
+        return true;
+    }
+    return false;
+}
+
 static void refresh_picks(struct chat *c) {
     c->npicks = 0;
     c->picks_ms = c->now;
     struct pick_scan scan = {c};
     if (c->host.store) (void)hold_for_each_record(c->host.store->record_dir, pick_record, &scan);
-    /* Every conversation stays readable: one with a process that has since
-     * ended, and those backmux could not tie to a process. */
+    /* Besides running agents: agents outside any process (an inbox still in
+     * use), and a message with no reply address until it is read. Nothing
+     * that has ended or been purged (prune_threads drops those). */
     for (int i = 0; i < c->nthreads; i++) {
         struct chat_thread *t = c->threads[i];
         struct pick_entry *e = NULL;
         for (int k = 0; k < c->npicks && !e; k++)
             if (c->picks[k].kind == t->kind && !strcmp(c->picks[k].key, t->key)) e = &c->picks[k];
+        if (!e && t->kind == TH_CALL) continue;
         if (!e && c->npicks < CHAT_MAX_PICK) {
             e = &c->picks[c->npicks++];
             memset(e, 0, sizeof(*e));
             e->kind = t->kind;
             memcpy(e->key, t->key, sizeof(e->key));
             memcpy(e->label, t->label, sizeof(e->label));
+            memcpy(e->agent, t->agent, sizeof(e->agent));
         }
         if (e) e->unread = t->unread;
     }
     qsort(c->picks, (size_t)c->npicks, sizeof(c->picks[0]), pick_order);
+}
+
+static void start_picking(struct chat *c);
+
+/* Whether a conversation's other end is still there: its process running
+ * with its console listening, or (outside any process) its inbox in use. */
+static bool thread_alive(const struct chat *c, const struct chat_thread *t) {
+    if (!c->host.store) return true;
+    if (t->kind == TH_OPERATOR) return hold_inbox_live(c->host.store, t->key);
+    if (t->kind == TH_OUTSIDE) return t->unread > 0; /* no reply address: gone once read */
+    struct hold_run_record r;
+    char path[HOLD_PATH_MAX];
+    if (hold_load_record_by_id(c->host.store->record_dir, t->key, &r, path, sizeof(path)) != 0) return false;
+    bool alive = r.has_console && !r.has_exit_code && r.has_state && !strcmp(r.state, "running") &&
+                 hold_path_exists(r.console_sock) && hold_console_record_alive(&r);
+    hold_free_run_record(&r);
+    return alive;
+}
+
+/* Conversations whose process has ended or been purged leave the window, and
+ * their unread counts with them. Why: chat shows who can be talked to now;
+ * a name that cannot answer is one more to skip past (the conversation log
+ * on disk keeps the history). A send still in flight keeps its conversation
+ * until it is answered. */
+static void prune_threads(struct chat *c) {
+    for (int i = 0; i < c->nthreads;) {
+        struct chat_thread *t = c->threads[i];
+        if (thread_busy(c, t) || thread_alive(c, t)) {
+            i++;
+            continue;
+        }
+        if (c->current == t) {
+            c->current = NULL;
+            if (c->visible) start_picking(c);
+        }
+        free_thread(t);
+        c->threads[i] = c->threads[--c->nthreads];
+        c->dirty = true;
+    }
 }
 
 static bool pick_matches(const struct chat *c, const struct pick_entry *e) {
@@ -606,6 +684,7 @@ static void show_thread(struct chat *c, struct chat_thread *t) {
     c->current = t;
     c->picking = false;
     if (t) {
+        if (!t->agent[0]) (void)thread_is_agent(c, t);
         t->unread = 0;
         t->scroll = 0;
     }
@@ -633,6 +712,7 @@ static void pick_confirm(struct chat *c) {
         set_notice(c, "too many conversations are open");
         return;
     }
+    if (e->agent[0]) snprintf(t->agent, sizeof(t->agent), "%s", e->agent);
     show_thread(c, t);
 }
 
@@ -711,40 +791,45 @@ static void self_label(const struct chat *c, char *out, size_t n) {
     }
 }
 
-/* text, then the shell's clean screen as plain rows: what backmux peek prints,
- * so never the chat window. */
-static char *with_screen(const struct chat *c, const char *text, size_t len, size_t *out_len) {
-    struct hold_snapshot snap;
-    if (!c->host.screen || hold_screen_snapshot(c->host.screen, &snap) != 0) return NULL;
-    size_t row_cap = (size_t)snap.cols * 4 * HOLD_CELL_CHARS + 2;
-    size_t cap = len + 256 + (size_t)snap.rows * row_cap;
-    char *out = malloc(cap), name[ALIAS_MAX_LEN + 1];
-    if (!out) {
-        hold_snapshot_free(&snap);
-        return NULL;
+/* The Assist request: what an agent needs to help with the app on screen -
+ * how to look at it with backmux and how to answer. Why not the screen's
+ * text (what the box sent before): a screen pasted into a prompt is stale
+ * the moment it lands and loses its colors and cursor, while an agent told
+ * how to peek sees it live, as an image, and can drive it. */
+static char *with_assist(const struct chat *c, const char *text, size_t len, size_t *out_len) {
+    char session[ALIAS_MAX_LEN + 1], me[CHAT_LABEL_LEN];
+    if (c->screen_name[0]) snprintf(session, sizeof(session), "%s", c->screen_name);
+    else self_label(c, session, sizeof(session));
+    self_label(c, me, sizeof(me));
+    static const char form[] =
+        "The user is seeking assistance with the application running in Backmux\n"
+        "session \"%s\".\n"
+        "\n"
+        "Immediately run `backmux help tui` to familiarize yourself with the\n"
+        "terminal inspection and control interface.\n"
+        "\n"
+        "Capture and examine a screenshot of the application using:\n"
+        "\n"
+        "    backmux peek %s --image /tmp/backmux-%s.png --cursor-ring\n"
+        "\n"
+        "Use the Backmux interface to inspect and interact with the application\n"
+        "as needed to assist the user.\n"
+        "\n"
+        "Reply to the user using:\n"
+        "\n"
+        "    backmux msg %s \"Your response\"";
+    size_t cap = len + sizeof(form) + 3 * sizeof(session) + sizeof(me) + 8;
+    char *out = malloc(cap);
+    if (!out) return NULL;
+    size_t n = 0;
+    if (len) {
+        memcpy(out, text, len);
+        n = len;
+        out[n++] = '\n';
+        out[n++] = '\n';
     }
-    /* the screen's own process, not the person: hosted, it is the pane's */
-    if (c->screen_name[0]) snprintf(name, sizeof(name), "%s", c->screen_name);
-    else self_label(c, name, sizeof(name));
-    memcpy(out, text, len);
-    size_t n = len;
-    n += (size_t)snprintf(out + n, cap - n, "\n\n[screen of %s: %u columns x %u rows, cursor column %u, row %u (zero-based)]\n", name,
-                          snap.cols, snap.rows, snap.cursor_col, snap.cursor_row);
-    int last = snap.rows - 1;
-    char *line = malloc(row_cap);
-    while (line && last >= 0) {
-        hold_snapshot_row_text(&snap, last, line, row_cap);
-        if (line[0]) break;
-        last--;
-    }
-    for (int r = 0; line && r <= last; r++) {
-        hold_snapshot_row_text(&snap, r, line, row_cap);
-        n += (size_t)snprintf(out + n, cap - n, "%s\n", line);
-    }
-    free(line);
-    hold_snapshot_free(&snap);
-    while (n > 0 && out[n - 1] == '\n') n--;
-    *out_len = n;
+    n += (size_t)snprintf(out + n, cap - n, form, session, session, session, me);
+    *out_len = n < cap ? n : cap - 1;
     return out;
 }
 
@@ -761,7 +846,7 @@ static void send_message(struct chat *c) {
     struct chat_thread *t = c->current;
     size_t len = c->in_len;
     while (len > 0 && (c->input[len - 1] == ' ' || c->input[len - 1] == '\n')) len--;
-    if (len == 0) return;
+    if (len == 0 && !c->assist) return; /* the Assist request alone is a message */
     if (!t) {
         start_picking(c);
         return;
@@ -770,14 +855,14 @@ static void send_message(struct chat *c) {
         set_notice(c, "cannot reply: sender has no reply address");
         return;
     }
-    struct chat_msg *m = add_msg(t, MSG_SENDING, c->input, len);
+    struct chat_msg *m = add_msg(t, MSG_SENDING, len ? c->input : "Assist", len ? len : 6);
     if (!m) {
         set_notice(c, "out of memory");
         return;
     }
-    if (c->on_sent) c->on_sent(c->host.app, t->label, c->input, len);
+    if (c->on_sent) c->on_sent(c->host.app, t->label, m->text, m->len);
     m->serial = ++c->serial;
-    m->with_screen = c->include_screen;
+    m->with_assist = c->assist;
     t->active_ms = c->now;
     t->scroll = 0;
     c->dirty = true;
@@ -785,13 +870,13 @@ static void send_message(struct chat *c) {
     /* The body before the draft is cleared; a failure from here on is shown
      * on the message itself, never as delivered. */
     size_t body_len = len;
-    char *body = m->with_screen ? with_screen(c, c->input, len, &body_len) : NULL;
-    bool screen_failed = m->with_screen && !body;
+    char *body = m->with_assist ? with_assist(c, c->input, len, &body_len) : NULL;
+    bool assist_failed = m->with_assist && !body;
     c->in_len = c->in_cur = 0;
     if (c->input) c->input[0] = '\0';
-    c->include_screen = false;
-    if (screen_failed) {
-        fail_msg(c, m, "the screen could not be captured");
+    c->assist = false;
+    if (assist_failed) {
+        fail_msg(c, m, "out of memory");
         return;
     }
 
@@ -930,6 +1015,7 @@ void chat_inbound(struct chat *c, const char *sender_id, const char *label, bool
     while (len > 0 && (text[len - 1] == '\n' || text[len - 1] == '\r' || text[len - 1] == ' ')) len--;
     struct chat_msg *m = add_msg(t, MSG_IN, text, len);
     if (!m) return;
+    t->active_ms = c->now;
     bool seen = c->attached && c->visible && !c->picking && c->current == t;
     if (!seen) t->unread++;
     else if (t->scroll > 0) t->scroll += msg_lines(m, c->w - 2); /* keep the lines being read in place */
@@ -945,10 +1031,11 @@ static void hide(struct chat *c) {
     set_tip(c, "chat hidden", "open chat");
 }
 
-/* Esc leaves compositor-hosted chat open. Its prefix command or close
- * button hides it. Broker-hosted chat retains its Esc-to-hide behavior. */
+/* Esc hides chat, wherever it is drawn. Why: chat must be usable from the
+ * keyboard alone, and Esc is the key every window closes with; the prefix
+ * then c, and the close button, hide it too. */
 static void esc_key(struct chat *c) {
-    if (!c->host.app_pointer) hide(c);
+    hide(c);
 }
 
 /* Who the keyboard is for, while the window is up. Handing it to the shell
@@ -967,6 +1054,7 @@ static void set_focus(struct chat *c, bool chat) {
 }
 
 static void open_chat(struct chat *c) {
+    prune_threads(c); /* history replayed from the log may name processes long gone */
     c->visible = c->focused = true;
     self_label(c, c->self, sizeof(c->self));
     place(c);
@@ -1066,7 +1154,7 @@ static void chat_ctrl(struct chat *c, unsigned char b) {
     case 0x05: c->in_cur = c->in_len; break;              /* Ctrl-E */
     case 0x15: input_delete(c, 0, c->in_cur); break;      /* Ctrl-U */
     case 0x0b: input_delete(c, c->in_cur, c->in_len); break; /* Ctrl-K */
-    case 0x13: c->include_screen = !c->include_screen; break; /* Ctrl-S */
+    case 0x13: c->assist = !c->assist; break; /* Ctrl-S: the Assist box */
     case 0x17: {                                           /* Ctrl-W */
         size_t at = c->in_cur;
         while (at > 0 && c->input[at - 1] == ' ') at--;
@@ -1116,7 +1204,7 @@ static void window_press(struct chat *c, int row, int col) {
     } else if (row == c->y + c->h - 1 && col >= c->x + c->w - 2) {
         c->grab = GRAB_RESIZE;
     } else if (row == L.footer && col >= c->x + 1 && col <= c->x + 10) {
-        c->include_screen = !c->include_screen;
+        c->assist = !c->assist;
     } else if (c->picking && row > L.body_top && row < L.body_top + L.body_rows) {
         int n = c->pick_first + row - L.body_top - 1;
         if (n < pick_count(c)) {
@@ -1445,6 +1533,10 @@ void chat_tick(struct chat *c, int64_t now) {
         c->notice[0] = '\0';
         c->dirty = true;
     }
+    if (now - c->prune_ms >= CHAT_PICK_REFRESH_MS) {
+        c->prune_ms = now;
+        prune_threads(c);
+    }
     if (c->attached && c->visible && c->picking && now - c->picks_ms >= CHAT_PICK_REFRESH_MS) {
         refresh_picks(c);
         int n = pick_count(c);
@@ -1520,8 +1612,8 @@ static void draw_history(struct chat *c, const struct layout *L) {
             size_t from_len = m->len, *pos = &text_pos;
             const struct comp_style *st = &ST_BODY;
             if (k > text_lines) {
-                if (m->with_screen && k == text_lines + 1) {
-                    if (shown) put(c, row, c->x + 2, width - 1, "[screen snapshot included]", &ST_DIM);
+                if (m->with_assist && k == text_lines + 1) {
+                    if (shown) put(c, row, c->x + 2, width - 1, "[Assist request included]", &ST_DIM);
                     continue;
                 }
                 from = m->note;
@@ -1559,6 +1651,10 @@ static void draw_picker(struct chat *c, const struct layout *L) {
         comp_fill(c->comp, r, c->x + 1, width, st);
         int u = put(c, r, c->x + 1, width, sel ? "\xe2\x96\xb8 " : "  ", st);
         u += put(c, r, c->x + 1 + u, width - u, e->label, st);
+        if (e->agent[0]) { /* which harness: two agents read alike by name alone */
+            u += put(c, r, c->x + 1 + u, width - u, "  ", st);
+            u += put(c, r, c->x + 1 + u, width - u, e->agent, sel ? st : &ST_AGENT);
+        }
         char tail[48] = "";
         if (e->unread) snprintf(tail, sizeof(tail), "  %d new", e->unread);
         else if (!e->running && e->kind == TH_CALL) snprintf(tail, sizeof(tail), "  ended");
@@ -1598,6 +1694,10 @@ static void draw_window(struct chat *c) {
     else if (c->current) {
         used += put(c, c->y, c->x + 1 + used, room - used, " -> ", ts);
         used += put(c, c->y, c->x + 1 + used, room - used, c->current->label, ts);
+        if (c->current->agent[0]) {
+            used += put(c, c->y, c->x + 1 + used, room - used, " \xc2\xb7 ", ts);
+            used += put(c, c->y, c->x + 1 + used, room - used, c->current->agent, ts);
+        }
     }
     int others = total_unread(c, c->picking ? NULL : c->current);
     if (others) {
@@ -1651,9 +1751,8 @@ static void draw_window(struct chat *c) {
     }
 
     if (L.footer >= 0) {
-        int u = put(c, L.footer, c->x + 1, c->w - 4, c->include_screen ? "[x] screen" : "[ ] screen", c->include_screen ? &ST_BODY : &ST_DIM);
-        put(c, L.footer, c->x + 1 + u, c->w - 4 - u,
-            c->host.app_pointer ? "  Ctrl-S \xc2\xb7 Tab: recipient" : "  Ctrl-S \xc2\xb7 Tab: recipient \xc2\xb7 Esc: hide", &ST_DIM);
+        int u = put(c, L.footer, c->x + 1, c->w - 4, c->assist ? "[x] Assist" : "[ ] Assist", c->assist ? &ST_ASSIST : &ST_DIM);
+        put(c, L.footer, c->x + 1 + u, c->w - 4 - u, " Ctrl-S  \xc2\xb7  Tab: to  \xc2\xb7  Esc: hide", &ST_DIM);
         comp_put(c->comp, L.footer, c->x + c->w - 1, 0x25e2, &ST_DIM); /* the corner to resize by */
     }
 }

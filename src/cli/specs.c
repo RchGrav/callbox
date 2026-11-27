@@ -45,7 +45,6 @@ static const struct hold_cli_command_spec command_specs[] = {
     /* cli/main.c parses launch commands and forwards arguments after PROGRAM.
      * These rows provide help and reserve command names from process naming. */
     {"call", NULL, 1, -1, 0, "usage: backmux call [--name NAME] [options] <program> [<args>...]"},
-    {"agent", NULL, 1, -1, 0, "usage: backmux agent [--name NAME] [options] <program> [<args>...]"},
     {"server", NULL, 1, -1, 0, "usage: backmux server [--name NAME] [-w] [options] <program> [<args>...]"},
     {"detach", NULL, 1, -1, 0, "usage: backmux detach [--name NAME] [options] <program> [<args>...]"},
     {"list", NULL, 0, 2, SPEC_ALL | SPEC_LIVE | SPEC_SCOPE | SPEC_STRICT,

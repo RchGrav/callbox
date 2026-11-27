@@ -3,14 +3,13 @@ usage: backmux msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]
        backmux msg [<target>] --received [ID]
 
 Send a message to a managed process or an inbox. Terminal and pipe-input
-processes receive message text as program input, followed by Enter by default.
-With the agent setting enabled, the message includes a sender/reply header:
+processes receive it as program input, behind a header naming the sender
+and how to reply, followed by Enter by default:
 
   [msg from NAME; reply: backmux msg NAME "..."] TEXT
 
-Without agent formatting, the message has no sender header. Sending to a
-shell can execute a command. Messages to an outside sender or a person's
-chat name are stored in that inbox.
+To type text into a program as it is, use backmux send. Messages to an
+outside sender or a person's chat name are stored in that inbox.
 
 SEND OPTIONS
   --stdin          append text read from stdin

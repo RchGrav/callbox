@@ -35,12 +35,11 @@ without changing the Backmux process ID.
 
 | Command | Terminal and attachment | Message delivery |
 | --- | --- | --- |
-| `backmux call PROGRAM [ARGS...]` | PTY, attached | Message text is typed into the program. |
-| `backmux agent PROGRAM [ARGS...]` | PTY, attached | Typed text includes a sender and reply-command header. |
-| `backmux detach PROGRAM [ARGS...]` | PTY, detached | Typed text; use `set NAME agent` to enable the header. |
+| `backmux call PROGRAM [ARGS...]` | PTY, attached | Typed into the program behind a sender and reply-command header. |
+| `backmux detach PROGRAM [ARGS...]` | PTY, detached | As for `call`. |
 | `backmux server PROGRAM [ARGS...]` | Background process with a log, without a console | No interactive message input. |
 | `backmux server -w PROGRAM [ARGS...]` | As above, with an exit waiter | The waiter records the program's exit status. |
-| `backmux shell [SHELL [ARGS...]]` | PTY, attached | Typed text, as for `call`; chat has a separate inbox identity. |
+| `backmux shell [SHELL [ARGS...]]` | PTY, attached | As for `call`; chat has a separate inbox identity. |
 
 All launch commands accept `--name NAME` before the program. Arguments after
 the program belong to that program. `call`, `agent`, `server`, and `detach`
@@ -86,7 +85,6 @@ has logs but no screen or input console.
 
 | Setting | Effect | `unset` result |
 | --- | --- | --- |
-| `agent` | Include the sender and reply-command header from the next delivered message. | Deliver message text without the header. |
 | `working=DIR` | Use this working directory on the next launch. | Use the working directory of the next recall invocation. |
 | `program=PROGRAM` | Change the executable for the next launch. | Rejected; a program is required. |
 | `args=ARGS` or `args -- ARG...` | Change arguments for the next launch. The `args=...` form splits on spaces and tabs; `args --` preserves shell argument boundaries. | Launch without arguments. |
@@ -124,8 +122,10 @@ See [Store](store.md) and [Docker-style syntax](docker-familiarity-contract.md).
 ## Chat, panes, and help
 
 Interactive terminal controls use Ctrl-Space followed by a command key.
-Ctrl-Space p enters Pane Navigation; `a` there opens the attach picker.
-Ctrl-Space c opens the person's chat window over the attached process.
+Ctrl-Space o opens the process launcher; Ctrl-Space p enters Pane Navigation.
+Ctrl-Space c opens the person's chat window over the attached process; it
+lists agent harnesses only. `backmux shell` starts with chat open and the bar
+along the bottom, which the mouse can reach every control from.
 Chat uses its own inbox name; it is not the shell process's message receiver.
 
 Ctrl-Space ? shows the command help. Within Pane Navigation, Window

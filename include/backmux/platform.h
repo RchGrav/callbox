@@ -32,6 +32,21 @@ int hold_proc_read_ids(pid_t pid, pid_t *pgid_out, pid_t *sid_out, char *state_o
 int hold_proc_read_cpu_rss(pid_t pid, uint64_t *cpu_ticks_out, uint64_t *rss_bytes_out);
 int hold_proc_fd_target(pid_t pid, int fd, char *out, size_t n);
 
+/* A process's argument vector, NUL-separated as the kernel keeps it: *len
+ * bytes in out (cut to n). How the compositor tells an agent harness from
+ * any other program; a script's interpreter (node, python) shows in argv[0]
+ * and the script in argv[1], which the name alone (comm) never says. */
+int hold_proc_cmdline(pid_t pid, char *out, size_t n, size_t *len);
+/* The foreground process group of the terminal pid has as its controlling
+ * terminal (what the person's keys reach): a shell's job, say. */
+int hold_proc_foreground_group(pid_t pid, pid_t *pgid_out);
+/* cb(child, ctx) for pid's direct children; nonzero cb stops the walk. */
+int hold_proc_for_each_child(pid_t pid, int (*cb)(pid_t child, void *ctx), void *ctx);
+/* The whole machine's CPU time so far, busy and in all (any unit, the same
+ * for both), and its memory in bytes: total and available to programs. */
+int hold_system_cpu_times(uint64_t *busy, uint64_t *total);
+int hold_system_memory(uint64_t *total, uint64_t *available);
+
 /* cb(pid, ctx) for every live (non-zombie) process in group (pgid, sid).
  * Nonzero cb aborts with rc -1; an unreadable table reads as empty (rc 0).
  * *denied is set when a candidate's ids were unreadable. */

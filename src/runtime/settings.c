@@ -1,10 +1,10 @@
 /* Process settings and related commands:
- * set/unset (agent, working, program, args, name), info, recall, delete,
+ * set/unset (working, program, args, name), info, recall, delete,
  * and purge all.
  *
- * Settings can change while a process is running or after it ends. agent
- * affects the next message, and name changes target resolution immediately.
- * working, program, and args affect the next launch. */
+ * Settings can change while a process is running or after it ends. name
+ * changes target resolution immediately; working, program, and args affect
+ * the next launch. */
 #include "backmux/config.h"
 #include "backmux/types.h"
 #include "backmux/runtime.h"
@@ -17,7 +17,7 @@
 static const char set_usage[] =
     "usage: backmux set <name|id> <setting>[=<value>]\n"
     "       backmux unset <name|id> <setting>\n"
-    "settings: agent, working=DIR, program=PROGRAM, args=ARGS (or: args -- ARG...), name=NAME\n";
+    "settings: working=DIR, program=PROGRAM, args=ARGS (or: args -- ARG...), name=NAME\n";
 
 static const char *label_of(const struct hold_run_record *r, char *display, size_t n) {
     if (r->has_name && r->name[0]) return r->name;
@@ -75,7 +75,7 @@ int hold_cmd_set_action(const struct hold_invocation *inv,
         fputs(set_usage, stderr);
         return HOLD_EXIT_USAGE;
     }
-    if (strcmp(key, "agent") && strcmp(key, "working") && strcmp(key, "program") && !is_args && strcmp(key, "name")) {
+    if (strcmp(key, "working") && strcmp(key, "program") && !is_args && strcmp(key, "name")) {
         fprintf(stderr, "backmux: error: unknown setting '%s'\n%s", key, set_usage);
         return HOLD_EXIT_USAGE;
     }
@@ -87,10 +87,6 @@ int hold_cmd_set_action(const struct hold_invocation *inv,
         fprintf(stderr, "backmux: error: %s cannot be unset: %s\n", key,
                 !strcmp(key, "program") ? "a launch profile requires a program; use backmux set NAME program=..."
                                         : "the process name is required; use backmux set NAME name=...");
-        return HOLD_EXIT_USAGE;
-    }
-    if (!unset && !strcmp(key, "agent") && value) {
-        fprintf(stderr, "backmux: error: agent takes no value; enable with backmux set %s agent or disable with backmux unset %s agent\n", token, token);
         return HOLD_EXIT_USAGE;
     }
     if (!unset && (!strcmp(key, "working") || !strcmp(key, "program") || !strcmp(key, "name")) && (!value || !*value)) {
@@ -146,10 +142,7 @@ int hold_cmd_set_action(const struct hold_invocation *inv,
     new_argv = old_argv;
     new_argc = old_argc;
     const char *when = "from the next launch (backmux recall)";
-    if (!strcmp(key, "agent")) {
-        r.recipe.mode_agent = !unset;
-        when = "from the next message";
-    } else if (!strcmp(key, "working")) {
+    if (!strcmp(key, "working")) {
         r.recipe.has_working = !unset;
         snprintf(r.recipe.working, sizeof(r.recipe.working), "%s", unset ? "" : new_working);
     } else if (!strcmp(key, "program")) {
@@ -215,7 +208,7 @@ out:
 static const char *call_kind(const struct hold_run_record *r) {
     if (r->recipe.mode_shell) return "shell";
     if (r->recipe.mode_detach) return r->recipe.mode_tty ? "detach" : "server";
-    if (r->recipe.mode_tty) return r->recipe.mode_agent ? "agent" : "call";
+    if (r->recipe.mode_tty) return "call";
     return "server";
 }
 
@@ -246,8 +239,6 @@ int hold_cmd_info_action(const struct hold_invocation *inv,
     printf("args:      %s\n", args[0] ? args : "-");
     printf("working:   %s\n", r.recipe.has_working ? r.recipe.working : "- (recall uses the current working directory)");
     if (r.has_observed && r.observed_cwd[0]) printf("started in: %s\n", r.observed_cwd);
-    printf("messages:  %s\n", r.recipe.mode_agent ? "agent (sender header and reply command)"
-                                                   : "raw (message text; Enter by default)");
     printf("saved:     %s\n", r.saved ? "yes" : "no");
     if (r.has_started_at) printf("started:   %s\n", r.started_at);
     if (r.has_ended_at && st != STATE_RUNNING) printf("ended:     %s\n", r.ended_at);
@@ -412,6 +403,34 @@ out:
     return rc;
 }
 
+/* --agent: the program's name joins the person's list of agent harnesses
+ * (the config's "agents"), so chat lists it - this time and every time it
+ * runs from now on, however it is started. Why a list kept, not a mark on
+ * one process: what the person said is that this program is an agent, and
+ * a harness started again tomorrow is the same agent. */
+void hold_remember_agent(const struct hold_invocation *inv, int argc, char **argv) {
+    char word[AGENT_NAME_MAX];
+    if (!hold_agent_word(argv, argc, word, sizeof(word))) return;
+    if (inv && inv->euid_root && inv->have_sudo_user) {
+        hold_sig_note(inv, "backmux: --agent is remembered in your own config: run it without sudo\n");
+        return;
+    }
+    const char *home = getenv("HOME");
+    char list[1024] = "";
+    if (!home || !*home) return;
+    if (hold_settings_get(home, "agents", list, sizeof(list)) != 0) list[0] = '\0';
+    hold_agents_set_extra(list);
+    if (hold_agent_name(word, NULL, 0)) return; /* an agent already: known by name, or listed */
+    char next[1100];
+    snprintf(next, sizeof(next), "%s%s%s", list, list[0] ? " " : "", word);
+    if (hold_settings_put(home, "agents", next) != 0) {
+        hold_sig_note(inv, "backmux: could not remember %s as an agent: %s\n", word, strerror(errno));
+        return;
+    }
+    hold_agents_set_extra(next);
+    hold_sig_note(inv, "backmux: %s is an agent from now on (backmux config get agents)\n", word);
+}
+
 /* ---- the compositor's needs, and backmux swap -------------------------- */
 
 void hold_prepare_mux(const struct hold_invocation *inv, const struct hold_store *store) {
@@ -424,6 +443,8 @@ void hold_prepare_mux(const struct hold_invocation *inv, const struct hold_store
     if (home && hold_settings_get(home, "chat-name", own, sizeof(own)) != 0) own[0] = '\0';
     if (hold_person_chat_name(&kept, own, name, sizeof(name)) != 0) name[0] = '\0';
     hold_console_set_mux(&kept, name);
+    /* the harnesses the person added with --agent: chat lists them too */
+    hold_agents_set_home(home);
 }
 
 struct mux_seen {

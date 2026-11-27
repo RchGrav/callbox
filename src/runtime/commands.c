@@ -180,6 +180,8 @@ static int attach_console_record(const struct hold_invocation *inv,
      * there is no screen to print again when it ends. */
     bool on_terminal = r->recipe.mode_tty && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
     hold_prepare_mux(inv, store);
+    /* a backmux shell comes back as it started: the compositor's, with the bar */
+    hold_console_set_resident(r->recipe.mode_shell && r->recipe.mode_tty);
     int rc = hold_run_native_console(r->console_sock);
     pid_t by = 0;
     if (hold_console_was_refused(&by)) {

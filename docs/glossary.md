@@ -71,12 +71,16 @@ purge used by `delete` can stop a target found running on that later check.
 | **active pane** | Selected pane receiving forwarded program input. The chat window or a control mode may temporarily own keyboard focus. | `focused`, `key_in`, and `set_focus` in `src/console/mux.c` |
 | **window** | Numbered group of up to four panes. There are nine window positions, selected with keys 1–9. Use **window**, not **tab**, for this object; `MODE_TAB` remains an internal identifier. | `MUX_MAX_WINDOWS`, `place`, and `window_of_key` in `src/console/mux.c` |
 | **pane slot** | Position within the compositor. Letters span windows: A–D in window 1, E–H in window 2, through Z. Later slots have no letter. | `slot_letter` in `src/console/mux.c` |
-| **pane footer** | Row displaying a pane's letter, process name, and applicable status or prompt. | `draw_footer` in `src/console/mux.c` |
+| **name bar** | Line above a pane (Info): its letter and state, its name in a box (click to rename), and what it runs with its CPU and memory. | `draw_name_bar` in `src/console/mux.c` |
+| **bar** | Row along the bottom of the compositor's screen: process counters, the person's chat name, Info, windows, toggles, the machine's load. Ctrl-Space f hides it. | `draw_bar` in `src/console/mux.c` |
+| **launcher** | Window listing running terminals, consoles that scroll, and ended processes, to attach, view, or start again. | `draw_procs` and `launch_pick` in `src/console/mux.c` |
+| **agent harness** | A program chat talks to: a known harness (claude, codex, ...) or one named with `--agent`. | `src/console/agents.c` |
+| **Assist** | Chat's checkbox: the next message asks the agent to inspect the app on screen with `peek` and answer with `msg`. | `with_assist` in `src/console/chat.c` |
 | **full screen** | Pane display filling its current window. Use **full-screen** before a noun, as in “full-screen program.” | `relayout` and `command` in `src/console/mux.c` |
 | **pane lock** | Setting that forwards Alt-arrow keys to the active program instead of using them for adjacent-pane focus. Prefix commands remain available. | `pane_locked` and `key_in` in `src/console/mux.c` |
 | **prefix** | First key of a control sequence, normally Ctrl-Space. A command key follows it. Repeating the prefix forwards one prefix byte to the program. | `src/term/pump.c`, `src/console/attach.c`, `src/console/mux.c` |
 | **control mode** | Pane, window, resize, or move mode. Subsequent keys act within that mode; `?` shows its help. | `mode_key` in `src/console/mux.c` |
-| **picker** | List for selecting an existing process, pane, or message recipient. It is not a launcher or profile editor. | `draw_pick`, `draw_jump` in `src/console/mux.c`; `draw_picker` in `src/console/chat.c` |
+| **picker** | List for selecting a pane or a message recipient. | `draw_jump` in `src/console/mux.c`; `draw_picker` in `src/console/chat.c` |
 | **alternate screen** | Terminal screen buffer used by many full-screen programs and by the compositor after a split. It is distinct from the main terminal screen. | `src/console/attach.c`, `src/screen/screen.c` |
 | **screen snapshot** | Captured screen state. Text, JSON, and image representations are available through `peek`; it is not the same as the output log. | `src/runtime/screen_cmds.c`, `src/screen/render.c` |
 | **idle output** | No new program output for the requested interval, subject to the wait command's sequence conditions. It does not mean the program is ready for input or has completed a task. | `check_wait` in `src/console/broker.c` |
@@ -94,7 +98,7 @@ Use functional help headings such as **Pane Navigation**, **Window Navigation**,
 | **chat name** | Per-user sender identity for the floating chat window and its inbox. | `hold_person_chat_name` in `src/runtime/inbox.c`, `src/runtime/config_cmd.c` |
 | **inbox** | File-backed destination for messages to a sender outside a managed process. | `src/store/inbox.c`, `src/runtime/inbox.c` |
 | **conversation** | Chat-window history associated with a process ID or inbox name. | `struct chat_thread` in `src/console/chat.c` |
-| **agent formatting** | Message header containing sender/reply information, enabled by `agent` or the `agent` setting. It does not start or select an AI model. | `deliver_msg` in `src/console/broker.c`, `src/runtime/settings.c` |
+| **sender header** | `[msg from NAME; reply: backmux msg NAME "..."]`, put before every message typed into a process. It is an address, not proof of who sent it. | `deliver_msg` in `src/console/broker.c` |
 | **delivered** | Message transport accepted the message for program input or its destination inbox. It does not establish that an agent read, understood, or acted on it. | `src/console/broker.c`, `src/console/chat.c`, `src/runtime/inbox.c` |
 | **output log** | Recorded program output. Keep it distinct from the message log and conversation history. | `src/console/broker.c`, `src/term/pump.c` |
 | **user store** | Per-user records and artifacts. | `src/store/layout.c`, `src/access/invocation.c` |

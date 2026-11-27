@@ -5,6 +5,8 @@
 #include <arpa/inet.h>
 
 #if defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/mach_time.h>
 
 static int mac_kinfo_pid(pid_t pid, struct kinfo_proc *kp) {
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid};
@@ -20,9 +22,22 @@ int hold_proc_read_ids(pid_t pid, pid_t *pgid_out, pid_t *sid_out, char *state_o
     errno = ENOSYS;
     return -1;
 }
+/* CPU time in clock ticks (as /proc gives it, so callers divide by
+ * _SC_CLK_TCK alike) and resident memory, from proc_pid_rusage. Its times
+ * are Mach absolute time, which is nanoseconds only on Intel: the timebase
+ * converts them (on Apple silicon one unit is 125/3 ns). */
 int hold_proc_read_cpu_rss(pid_t pid, uint64_t *cpu, uint64_t *rss) {
-    (void)pid; (void)cpu; (void)rss;
-    return -1;
+    struct rusage_info_v2 ri;
+    if (proc_pid_rusage(pid, RUSAGE_INFO_V2, (rusage_info_t *)&ri) != 0) return -1;
+    if (cpu) {
+        static mach_timebase_info_data_t tb;
+        if (tb.denom == 0 && mach_timebase_info(&tb) != KERN_SUCCESS) return -1;
+        long hz = sysconf(_SC_CLK_TCK);
+        uint64_t ns = (ri.ri_user_time + ri.ri_system_time) * tb.numer / (tb.denom ? tb.denom : 1);
+        *cpu = ns / (1000000000ull / (uint64_t)(hz > 0 ? hz : 100));
+    }
+    if (rss) *rss = ri.ri_resident_size;
+    return 0;
 }
 int hold_proc_fd_target(pid_t pid, int fd, char *out, size_t n) {
     (void)pid; (void)fd; (void)out; (void)n;
@@ -452,6 +467,147 @@ int hold_proc_parent_and_name(pid_t pid, pid_t *ppid_out, char *name, size_t n) 
         return -1;
     }
     *ppid_out = (pid_t)strtol(pp, NULL, 10);
+    return 0;
+#endif
+}
+
+/* ---- what a process runs, and the machine it runs on -------------------- */
+
+int hold_proc_cmdline(pid_t pid, char *out, size_t n, size_t *len) {
+    *len = 0;
+    if (pid <= 0 || n < 2) {
+        errno = EINVAL;
+        return -1;
+    }
+#if defined(__APPLE__)
+    /* KERN_PROCARGS2: argc, the exec path, padding NULs, then argv. */
+    int mib[3] = {CTL_KERN, KERN_PROCARGS2, pid};
+    size_t sz = 0;
+    if (sysctl(mib, 3, NULL, &sz, NULL, 0) != 0 || sz < sizeof(int)) return -1;
+    char *buf = malloc(sz);
+    if (!buf) return -1;
+    if (sysctl(mib, 3, buf, &sz, NULL, 0) != 0) {
+        free(buf);
+        return -1;
+    }
+    int argc = 0;
+    memcpy(&argc, buf, sizeof(argc));
+    size_t i = sizeof(int);
+    while (i < sz && buf[i]) i++; /* the exec path */
+    while (i < sz && !buf[i]) i++;
+    size_t k = 0;
+    for (int a = 0; a < argc && i < sz && k + 1 < n; a++) {
+        while (i < sz && buf[i] && k + 1 < n) out[k++] = buf[i++];
+        out[k++] = '\0';
+        i++;
+    }
+    free(buf);
+    *len = k;
+    return k ? 0 : -1;
+#else
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%ld/cmdline", (long)pid);
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    ssize_t r;
+    do r = read(fd, out, n - 1); while (r < 0 && errno == EINTR);
+    close(fd);
+    if (r <= 0) return -1; /* a kernel thread, or a zombie: no arguments */
+    out[r] = '\0';
+    *len = (size_t)r;
+    return 0;
+#endif
+}
+
+int hold_proc_foreground_group(pid_t pid, pid_t *pgid_out) {
+#if defined(__APPLE__)
+    struct kinfo_proc kp;
+    if (mac_kinfo_pid(pid, &kp) != 0) return -1;
+    if (kp.kp_eproc.e_tpgid <= 0) return -1;
+    *pgid_out = kp.kp_eproc.e_tpgid;
+    return 0;
+#else
+    char buf[4096], *f;
+    if (proc_stat_fields(pid, buf, sizeof(buf), &f) != 0) return -1;
+    const char *tp = nth_field(f, 5); /* state ppid pgrp session tty_nr tpgid */
+    long v = tp ? strtol(tp, NULL, 10) : -1;
+    if (v <= 0) return -1;
+    *pgid_out = (pid_t)v;
+    return 0;
+#endif
+}
+
+int hold_proc_for_each_child(pid_t pid, int (*cb)(pid_t child, void *ctx), void *ctx) {
+#if defined(__APPLE__)
+    pid_t kids[256];
+    int got = proc_listchildpids(pid, kids, (int)sizeof(kids));
+    for (int i = 0; got > 0 && i < got && i < 256; i++)
+        if (kids[i] > 0 && cb(kids[i], ctx) != 0) return 0;
+    return got < 0 ? -1 : 0;
+#else
+    char path[96], buf[4096];
+    snprintf(path, sizeof(path), "/proc/%ld/task/%ld/children", (long)pid, (long)pid);
+    if (read_small_file(path, buf, sizeof(buf)) < 0) return errno == EIO ? 0 : -1; /* EIO: none */
+    for (char *p = buf; *p;) {
+        char *end = NULL;
+        long c = strtol(p, &end, 10);
+        if (end == p) break;
+        if (c > 0 && cb((pid_t)c, ctx) != 0) return 0;
+        p = end;
+    }
+    return 0;
+#endif
+}
+
+int hold_system_cpu_times(uint64_t *busy, uint64_t *total) {
+#if defined(__APPLE__)
+    host_cpu_load_info_data_t info;
+    mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
+    if (host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, (host_info_t)&info, &count) != KERN_SUCCESS) return -1;
+    uint64_t idle = info.cpu_ticks[CPU_STATE_IDLE];
+    uint64_t all = idle + info.cpu_ticks[CPU_STATE_USER] + info.cpu_ticks[CPU_STATE_SYSTEM] + info.cpu_ticks[CPU_STATE_NICE];
+    *busy = all - idle;
+    *total = all;
+    return 0;
+#else
+    char buf[1024];
+    if (read_small_file("/proc/stat", buf, sizeof(buf)) < 0) return -1;
+    /* "cpu  user nice system idle iowait irq softirq steal ..." */
+    unsigned long long v[8] = {0};
+    if (sscanf(buf, "cpu %llu %llu %llu %llu %llu %llu %llu %llu", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6],
+               &v[7]) < 4)
+        return -1;
+    uint64_t idle = v[3] + v[4], all = 0;
+    for (int i = 0; i < 8; i++) all += v[i];
+    *busy = all - idle;
+    *total = all;
+    return 0;
+#endif
+}
+
+int hold_system_memory(uint64_t *total, uint64_t *available) {
+#if defined(__APPLE__)
+    uint64_t mem = 0;
+    size_t sz = sizeof(mem);
+    if (sysctlbyname("hw.memsize", &mem, &sz, NULL, 0) != 0) return -1;
+    vm_statistics64_data_t vm;
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+    if (host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vm, &count) != KERN_SUCCESS) return -1;
+    vm_size_t page = 0;
+    if (host_page_size(mach_host_self(), &page) != KERN_SUCCESS) page = 4096;
+    *total = mem;
+    /* what Activity Monitor leaves out of "used": free, inactive, purgeable */
+    *available = ((uint64_t)vm.free_count + vm.inactive_count + vm.purgeable_count) * (uint64_t)page;
+    return 0;
+#else
+    char buf[4096];
+    if (read_small_file("/proc/meminfo", buf, sizeof(buf)) < 0) return -1;
+    unsigned long long t = 0, a = 0;
+    const char *mt = strstr(buf, "MemTotal:"), *ma = strstr(buf, "MemAvailable:");
+    if (!mt || sscanf(mt, "MemTotal: %llu", &t) != 1) return -1;
+    if (!ma || sscanf(ma, "MemAvailable: %llu", &a) != 1) return -1;
+    *total = (uint64_t)t * 1024;
+    *available = (uint64_t)a * 1024;
     return 0;
 #endif
 }

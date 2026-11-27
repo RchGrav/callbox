@@ -4,6 +4,7 @@
 #include "backmux/runtime_internal.h"
 #include "backmux/core.h"
 #include "backmux/store.h"
+#include "backmux/console.h"
 
 /* User defaults are validated before store/settings.c writes them. */
 
@@ -11,7 +12,7 @@ static const char config_usage[] =
     "usage: backmux config get <setting>\n"
     "       backmux config set <setting> <value>\n"
     "       backmux config unset <setting>\n"
-    "settings: detach-size COLS ROWS, chat-name NAME\n";
+    "settings: detach-size COLS ROWS, chat-name NAME, agents NAME...\n";
 
 /* The words after the setting's name -> the one-line form that is saved. */
 typedef int (*setting_parse)(int argc, char **argv, char *out, size_t n);
@@ -47,6 +48,37 @@ static int parse_name_value(int argc, char **argv, char *out, size_t n) {
     return 0;
 }
 
+/* Program names that are agent harnesses besides the ones backmux knows
+ * (claude, codex, ...): chat lists processes that run them. --agent adds
+ * to this list; set replaces it. */
+static int parse_agents_value(int argc, char **argv, char *out, size_t n) {
+    size_t k = 0;
+    out[0] = '\0';
+    for (int i = 0; i < argc; i++)
+        for (const char *p = argv[i]; *p;) {
+            while (*p == ' ' || *p == ',') p++;
+            size_t l = strcspn(p, " ,");
+            if (!l) break;
+            for (size_t j = 0; j < l; j++)
+                if (!isalnum((unsigned char)p[j]) && p[j] != '-' && p[j] != '_' && p[j] != '.') {
+                    fprintf(stderr, "backmux: error: agents are program names: letters, digits, - _ and .\n");
+                    return -1;
+                }
+            if (l >= AGENT_NAME_MAX || k + l + 2 > n) {
+                fprintf(stderr, "backmux: error: agent names are at most %d characters, the list 1000\n",
+                        AGENT_NAME_MAX - 1);
+                return -1;
+            }
+            k += (size_t)snprintf(out + k, n - k, "%s%.*s", k ? " " : "", (int)l, p);
+            p += l;
+        }
+    if (!k) {
+        fprintf(stderr, "backmux: error: agents needs at least one program name\n");
+        return -1;
+    }
+    return 0;
+}
+
 static const struct setting {
     const char *name;
     setting_parse parse;
@@ -55,6 +87,7 @@ static const struct setting {
     {"detach-size", parse_size_value,
      "detach-size is unset: detached terminal processes use the invoking terminal's size, or 80 columns by 24 rows without one"},
     {"chat-name", parse_name_value, "chat-name is unset: new chat inboxes receive generated names"},
+    {"agents", parse_agents_value, "agents is unset: chat lists only the harnesses backmux knows"},
 };
 
 static const struct setting *find_setting(const char *name) {

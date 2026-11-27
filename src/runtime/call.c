@@ -178,7 +178,6 @@ static int restart_existing_run(const struct hold_invocation *inv,
         goto out;
     }
     struct hold_start_options opts = {
-        .agent = old.recipe.mode_agent,
         .no_working = !old.recipe.has_working,
         .tail = tail,
         .console_mode = console_mode,

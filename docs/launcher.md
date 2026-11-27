@@ -26,9 +26,11 @@ attached launch is forwarded to its program. `-d` selects a detached launch.
 - **Plain foreground process (`-w`, active `--restart`, `--tail PROGRAM`):**
   follow the log and return the program's exit status. No PTY is allocated.
 
-`agent` enables sender and reply-command headers for incoming messages.
-Other new launches receive message text without that header. Chat uses a
-separate inbox identity and does not change the process's message mode.
+Every message to a process arrives behind a sender and reply-command
+header, whoever sent it. Why one format: whoever reads a message, person or
+agent, needs to know who wrote it and how to answer, and a setting chosen at
+launch to get that was one more thing to know. `backmux send` types text as
+it is. Chat uses a separate inbox identity.
 
 Ctrl-C is forwarded while attached or following a launch. Ctrl-Space q
 detaches the active pane. In a standalone log-follow command (`tail` or

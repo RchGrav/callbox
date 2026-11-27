@@ -1,7 +1,6 @@
 
 LAUNCH PROGRAMS
   backmux call PROGRAM [ARGS...]       start an attached terminal process
-  backmux agent PROGRAM [ARGS...]      start with agent message formatting
   backmux server PROGRAM [ARGS...]     start a background process with a log
   backmux detach PROGRAM [ARGS...]     start a detached terminal process
   backmux shell [SHELL [ARGS...]]       start an attached shell

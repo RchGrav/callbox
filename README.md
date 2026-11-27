@@ -54,9 +54,11 @@ Join the program with `backmux attach demo`. Press **Ctrl-Space, then q**
 to detach and leave it running. An agent can still inspect the screen and
 send input while you are attached.
 
-While attached, **Ctrl-Space p a** brings another running process in beside this
-one as a pane. **Ctrl-Space c** opens the chat window, and
-**Ctrl-Space ?** displays command help. Press `?` within a navigation or
+While attached, **Ctrl-Space o** opens the process launcher, which brings
+another running process in beside this one as a pane. **Ctrl-Space c** opens
+the chat window, which lists your agents, and **Ctrl-Space ?** displays
+command help. `backmux shell` opens your shell on its own screen with chat
+up and a bar along the bottom that the mouse can do all of this from. Press `?` within a navigation or
 layout mode for its controls. See [Interactive controls](docs/backmux.md).
 
 When finished:
@@ -78,8 +80,7 @@ A process keeps its name after the program exits, until you purge its record.
 
 | You want to… | Start it with… | What you get |
 | --- | --- | --- |
-| Use a program yourself | `backmux call --name app PROGRAM` | An attached terminal; messages arrive as typed text. |
-| Work with an agent in your terminal | `backmux agent --name lead AGENT` | An attached terminal; messages include the sender and reply command. |
+| Use a program or an agent yourself | `backmux call --name app PROGRAM` | An attached terminal; messages include the sender and reply command. |
 | Let an agent drive a terminal app | `backmux detach --name app PROGRAM` | A detached terminal you can inspect, control, and attach to later. |
 | Run a service or CI job | `backmux server -w --name job PROGRAM` | A background process with a log and a recorded exit code, without a terminal. |
 
@@ -92,8 +93,7 @@ console, so use `logs`, `tail`, and `end` to inspect and manage them.
 details, and `backmux end NAME` stops the process. `backmux recall NAME`
 relaunches a stopped process using its recorded program, arguments, and
 working directory. `set NAME args=...` and `set NAME working=...` change
-the next launch; `set NAME agent` enables sender and reply headers for
-subsequent messages. See `backmux help aliases` for Docker-style spellings.
+the next launch. See `backmux help aliases` for Docker-style spellings.
 
 ## Find the next step
 

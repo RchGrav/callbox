@@ -706,7 +706,9 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         /* A fresh launch attached on the person's terminal starts where
          * their cursor is, not on a cleared alternate screen: a TUI clears
          * the screen itself if it wants to, and a shell goes on below. */
-        if (tail && !pipe_mode && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO)) {
+        /* backmux shell is not inline: it starts on a cleared screen of its
+         * own, with the bar (attach.c). */
+        if (tail && !pipe_mode && !opts->shell && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO)) {
             ask_cursor(&console_options.start_row, &console_options.start_col);
             if (console_options.start_row > console_options.rows) console_options.start_row = console_options.rows;
         }
@@ -1056,7 +1058,6 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     r.log_start = run_log_start;
     r.recipe.mode_chat = opts->chat || opts->user_mode;
     r.recipe.mode_shell = opts->shell;
-    r.recipe.mode_agent = opts->agent;
     /* Record the launch working directory for recall, unless the profile's
      * working setting was explicitly unset. */
     if (!opts->no_working && observed_cwd[0] &&
@@ -1217,6 +1218,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
             bool on_terminal = console_mode && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
             hold_prepare_mux(inv, store);
             hold_console_set_inline(console_options.start_row > 0);
+            hold_console_set_resident(opts->shell);
             tail_rc = hold_run_native_console(r.console_sock);
             if (hold_console_reader_gone()) {
                 /* `backmux foo | head`: the reader has what it wanted. foo is

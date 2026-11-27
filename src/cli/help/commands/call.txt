@@ -4,10 +4,9 @@ Start an attached terminal process on a pseudoterminal (PTY). Ctrl-Space q
 detaches the active pane and leaves its process running. Use backmux attach
 NAME to reconnect.
 
-Messages arrive as program input without a sender header, followed by Enter
-by default. A message to a shell can execute a command. backmux agent enables
-the sender header at launch; backmux set NAME agent enables it later.
-See backmux help msg for text handling and delivery behavior.
+Messages arrive as program input behind a header naming the sender and how
+to reply, followed by Enter by default. To type text into the program as it
+is, use backmux send. See backmux help msg for text handling and delivery.
 
 Options include --name, -e KEY=VALUE, --env-file, --size COLS ROWS, --rm, and
 --detach-keys. Options precede PROGRAM; subsequent arguments go to the program.

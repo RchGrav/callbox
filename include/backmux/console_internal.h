@@ -121,6 +121,7 @@ struct hold_console_term {
 extern struct hold_console_term g_console_term;
 void hold_console_term_release(void);
 void hold_console_leave_inline(void);
+bool hold_console_is_resident(void);
 void hold_console_set_attached_name(const char *name);
 
 /* The compositor (mux.c): panes of TTY processes and one floating window over

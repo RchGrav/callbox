@@ -23,9 +23,6 @@ struct hold_recipe {
     bool has_chat_key;
     bool has_keys;   /* broker-interpreted prefix and detach keys are recorded */
     int lead_key, detach_key;
-    bool mode_agent; /* backmux agent (or set NAME agent): messages arrive with a header naming the
-                        sender and how to reply; without it they arrive raw, the text then Enter.
-                        Read at each delivery, so set/unset take effect from the next message. */
     char working[HOLD_PATH_MAX]; /* recall working directory; absent = current directory */
     bool has_working;
     bool has_size;   /* placed with --size: redial replays it */

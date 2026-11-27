@@ -1022,9 +1022,9 @@ static const char msg_usage[] =
     "                   [--wait-reply [--timeout MS]]\n"
     "       backmux msg [<target>] --received [ID]\n";
 
-/* Message delivery to a managed process. The receiving broker selects raw
- * input or an agent header from the target's agent setting and resolves
- * BACKMUX_ID to the sender's current process name. */
+/* Message delivery to a managed process. The receiving broker puts the
+ * sender's header before every message, resolving BACKMUX_ID to the
+ * sender's current process name. */
 static bool is_msg_id(const char *s) {
     if (strlen(s) != 6) return false;
     for (int i = 0; i < 6; i++)

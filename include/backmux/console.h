@@ -166,4 +166,27 @@ void hold_console_note_detached(const char *name);
 /* Whether the last attach received anything from the broker. */
 bool hold_console_heard_output(void);
 
+/* ---- agent harnesses (console/agents.c) ----------------------------------
+ * Chat lists only agent harnesses; see agents.c for how one is told. */
+#define AGENT_NAME_MAX 32
+/* Names the person added with --agent (the config's "agents"), space-separated. */
+void hold_agents_set_extra(const char *list);
+/* Whose config to read that list from (and again every few seconds). */
+void hold_agents_set_home(const char *home);
+/* Whether a program name is a harness's; out gets the harness's name. */
+bool hold_agent_name(const char *word, char *out, size_t n);
+bool hold_agent_of_argv(char *const *argv, int argc, char *out, size_t n);
+/* The name --agent records for a command: its program's, or its script's
+ * when an interpreter runs it. */
+bool hold_agent_word(char *const *argv, int argc, char *out, size_t n);
+/* A running process, its terminal's foreground job, or a child of either. */
+bool hold_agent_of_process(pid_t pid, char *out, size_t n);
+/* A process record: the program it was started as, then (running) what runs now. */
+bool hold_agent_of_record(const struct hold_run_record *r, char *out, size_t n);
+
+/* The compositor takes the terminal from the start and keeps it - the bar,
+ * chat open - instead of plain attach: backmux shell, the one launch meant
+ * for a person rather than a script. */
+void hold_console_set_resident(bool on);
+
 #endif /* HOLD_CONSOLE_H */

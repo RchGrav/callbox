@@ -2,7 +2,6 @@ usage: backmux unset <name|id> <setting>
 
 Clear an optional setting on a running or ended process.
 
-  agent      disable the sender header for subsequent messages
   working    use the caller's working directory on the next recall
   args       remove all recorded arguments for the next recall
 

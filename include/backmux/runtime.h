@@ -28,7 +28,6 @@ struct hold_start_options {
     bool chat;                /* broker-composited chat for a retained mode_chat profile */
     bool user_mode;           /* retain mode_chat even when no terminal can display it */
     bool shell;               /* placed with backmux shell */
-    bool agent;               /* backmux agent: messages arrive formatted for an agent */
     const char *working;      /* recorded working directory; NULL = current directory */
     bool no_working;          /* recall of a process whose working was unset: record none */
     unsigned char chat_key;   /* the key that opens chat; 0 = the default */
@@ -126,6 +125,8 @@ int hold_person_chat_name(const struct hold_store *store, const char *own, char 
 /* Before an attach at a terminal: what the compositor needs (the store,
  * the person's chat name). */
 void hold_prepare_mux(const struct hold_invocation *inv, const struct hold_store *store);
+/* --agent: add the program's name to the person's agent list (the config's "agents"). */
+void hold_remember_agent(const struct hold_invocation *inv, int argc, char **argv);
 int hold_cmd_swap_action(const struct hold_invocation *inv, const struct hold_store *user_store,
                          const struct hold_store *system_store, int argc, char **argv);
 int hold_cmd_inbox_action(const struct hold_invocation *inv, const struct hold_store *user_store, int argc, char **argv);

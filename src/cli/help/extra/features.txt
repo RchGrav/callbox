@@ -26,8 +26,8 @@ WORK TOGETHER ON ONE SCREEN
   While attached, Ctrl-Space p a puts another process beside it as a pane and
   Ctrl-Space c opens the chat window. Pane decorations and chat are composed
   by the attach client; each process's log and snapshot contain its own
-  output. The agent setting adds a sender header to messages; without it,
-  messages arrive as program input without that header. Outside harnesses
+  output. Every message arrives behind a header naming the sender and how
+  to reply. Outside harnesses
   receive replies in an inbox and can follow them with monitor.
 
 RECALL A PROCESS

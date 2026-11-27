@@ -656,14 +656,14 @@ static int emit_pen(const struct hold_cell *c, char **buf, size_t *len, size_t *
      * gave as RGB is sent as RGB. */
     if (c->flags & HOLD_CELL_FG_INDEXED) {
         if (c->fg_idx < 8) n += snprintf(sgr + n, sizeof(sgr) - n, ";3%u", c->fg_idx);
-        else if (c->fg_idx < 16) n += snprintf(sgr + n, sizeof(sgr) - n, ";9%u", c->fg_idx - 8);
+        else if (c->fg_idx < 16) n += snprintf(sgr + n, sizeof(sgr) - n, ";9%u", (unsigned)(c->fg_idx - 8));
         else n += snprintf(sgr + n, sizeof(sgr) - n, ";38;5;%u", c->fg_idx);
     } else if (!(c->flags & HOLD_CELL_FG_DEFAULT)) {
         n += snprintf(sgr + n, sizeof(sgr) - n, ";38;2;%u;%u;%u", c->fg[0], c->fg[1], c->fg[2]);
     }
     if (c->flags & HOLD_CELL_BG_INDEXED) {
         if (c->bg_idx < 8) n += snprintf(sgr + n, sizeof(sgr) - n, ";4%u", c->bg_idx);
-        else if (c->bg_idx < 16) n += snprintf(sgr + n, sizeof(sgr) - n, ";10%u", c->bg_idx - 8);
+        else if (c->bg_idx < 16) n += snprintf(sgr + n, sizeof(sgr) - n, ";10%u", (unsigned)(c->bg_idx - 8));
         else n += snprintf(sgr + n, sizeof(sgr) - n, ";48;5;%u", c->bg_idx);
     } else if (!(c->flags & HOLD_CELL_BG_DEFAULT)) {
         n += snprintf(sgr + n, sizeof(sgr) - n, ";48;2;%u;%u;%u", c->bg[0], c->bg[1], c->bg[2]);

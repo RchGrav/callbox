@@ -9,7 +9,6 @@ OPEN YOUR AGENT AND APP
   your built application. Use your own terminal agent and app as needed.
 
     backmux detach --name coder codex
-    backmux set coder agent
     backmux peek coder
     backmux call --name app ./my-tui
 

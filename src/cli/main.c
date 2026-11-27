@@ -18,6 +18,7 @@ struct cli_run_options {
     bool interactive;
     bool tty;
     bool auto_remove;
+    bool agent; /* --agent: the program is an agent harness; chat lists it, now and from now on */
     const char *name;
     char **env;
     int envc;
@@ -421,6 +422,11 @@ static int parse_run_options(int argc,
         (*index)++;
         return 0;
     }
+    if (!strcmp(arg, "--agent")) {
+        run->agent = true;
+        (*index)++;
+        return 0;
+    }
     if (!strcmp(arg, "--tail") || !strcmp(arg, "-f")) {
         *tail = true;
         run->tail_flag = true;
@@ -525,13 +531,13 @@ int hold_cli_main(int argc, char **argv) {
         if (sr == 1) argv[argi] = (char *)verb;
         if (sr == 2) argv[argi] = short_name;
     }
-    /* Launch commands select the I/O mode: call and agent use an attached
-     * PTY; detach uses a detached PTY; server writes to a log. agent also
-     * enables message headers, and server accepts -w for exit-code tracking.
+    /* Launch commands select the I/O mode: call uses an attached PTY;
+     * detach uses a detached PTY; server writes to a log, and accepts -w for
+     * exit-code tracking.
      * The first non-option argument is a program, not a retained process. */
     const char *launch_verb = NULL;
     if (argi < argc && !force_raw && !tail &&
-        (!strcmp(argv[argi], "call") || !strcmp(argv[argi], "agent") || !strcmp(argv[argi], "server") ||
+        (!strcmp(argv[argi], "call") || !strcmp(argv[argi], "server") ||
          !strcmp(argv[argi], "detach"))) {
         launch_verb = argv[argi++];
         if (run.detach || run.interactive || run.tty || run.wait || console_mode) {
@@ -886,7 +892,7 @@ int hold_cli_main(int argc, char **argv) {
         struct hold_start_options opts = start_options_from_run(&run, tail, console_mode,
                                                                 interactive_stdin, cmd_argc, cmd_argv);
         opts.shell = shell_mode;
-        opts.agent = launch_verb && !strcmp(launch_verb, "agent");
+        if (run.agent) hold_remember_agent(&inv, cmd_argc, cmd_argv);
         int rc = hold_perform_start_options(&inv, &start_store, &opts);
         free_run_options(&run);
         return rc;

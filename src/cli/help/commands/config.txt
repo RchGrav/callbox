@@ -1,7 +1,7 @@
 usage: backmux config get <setting>
        backmux config set <setting> <value>
        backmux config unset <setting>
-settings: detach-size COLS ROWS, chat-name NAME
+settings: detach-size COLS ROWS, chat-name NAME, agents NAME...
 
 Read or change user defaults in ~/.config/backmux/config.
 
@@ -15,6 +15,12 @@ Read or change user defaults in ~/.config/backmux/config.
     Preferred name when creating your chat inbox, shared by your terminals.
     An existing inbox keeps its name. If the preference is unset or the name
     is unavailable, Backmux generates a name.
+
+  agents NAME...
+    Program names that are agent harnesses besides the ones Backmux knows
+    (claude, codex, agy, antigravity, pi, hermes, crush, opencode, gemini,
+    aider, goose, copilot). Chat lists processes that run them. A launch
+    with --agent adds its program's name; set replaces the list.
 
 get prints the saved value and exits 1 if unset. set validates the value
 before saving it. unset removes the saved value. A sudo launch reads the

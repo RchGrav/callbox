@@ -103,6 +103,7 @@ int hold_inbox_dir(const struct hold_store *s, char *out, size_t n);
 bool hold_inbox_live(const struct hold_store *s, const char *name);
 void hold_inbox_touch(const struct hold_store *s, const char *name);
 int hold_inbox_find(const struct hold_store *s, const char *key, char *name, size_t n);
+int hold_inbox_owner(const struct hold_store *s, const char *name, char *program, size_t n);
 int hold_inbox_claim(const struct hold_store *s, const char *name, const char *key);
 int hold_inbox_deliver(const struct hold_store *s, const char *name, const char *from, const char *text, size_t len);
 off_t hold_inbox_size(const struct hold_store *s, const char *name);

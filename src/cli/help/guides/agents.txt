@@ -7,19 +7,17 @@ be installed, configured, and able to access the project.
 START THE TWO AGENTS
   In your terminal, start the agent you work with:
 
-    backmux agent --name lead claude
+    backmux call --name lead claude
 
-  From lead's command tool, start a reviewer in the background, make its
-  messages arrive formatted for an agent, and check its prompt:
+  From lead's command tool, start a reviewer in the background and check its
+  prompt:
 
     backmux detach --name reviewer codex
-    backmux set reviewer agent
     backmux wait reviewer --idle 1000
     backmux peek reviewer
 
-  agent keeps lead attached; detach gives reviewer a terminal of its own.
-  The agent setting is what makes each message arrive with a header naming
-  the sender and how to reply; without it a message arrives as typed text.
+  call keeps lead attached; detach gives reviewer a terminal of its own.
+  Each message arrives with a header naming the sender and how to reply.
   Complete any login or trust prompt before assigning work; backmux attach
   reviewer lets you operate it yourself, and Ctrl-Space p a there puts lead
   beside it.
@@ -35,7 +33,7 @@ ASSIGN WORK AND CHECK PROGRESS
 
     backmux msg lead "Review complete: no issues found in src/main.c."
 
-  To an agent, msg adds the sender's name and the reply command, then
+  msg puts the sender's name and the reply command first, then
   submits the text. Delivery means the input reached the process, not that the
   task finished. Whether a busy harness queues input depends on that
   harness. Judge progress from its screen and completion from its report;
