@@ -1,0 +1,28 @@
+backmux help delegate · for {name}
+backmux help delegate - start another agent and give it work{!name}
+
+  backmux detach --name reviewer env -u CLAUDE_CODE_CHILD_SESSION \
+      -u CLAUDE_CODE_CHILD_NOTES_DIR claude
+  backmux wait reviewer --idle 1.5s      until its screen is still 1.5 s
+                                         (exit 7: still busy after 30 s)
+  backmux peek reviewer                  ready? Answer a trust or
+                                         permission prompt with send -k
+                                         Down / -k Enter, peeking between
+  backmux msg reviewer "Review src/main.c and report your findings."
+
+The two -u flags: a Claude Code that inherits them takes itself for a
+child of this session (no transcript, registered as its child); unset,
+the new agent is a session of its own. Any harness works in place of
+claude (codex, ...).
+Every message carries a header naming you and the reply command, so the
+brief need not say how to report back.
+[inside]
+The reply is typed in here as soon as it is sent, even mid-turn; nothing
+needs to poll. backmux msg --received lists what has arrived.
+[outside]
+The reply waits in your inbox: backmux inbox --wait (backmux help replies).
+[all]
+Delivered means typed in, not done: peek shows its progress. When done:
+backmux end reviewer, then backmux purge reviewer.
+
+Next: backmux help reply, check

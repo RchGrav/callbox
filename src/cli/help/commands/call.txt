@@ -1,4 +1,12 @@
-usage: backmux call [--name NAME] [options] <program> [<args>...]
+[agent]
+call keeps the program on this terminal until it ends, so an agent's
+command would not return. Start it with detach: backmux help test.
+
+The whole page: backmux help --full call
+[person]
+usage: backmux call [--name <name>] [options] <program> [<args>...]
+
+Start a program, attached
 
 Start an attached terminal process on a pseudoterminal (PTY). Ctrl-Space q
 detaches the active pane and leaves its process running. Use backmux attach
@@ -8,6 +16,7 @@ Messages arrive as program input behind a header naming the sender and how
 to reply, followed by Enter by default. To type text into the program as it
 is, use backmux send. See backmux help msg for text handling and delivery.
 
-Options include --name, -e KEY=VALUE, --env-file, --size COLS ROWS, --rm, and
---detach-keys. Options precede PROGRAM; subsequent arguments go to the program.
+Options include --name, -e <key>=<value>, --env-file, --size <cols> <rows>,
+--rm, and --detach-keys. Options precede <program>; later arguments go to
+the program.
 Equivalent launch: backmux run -it. See backmux help launch and help panes.

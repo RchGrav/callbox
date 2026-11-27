@@ -1,0 +1,35 @@
+Open
+  Enter       New terminal (shell)
+  | -         Split right / down
+  l           Open the launcher
+
+Move around
+  Alt-arrows  Focus pane (no prefix)
+  o O         Next / previous pane
+  t           Window mode: 1-9/arrows
+  p           Pane mode: focus/attach
+
+Arrange
+  s           Swap two places (2C)
+  m           Move mode (base only)
+  r           Resize mode
+  z           Toggle zoom
+  L           Open the Layouts panel
+
+View
+  a           Toggle sort by name
+  w           Toggle spread view
+  d           Toggle pack, 4 a window
+  f           Toggle the bar
+  i           Toggle name bars
+
+This pane
+  n           Rename and save process
+  ;           Save process profile
+  \           Lock: Alt-arrows to app
+  q           Detach, keeps running
+
+Chat and help
+  c           Chat: open, focus, hide
+  ?           Show these keys
+  Ctrl-Space  Send one to the program

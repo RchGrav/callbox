@@ -122,6 +122,12 @@ int hold_operator_name(const struct hold_store *store, bool create, char *name, 
 void hold_operator_first_note(const char *name);
 int hold_inbox_wait(const struct hold_store *store, const char *name, off_t from_off, bool forever_each, long timeout_ms);
 int hold_person_chat_name(const struct hold_store *store, const char *own, char *name, size_t n);
+int hold_operator_name_peek(const struct hold_store *store, bool person, char *name, size_t n);
+bool hold_inbox_target(const struct hold_store *store, const char **word);
+/* Help for whoever runs it (runtime/help_reader.c): fills view for this
+ * reader, or for the whole page when full. */
+struct hold_help_view;
+void hold_help_reader_view(struct hold_help_view *view, bool full);
 /* Before an attach at a terminal: what the compositor needs (the store,
  * the person's chat name). */
 void hold_prepare_mux(const struct hold_invocation *inv, const struct hold_store *store);

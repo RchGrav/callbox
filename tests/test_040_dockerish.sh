@@ -18,6 +18,9 @@ trap cleanup EXIT
 export HOME="$TEST_ROOT/home"
 export HOLD_TEST_SYSTEM_STATE_DIR="$TEST_ROOT/system"
 export HOLD_TEST_INVOKING_HOME="$TEST_ROOT/home"
+# Help is for its reader; these checks read the person's pages whoever runs
+# them (an agent running CI would otherwise get the agent's pages).
+export HOLD_TEST_HELP_READER=person
 mkdir -p "$HOME"
 
 # Where processes land: root uses the system store (runs/ and logs/ under its

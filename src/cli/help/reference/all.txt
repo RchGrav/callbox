@@ -1,11 +1,11 @@
-backmux help all - complete command and option reference
+backmux manual - complete command and option reference
 
 This reference includes launch options, target resolution, store selection,
 scripting conventions, and every command's help. Command and help-topic
 aliases are listed at the end. Sections are also available individually.
 
-  backmux help COMMAND              command syntax, options, and behavior
-  backmux COMMAND --help            the same command reference
+  backmux help <command>              command syntax, options, and behavior
+  backmux <command> --help            the same command reference
   backmux help launch               launch modes, options, and restart policies
   backmux help targets              names, IDs, prefixes, and lookup order
   backmux help system               user and root-managed stores
@@ -15,7 +15,7 @@ WORKFLOW GUIDES
   backmux help panes                pane navigation, windows, layout, and chat
   backmux help tui                  inspect and control a terminal application
   backmux help share                collaborate with an agent on an application
-  backmux help agents               launch agents and assign work
+  backmux help agents               what an agent can do (agent tasks)
   backmux help messaging            send messages and receive inbox replies
   backmux help service              run background services and capture results
   backmux help aliases              Docker-style command and option mappings

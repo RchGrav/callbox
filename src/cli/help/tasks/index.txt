@@ -1,0 +1,70 @@
+[agent inside]
+backmux · running natively inside backmux
+Your Agent ID: {name} ({name_raw})
+Started by: {parent}; report back: backmux msg {parent_raw} "..."
+Last message: {last_from}, {last_at}; reply: backmux msg {last_from_raw} "..."
+[agent outside]
+backmux · outside backmux (this shell is not a backmux process)
+Your Agent ID: {inbox} ({inbox_raw})
+Your Agent ID: none yet; your first backmux msg makes one{!inbox}
+[person]
+backmux help agents - an agent's own help: what it sees with backmux help
+[all]
+
+backmux is a terminal multiplexer built for agents as much as for people,
+not as an afterthought. Each program's terminal lives in backmux's memory:
+read any screen as text, JSON or a PNG, and type keys and mouse into it
+from your own shell, with no attach and no scraping. Every process has a
+name and takes messages, each arriving with the sender's reply command.
+Start apps, servers, jobs and other agents, and stop them when done.
+
+[agent inside]
+As an agent running inside backmux, you can:      one page each: help <task>
+  assist    Help with a person's screen     backmux peek, send, msg
+  look      Read any terminal's screen      backmux peek <target>
+  drive     Type into it, wait for it       backmux send <target> <text>
+  reply     Message a person or a process   backmux msg <target> "<text>"
+  test      Start an app and test it        backmux detach --name <n> <prog>
+  serve     Run a server, wait until ready  backmux detach, then wait --match
+  job       Run a command, get its code     backmux server -w <cmd>; wait <n>
+  delegate  Start another agent, give work  backmux detach --name <n> claude
+  check     See what is running, and where  backmux list; backmux info <n>
+  cleanup   Stop it, then remove it         backmux end <n>; backmux purge <n>
+[agent outside]
+As an agent outside backmux, you can:             one page each: help <task>
+  look      Read any terminal's screen      backmux peek <target>
+  drive     Type into it, wait for it       backmux send <target> <text>
+  reply     Message a person or a process   backmux msg <target> "<text>"
+  replies   Get replies sent to you         backmux inbox --wait
+  test      Start an app and test it        backmux detach --name <n> <prog>
+  serve     Run a server, wait until ready  backmux detach, then wait --match
+  job       Run a command, get its code     backmux server -w <cmd>; wait <n>
+  delegate  Start another agent, give work  backmux detach --name <n> claude
+  check     See what is running, and where  backmux list; backmux info <n>
+  cleanup   Stop it, then remove it         backmux end <n>; backmux purge <n>
+[person]
+An agent can:                                     one page each: help <task>
+  assist    Help with a person's screen     backmux peek, send, msg
+  look      Read any terminal's screen      backmux peek <target>
+  drive     Type into it, wait for it       backmux send <target> <text>
+  reply     Message a person or a process   backmux msg <target> "<text>"
+  replies   Get replies sent to you         backmux inbox --wait
+  test      Start an app and test it        backmux detach --name <n> <prog>
+  serve     Run a server, wait until ready  backmux detach, then wait --match
+  job       Run a command, get its code     backmux server -w <cmd>; wait <n>
+  delegate  Start another agent, give work  backmux detach --name <n> claude
+  check     See what is running, and where  backmux list; backmux info <n>
+  cleanup   Stop it, then remove it         backmux end <n>; backmux purge <n>
+[all]
+
+<target> is a name, an ID, or a place on screen (2C): backmux help targets.
+[agent inside]
+Messages to you are typed in as soon as they are sent, even mid-turn, with
+the reply command in their header: nothing needs to poll. Your harness's
+own agent tools (SendMessage) don't reach backmux processes; msg does.
+[agent outside]
+Replies wait in your inbox, shared by every agent in this harness:
+backmux help replies.
+[agent]
+One command's options: backmux help <command>. All: backmux help --full all
+Next: backmux help {next}

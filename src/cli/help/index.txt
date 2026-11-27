@@ -1,0 +1,50 @@
+backmux help all - everything backmux does
+
+COMMANDS  backmux help <command>
+
+LAUNCH                                    WATCH
+  shell    Start your shell, panes, chat    list     List processes
+  call     Start a program, attached        ps       Docker-style process list
+  detach   Start a program, detached        info     Show a process's details
+  server   Start a program, no terminal     inspect  Print a record as JSON
+                                            logs     Print a process's output
+DRIVE                                       tail     Follow new output
+  attach   Attach to a running process      stats    Show CPU and memory use
+  peek     Read a process's screen          ports    Show listening ports
+  send     Send text, keys, mouse input
+  wait     Wait for text, quiet, or exit  STOP AND REMOVE
+  resize   Change a terminal's size         end      End: SIGTERM, then SIGKILL
+                                            kill     End now: SIGKILL
+MESSAGE                                     purge    Remove ended records
+  msg      Message a process or person      delete   Remove a record, even saved
+  inbox    Read replies sent to you
+  monitor  Follow replies as they come    PROFILES AND SETTINGS
+                                            recall   Restart an ended process
+PANES                                       save     Keep a record (a profile)
+  swap     Exchange two panes' places       rename   Rename and save a process
+  layout   Save and load pane layouts       set      Change a profile setting
+                                            unset    Clear a profile setting
+HELP                                        config   Change your defaults
+  help     Show help on a topic
+  manual   Print the whole manual
+
+GUIDES  backmux help <guide>
+  panes      Panes, windows, places, views, layouts, chat
+  keys       Every key in an attached terminal
+  tui        Inspect and control a terminal app
+  share      Work with an agent on an app
+  messaging  Send messages from outside backmux
+  service    Background services and jobs
+  launch     Launch modes and options
+  targets    Names, IDs, places, prefixes
+  system     Your store and the root-managed store
+  scripting  Output, timeouts, exit codes
+  aliases    Docker-style commands and options
+  features   A closer look at what backmux does
+  examples   Worked examples
+
+AGENT TASKS  what an agent gets from backmux help: backmux help agents
+  assist  look  drive  reply  replies  test
+  serve  job  delegate  check  cleanup
+
+All of it in one text: backmux manual

@@ -289,6 +289,7 @@ for name in \
   HOLD_TEST_FAIL_PUBLIC_INDEX_WRITE \
   HOLD_FAKE_SUDO_ARGV \
   HOLD_FAKE_SUDO_RC \
+  HOLD_TEST_HELP_READER \
   BACKMUX_CONSOLE_TRANSPORT \
   BACKMUX_ID \
   BACKMUX_NAME \
@@ -460,6 +461,9 @@ run_test() {
   export HOME TEST_ROOT HOLD_BIN HOLD_REAL_BIN HOLD_TEST_SYSTEM_STATE_DIR ROOT_HOME ACTOR_HOME
   export TEST_USER TEST_UID TEST_GID USER_ACTOR_NEEDS_SUDO ROOT_ACTOR_AVAILABLE SUDO_BIN
   export HOLD_ACTOR_HOME HOLD_ACTOR_USER HOLD_ACTOR_SUDO_BIN HOLD_USER_ACTOR_NEEDS_SUDO
+  # Help is for its reader (runtime/help_reader.c); the suite reads the
+  # person's pages whoever runs it, an agent included. Reader tests set it.
+  export HOLD_TEST_HELP_READER=person
   set +e
   ( set -Eeuo pipefail; "$fn" ) &
   pid=$!
@@ -892,7 +896,7 @@ test_argument_edges() {
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || { cat "$TEST_ROOT/bare-backmux.out" "$TEST_ROOT/bare-backmux.err" >&2; return 1; }
-  grep -q 'backmux call PROGRAM' "$TEST_ROOT/bare-backmux.out" || { cat "$TEST_ROOT/bare-backmux.out" >&2; return 1; }
+  grep -q 'backmux call <program>' "$TEST_ROOT/bare-backmux.out" || { cat "$TEST_ROOT/bare-backmux.out" >&2; return 1; }
   set +e
   "$HOLD_BIN" purge -all >/dev/null 2>"$TEST_ROOT/prune-flag.err"
   rc=$?
@@ -3618,7 +3622,7 @@ test_usage_errors_go_to_stderr_and_help_names_both_views() {
   [ -z "$out" ] || { echo "usage error leaked to stdout" >&2; printf '%s\n' "$out" >&2; return 1; }
   grep -q '^usage: backmux' "$TEST_ROOT/flags-only.err" || { cat "$TEST_ROOT/flags-only.err" >&2; return 1; }
   out=$("$HOLD_BIN" 2>/dev/null)
-  printf '%s\n' "$out" | grep -Eq '^  backmux list \[all\] +list active' || { echo "help does not show list" >&2; return 1; }
+  printf '%s\n' "$out" | grep -Eq '^  backmux list \[all\] +List running processes' || { echo "help does not show list" >&2; return 1; }
   printf '%s\n' "$out" | grep -Eq '^  backmux help aliases' || { echo "help does not point to the Docker words" >&2; return 1; }
   out_has 'ps -a' "$HOLD_BIN" help aliases || { echo "help aliases does not map ps" >&2; return 1; }
   return 0
@@ -6596,76 +6600,6 @@ EOF
 # Help remains a short entry point with task guides and a complete reference.
 # Read the actual page and command inventory so a new page or alias cannot be
 # left out of the checks. Comparing bytes also checks the compiled-in text.
-test_help_pages_fit_and_say_it() {
-  python3 - "$HOLD_BIN" <<'PY' || return 1
-from pathlib import Path
-import re
-import subprocess
-import sys
-
-binary = sys.argv[1]
-pages = Path("src/cli/help")
-specs = Path("src/cli/specs.c").read_text()
-
-def help_output(*args):
-    result = subprocess.run([binary, *args], capture_output=True, check=False)
-    assert result.returncode == 0, (args, result.returncode, result.stderr)
-    assert not result.stderr, (args, result.stderr)
-    assert result.stdout, (args, "empty help")
-    for number, line in enumerate(result.stdout.decode().splitlines(), 1):
-        assert len(line) <= 80, (args, number, len(line), line)
-    return result.stdout
-
-overview = help_output("help")
-assert len(overview.splitlines()) <= 50, "the overview should remain a short entry point"
-assert overview.split(b"\n", 1)[1] == (pages / "overview.txt").read_bytes()
-for args in [("-h",), ("--help",), ("help", "-h"), ("help", "--help")]:
-    assert help_output(*args) == overview, args
-
-complete = help_output("help", "all")
-assert complete.startswith((pages / "reference/all.txt").read_bytes())
-for section in ("guides", "reference", "extra", "commands"):
-    for path in sorted((pages / section).glob("*.txt")):
-        if path.stem == "all" and section == "reference":
-            continue
-        rendered = help_output("help", path.stem)
-        assert rendered == path.read_bytes(), (path, "rendered text differs from source")
-        if section in ("reference", "commands"):
-            assert rendered in complete, (path, "missing from the complete reference")
-        if section == "guides":
-            # the front page is the menu as written; help all names every guide
-            assert ("backmux help " + path.stem).encode() in complete, (path, "undiscoverable guide")
-
-commands = re.findall(r'^\s+\{"([a-z][a-z0-9_-]*)", (NULL|"[a-z][a-z0-9_-]*"),', specs, re.M)
-assert commands, "no command specs found"
-for name, alias in commands:
-    canonical = name if alias == "NULL" else alias.strip('"')
-    page = pages / "commands" / (canonical + ".txt")
-    assert page.is_file(), (name, "missing command page")
-    expected = page.read_bytes()
-    assert help_output("help", name) == expected, name
-    assert expected in complete, (name, "missing command reference")
-    if alias != "NULL":
-        assert re.search(rb"(?m)^\s+" + name.encode() + rb"\s+.*\b" + canonical.encode() + rb"\b", complete), (name, "missing alias")
-    if name != "help":
-        for flag in ("-h", "--help"):
-            assert help_output(name, flag) == expected, (name, flag)
-
-renamed = specs.split("help_renamed[][2]", 1)[1].split("};", 1)[0]
-for old, new in re.findall(r'\{"([a-z]+)", "([a-z]+)"\}', renamed):
-    assert help_output("help", old) == help_output("help", new), (old, new)
-
-for command in ("peek", "send", "wait", "msg", "inbox", "monitor"):
-    result = subprocess.run([binary, command, "x", "--bogus"], capture_output=True)
-    assert result.returncode != 0, (command, "invalid flag accepted")
-    assert all(len(line) <= 80 for line in result.stderr.decode().splitlines()), command
-PY
-  out_has 'from now on' "$HOLD_BIN" help tail || return 1
-  out_has 'log_path' "$HOLD_BIN" help inspect || return 1
-  if out_has '--plain' "$HOLD_BIN" help inspect; then echo "help inspect still names --plain" >&2; return 1; fi
-  out_has 'usage error' "$HOLD_BIN" help scripting || return 1
-}
-
 # Probe a console by attaching in a separate terminal, checking the process's
 # screen, and detaching. A newer attach replaces any prior client. Retry while
 # the broker processes disconnects and new connections.
@@ -6864,6 +6798,11 @@ test_call_identity_environment() {
   BACKMUX_NAME=lead "$HOLD_BIN" -d --name kid -- /bin/sh -c 'echo "parent=$BACKMUX_PARENT name=$BACKMUX_NAME"' >/dev/null || return 1
   "$HOLD_BIN" wait kid --timeout 5000 >/dev/null || return 1
   "$HOLD_BIN" logs kid | grep -qx 'parent=lead name=kid' || { "$HOLD_BIN" logs kid >&2; return 1; }
+  # From inside a process with an ID, the parent is that ID: a name can be
+  # renamed or reused, the ID cannot.
+  BACKMUX_ID="$id" BACKMUX_NAME=lead "$HOLD_BIN" -d --name kid2 -- /bin/sh -c 'echo "parent=$BACKMUX_PARENT"' >/dev/null || return 1
+  "$HOLD_BIN" wait kid2 --timeout 5000 >/dev/null || return 1
+  "$HOLD_BIN" logs kid2 | grep -qx "parent=$id" || { "$HOLD_BIN" logs kid2 >&2; return 1; }
 }
 
 # Attaching repaints the live screen rather than replaying bytes.
@@ -6881,6 +6820,8 @@ test_attach_repaints_live_screen() {
 # the screen tests (grid, splits, shell, chat for agents, the bar)
 # shellcheck source=tests/test_screen.sh
 . "$(dirname "${BASH_SOURCE[0]}")/test_screen.sh"
+# shellcheck source=tests/test_help.sh
+. "$(dirname "${BASH_SOURCE[0]}")/test_help.sh"
 
 run_test "--print spans --all and multiple explicit targets" test_print_over_all_and_multiple
 run_test "stop refuses a record with a tampered pgid<=1 (exit 5)" test_signal_refuses_tampered_pgid
@@ -7104,6 +7045,8 @@ run_test "backmux -it exits as its command did and leaves its last screen" test_
 run_test "however an attach ends, the last screen stays and backmux says how" test_attach_endings_leave_the_last_screen
 run_test "a mistyped command line is a usage error and acts on nothing" test_cli_mistakes_are_usage_errors
 run_test "help stays concise, matches its source, and exposes the full reference" test_help_pages_fit_and_say_it
+run_test "help is for its reader: an agent gets its tasks, by name, nothing else" test_help_for_its_reader
+run_test "the polite name help shows resolves as a target" test_friendly_names_resolve
 run_test "a console is free again once its attach client is gone" test_attach_again_after_client_vanishes
 run_test "nested attach: the detach keys let go of the innermost first" test_nested_attach_detaches_innermost_first
 run_test "a newer attach takes the process; leaving is quiet; names, not ids" test_attach_messages_say_what_happened

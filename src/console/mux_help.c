@@ -1,79 +1,54 @@
 /* console/mux_help.c - the keys panel (prefix ?): the prefix's keys, or the
  * active mode's, framed. */
 #include "mux.h"
+#include "backmux/help_text.h"
 
 /* Keyboard help: the keys after the prefix, or the active mode's, in a
  * framed panel - sections in two columns when the terminal is wide enough. */
 struct help_line {
     const char *key, *what; /* key NULL: a section heading (what) */
 };
-static const struct help_line keys_prefix[] = {
-    {NULL, "Panes"},
-    {"Enter", "New terminal (your shell)"},
-    {"| -", "Split right / down: new terminal"},
-    {"l", "Open a process (launcher)"},
-    {"o O", "Next / previous pane"},
-    {"Alt-arrows", "Next pane; past the edge, slide"},
-    {"s", "Swap places (2C, or C here)"},
-    {"z", "Zoom the pane, or back"},
-    {"p", "Pane mode: arrows, a attach, g go to"},
-    {NULL, "Windows and views"},
-    {"t", "Window mode: 1-9, arrows on the grid"},
-    {"r", "Resize mode"},
-    {"m", "Move mode (in the base view)"},
-    {"a", "Sort by name (view, toggle)"},
-    {"w", "Spread over windows (view)"},
-    {"d", "Pack four to a window (view)"},
-    {"L", "Layouts: load, save, the default"},
-    {NULL, "Display"},
-    {"f", "Bottom bar on/off"},
-    {"i", "Info: name bars on/off"},
-    {"\\", "Lock pane (keys to its program)"},
-    {NULL, "Chat and names"},
-    {"c", "Chat (Esc closes it)"},
-    {"n", "Rename the process"},
-    {";", "Save its profile"},
-    {NULL, "Session"},
-    {"", ""}, /* the detach key, filled in when drawn */
-    {"", ""}, /* the prefix twice */
-    {"?", "These keys"},
-};
-static const struct help_line keys_pane[] = {
-    {NULL, "Pane mode"},
-    {"arrows h j k l", "Move to the next pane"},
-    {"a", "Attach a process as a pane"},
-    {"g", "Go to a pane by name"},
-    {"z", "Zoom the pane, or back"},
-    {"?", "These keys"},
-    {"Esc Enter", "Leave the mode"},
-};
-static const struct help_line keys_tab[] = {
-    {NULL, "Window mode"},
-    {"1-9", "Go to that window; leave the mode"},
-    {"arrows h j k l", "The window that way on the grid"},
-    {"?", "These keys"},
-    {"Esc Enter", "Leave the mode"},
-};
-static const struct help_line keys_resize[] = {
-    {NULL, "Resize mode"},
-    {"arrows h j k l", "Grow the pane that way"},
-    {"Shift-arrows H J K L", "Shrink it from that side"},
-    {"=", "Even the lines again"},
-    {"?", "These keys"},
-    {"Esc Enter", "Leave the mode"},
-};
-static const struct help_line keys_move[] = {
-    {NULL, "Move mode (in the base view)"},
-    {"arrows h j k l", "Swap with the pane that way"},
-    {"1-9", "Send it to that window; leave the mode"},
-    {"?", "These keys"},
-    {"Esc Enter", "Leave the mode"},
-};
+/* The keys come from the help pages src/cli/help/keys/ (prefix.txt, and
+ * one per mode): the same text backmux help keys prints, so the panel and
+ * the page cannot disagree. A line at the margin is a section; an indented
+ * one is a key, then two or more spaces, then what it does. The q and
+ * Ctrl-Space entries stand for the detach key and the prefix, and show the
+ * configured ones. (Groups and labels per Rich's critique of the earlier
+ * panel: by function, a verb and its object, each mode its own entry.) */
+#define KEYS_MAX 48
+static struct help_line g_keys[KEYS_MAX];
+static char g_text[KEYS_MAX][2][48];
 
-static void draw_help_lines(struct mux *m, const struct help_line *l, int n, int y, int x, int w, int keyw) {
-    for (int i = 0; i < n; i++) {
+static int load_keys(const char *page, const char *pk, const char *dk) {
+    const char *const *l = hold_help_lines(page);
+    int n = 0;
+    for (; l && *l && n < KEYS_MAX; l++) {
+        size_t len = strcspn(*l, "\n");
+        if (len == 0) continue;
+        if ((*l)[0] != ' ') {
+            snprintf(g_text[n][1], sizeof(g_text[n][1]), "%.*s", (int)len, *l);
+            g_keys[n] = (struct help_line){NULL, g_text[n][1]};
+            n++;
+            continue;
+        }
+        const char *k = *l + strspn(*l, " "), *gap = strstr(k, "  ");
+        if (!gap || gap >= *l + len) continue;
+        const char *w = gap + strspn(gap, " ");
+        snprintf(g_text[n][0], sizeof(g_text[n][0]), "%.*s", (int)(gap - k), k);
+        snprintf(g_text[n][1], sizeof(g_text[n][1]), "%.*s", (int)(*l + len - w), w);
+        if (!strcmp(g_text[n][0], "q")) snprintf(g_text[n][0], sizeof(g_text[n][0]), "%s", dk);
+        else if (!strcmp(g_text[n][0], "Ctrl-Space")) snprintf(g_text[n][0], sizeof(g_text[n][0]), "%s", pk);
+        g_keys[n] = (struct help_line){g_text[n][0], g_text[n][1]};
+        n++;
+    }
+    return n;
+}
+
+static void draw_help_lines(struct mux *m, const struct help_line *l, int n, int y, int x, int w, int keyw, int last) {
+    for (int i = 0; i < n && y <= last; i++) { /* never past the frame: a short terminal shows what fits */
         if (!l[i].key) {
             if (i > 0) y++; /* a blank line before each section but the first */
+            if (y > last) break;
             mux_put(m, y++, x, w, l[i].what, &ST_HEAD);
             continue;
         }
@@ -89,37 +64,35 @@ static int help_height(const struct help_line *l, int n) {
 }
 
 void mux_draw_help(struct mux *m) {
-    struct help_line lines[sizeof(keys_prefix) / sizeof(keys_prefix[0])];
-    const struct help_line *l = lines;
-    int n = (int)(sizeof(keys_prefix) / sizeof(keys_prefix[0]));
-    char pk[16], dk[16], twice[40], detach[48];
+    char pk[16], dk[16];
     mux_key_label(m->prefix, pk);
     mux_key_label(m->detach_key, dk);
-    memcpy(lines, keys_prefix, sizeof(keys_prefix));
-    snprintf(twice, sizeof(twice), "%s", pk);
-    snprintf(detach, sizeof(detach), "Detach the pane; it runs on");
-    for (int i = 0, k = 0; i < n; i++)
-        if (lines[i].key && !lines[i].key[0]) {
-            if (k++ == 0) lines[i] = (struct help_line){dk, detach};
-            else lines[i] = (struct help_line){twice, "Send it to the program"};
-        }
-#define KEYS(arr) (l = (arr), n = (int)(sizeof(arr) / sizeof((arr)[0])))
-    switch (m->mode) {
-    case MODE_PANE: KEYS(keys_pane); break;
-    case MODE_TAB: KEYS(keys_tab); break;
-    case MODE_RESIZE: KEYS(keys_resize); break;
-    case MODE_MOVE: KEYS(keys_move); break;
-    default: break;
-    }
-#undef KEYS
+    const char *page = m->mode == MODE_PANE     ? "keys/pane"
+                       : m->mode == MODE_TAB    ? "keys/window"
+                       : m->mode == MODE_RESIZE ? "keys/resize"
+                       : m->mode == MODE_MOVE   ? "keys/move"
+                                                : "keys/prefix";
+    int n = load_keys(page, pk, dk);
+    const struct help_line *l = g_keys;
+    if (n == 0) return;
     char title[64];
     if (m->mode == MODE_NONE) snprintf(title, sizeof(title), "Keys after %s", pk);
-    else snprintf(title, sizeof(title), "Keys");
-    int keyw = 13;
-    /* two columns when it is tall and the terminal is wide: split at the
-     * section heading nearest the middle */
-    int split = n, total = help_height(l, n);
-    if (m->mode == MODE_NONE && m->tcols >= 84 && total + 4 > m->arows - 2) {
+    else if (!l[0].key) { /* a mode: its name is the title, not a heading too */
+        snprintf(title, sizeof(title), "%s", l[0].what);
+        l++, n--;
+    } else snprintf(title, sizeof(title), "Keys");
+    /* Columns as wide as their keys and labels; two of them, split at the
+     * section heading nearest the middle, when one is too tall for the
+     * screen and two fit across it (an 80-column terminal does). */
+    int keyw = 0, labw = 0;
+    for (int i = 0; i < n; i++) {
+        int kl = l[i].key ? (int)strlen(l[i].key) : 0, wl = (int)strlen(l[i].what) - (l[i].key ? 0 : 1);
+        if (kl > keyw) keyw = kl;
+        if (wl > labw) labw = wl;
+    }
+    keyw += 2;
+    int colw = 1 + keyw + labw, split = n, total = help_height(l, n);
+    if (total + 4 > m->arows - 2 && 2 * colw + 2 + 4 <= m->tcols - 2) {
         int best = n, bestd = INT_MAX;
         for (int i = 1; i < n; i++)
             if (!l[i].key) {
@@ -128,16 +101,16 @@ void mux_draw_help(struct mux *m) {
             }
         split = best;
     }
-    int colw = 13 + 38, cols = split < n ? 2 : 1;
+    int cols = split < n ? 2 : 1;
     int inner_h = split < n ? (help_height(l, split) > help_height(l + split, n - split) ? help_height(l, split)
                                                                                        : help_height(l + split, n - split))
                             : total;
-    int w = cols * colw + (cols - 1) * 3 + 4, h = inner_h + 4;
+    int w = cols * colw + (cols - 1) * 2 + 4, h = inner_h + 4;
     if (w > m->tcols - 2) w = m->tcols - 2;
     if (h > m->arows) h = m->arows;
     if (w < 20 || h < 5) return;
-    int x = (m->tcols - w) / 2, y = (m->arows - h) / 2;
-    mux_draw_frame(m, y, x, h, w, title, "any key closes  \xc2\xb7  backmux help panes");
-    draw_help_lines(m, l, split, y + 2, x + 2, colw, keyw);
-    if (split < n) draw_help_lines(m, l + split, n - split, y + 2, x + 2 + colw + 3, w - 4 - colw - 3, keyw);
+    int x = (m->tcols - w) / 2, y = (m->arows - h) / 2, last = y + h - 3;
+    mux_draw_frame(m, y, x, h, w, title, m->mode == MODE_NONE ? "any key closes  \xc2\xb7  in a mode, ? lists its keys" : "? or Esc closes");
+    draw_help_lines(m, l, split, y + 2, x + 2, colw, keyw, last);
+    if (split < n) draw_help_lines(m, l + split, n - split, y + 2, x + 2 + colw + 2, w - 4 - colw - 2, keyw, last);
 }

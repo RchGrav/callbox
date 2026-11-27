@@ -1,64 +1,49 @@
-backmux help share - collaborate on a terminal application
+[agent]
+backmux help share is for the person who brings an agent in. The agent's
+side of it: backmux help assist.
+The whole page: backmux help --full share
+[person]
+backmux help share - bring an agent into the app you are working on
 
-Keep an application attached while an agent inspects its screen and sends
-input through Backmux. Alternate human and agent input to avoid overlapping
-keystrokes.
+Keep working in your app while an agent reads its screen, types into it
+when you let it, and answers you in the chat window. The agent needs no
+setup: backmux tells it what it can do.
 
-OPEN YOUR AGENT AND APP
-  This example assumes Codex is installed and configured, and ./my-tui is
-  your built application. Use your own terminal agent and app as needed.
+BRING AN AGENT IN
+    backmux shell                       your shell, with panes and chat
+    backmux detach --name coder claude  an agent, in the background
 
-    backmux detach --name coder codex
-    backmux peek coder
+  Start your app as a named process, from the shell:
+
     backmux call --name app ./my-tui
 
-  Check that coder is ready for a prompt before starting the app. The app
-  runs on your terminal. Press Ctrl-Space p a and choose coder: it joins as a
-  pane beside the app, so you watch both. Click a pane to type in it.
+  The first time in a folder, claude asks to trust it: backmux attach
+  coder to answer, then Ctrl-Space q. Then:
 
-DESCRIBE AND REPRODUCE THE ISSUE
-  Press Ctrl-Space c to open your chat, then Tab to choose coder. For
-  example:
+    Ctrl-Space c     open chat, or move the keyboard into it
+    Tab              pick the agent (chat lists agent harnesses only)
+    Ctrl-S           tick Assist, then type and press Enter
 
-    In process app, Down skips a menu item. Reproduce it with peek and send,
-    fix the navigation code, and tell me when to restart and test it.
-
-  Enter sends the message; Ctrl-Space c hides chat. The message includes your
-  chat name and a reply command. The agent replies with backmux msg using
-  your chat name; the reply appears in your chat window. The agent can use
-  its command tool while you watch:
-
-    backmux peek app --image bug.png --cursor-ring
-    backmux send app -k Down --wait 300
-    backmux peek app --json
-
-  A message addressed to app is sent to the application's input. Direct
-  replies intended for you to your chat name.
+  Assist asks the agent to look at the app in the pane you were last in
+  and points it to backmux help assist. Its replies show in chat, and it
+  reaches you by your chat name. Ctrl-Space p a puts the agent beside the
+  app as a pane, to watch both. Your keys and the agent's reach the same
+  app: take turns.
 
 REBUILD AND TEST TOGETHER
-  Quit the app normally so the agent can rebuild it; its pane closes and
-  coder fills the screen. Once coder's report confirms the new build is
-  ready, start the app again from a shell:
+  Quit the app normally so the agent can rebuild it. When it says the
+  build is ready, start the app again from a shell:
 
     backmux recall app
 
   recall reuses the recorded command, arguments, and working directory.
-  The rebuilt executable opens attached again. Test the fix and send the
-  result to coder in chat.
+  When finished: backmux end coder, then backmux purge coder and
+  backmux purge app.
 
-  When finished, quit the app and release both names:
-
-    backmux end coder
-    backmux purge app
-    backmux purge coder
-
-JOIN AN APP YOUR AGENT ALREADY STARTED
-  If the agent launched the app with backmux detach, use this instead:
-
+JOIN AN APP YOUR AGENT STARTED
     backmux attach app
 
   Ctrl-Space q detaches and leaves it running. A new attach replaces the
-  previous client without stopping the process. peek, send, and resize
-  remain available while attached.
+  previous client; peek, send, and resize keep working while attached.
 
-Next: backmux help tui. Details: backmux help attach, swap, set.
+Next: backmux help panes. Details: backmux help attach, msg, recall.

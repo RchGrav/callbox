@@ -772,8 +772,8 @@ static int wait_record_exit(const struct screen_target *t, long timeout_ms) {
         }
         /* A plain -d process leaves nothing behind to record its exit code. */
         if (st == STATE_EXITED && !records) {
-            fprintf(stderr, "backmux: %s has ended; a plain -d process records no exit code (launch it with -dw to "
-                            "record one)\n", t->label);
+            fprintf(stderr, "backmux: %s has ended; started without -w, it records no exit code (start it "
+                            "with backmux server -w to record one)\n", t->label);
             printf("-1\n");
             return 0;
         }
@@ -1187,8 +1187,8 @@ static int msg_action_impl(const struct hold_invocation *inv,
     bool made = false;
     if (outside && hold_operator_name(user_store, true, opname, sizeof(opname), &made) != 0) opname[0] = '\0';
     if (wait_reply && !outside) {
-        fprintf(stderr, "backmux: --wait-reply requires a sender outside a managed process.\n"
-                        "Inside a managed process, use backmux msg --received to read received-message history.\n");
+        fprintf(stderr, "backmux: message not sent: --wait-reply is for senders outside backmux.\n"
+                        "Replies arrive as input here: send without it (msg --received lists them).\n");
         rc = HOLD_EXIT_USAGE;
         goto out;
     }
@@ -1197,7 +1197,7 @@ static int msg_action_impl(const struct hold_invocation *inv,
         goto out;
     }
     off_t reply_from = opname[0] ? hold_inbox_size(user_store, opname) : 0;
-    if (hold_valid_alias(token) && hold_inbox_live(user_store, token)) {
+    if (hold_inbox_target(user_store, &token)) {
         /* To an operator: no broker, straight into its inbox. From a process,
          * its name as the record has it now: BACKMUX_NAME in a running
          * program is the name it started with, and a rename (backmux set

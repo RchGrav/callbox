@@ -22,6 +22,9 @@ struct hold_cli_owned_opts {
 };
 
 int hold_show_help(const char *topic);
+/* full: the whole page, not only the reader's part (runtime/help_reader.c). */
+int hold_show_help_for(const char *topic, bool full);
+int hold_help_command(int argc, char **argv);
 int hold_show_manual(void);
 bool hold_cli_command_is_parser_owned(const char *s);
 /* Every verb's name (aliases included), for matching a shortened word. */

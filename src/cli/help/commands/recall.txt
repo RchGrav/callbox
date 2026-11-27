@@ -1,4 +1,6 @@
-usage: backmux recall <name|id>
+usage: backmux recall <target>
+
+Restart an ended process
 
 Relaunch the recorded command with its stored arguments, working directory,
 and launch mode. The process retains its name and Backmux process ID.
@@ -12,3 +14,5 @@ working makes recall use its caller's working directory.
 
 Use attach or tail to access a process that is already running.
 start is an alias. See backmux help set and help launch.
+[agent]
+Tasks: backmux help test

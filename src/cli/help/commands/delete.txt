@@ -1,4 +1,6 @@
-usage: backmux delete <name|id>
+usage: backmux delete <target>
+
+Remove a record, even saved
 
 Remove a process record and its log, saved screens, message history, and
 console artifacts, including a saved profile. This releases its name.
@@ -9,3 +11,5 @@ and a process found running on the next check is stopped before removal.
 
 Use backmux end first to request shutdown. Removing an Unknown record does
 not establish that the program has ended.
+[agent]
+Tasks: backmux help cleanup

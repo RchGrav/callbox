@@ -1,0 +1,12 @@
+[agent]
+Keys are how a person works the panes; an agent drives processes with
+commands instead. Its tasks: backmux help.
+[person]
+backmux help keys - every key in an attached terminal
+
+Press Ctrl-Space, release it, then the key: Ctrl-Space q means that, and
+Ctrl-x means hold both. Ctrl-Space twice sends one Ctrl-Space to the
+program. --detach-keys changes the prefix and the detach key (q).
+Ctrl-Space ? shows the keys after the prefix; in a mode, ? shows its own.
+
+AFTER THE PREFIX

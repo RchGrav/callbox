@@ -1,5 +1,7 @@
 usage: backmux resize <target> <cols> <rows>   (or <cols>x<rows>)
 
+Change a terminal's size
+
 Set a running terminal process's dimensions. Columns and rows must each be
 1-1000. The terminal size and screen model are updated, and the terminal's
 foreground process group receives SIGWINCH when its dimensions change.
@@ -9,3 +11,5 @@ there is no terminal to resize or terminal foreground group to signal.
 
 Example: backmux resize app 100 30
 Use --size at launch or config set detach-size for new detached terminals.
+[agent]
+Tasks: backmux help drive

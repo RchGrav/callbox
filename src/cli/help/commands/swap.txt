@@ -1,6 +1,8 @@
 usage: backmux swap <target>,<target>
        backmux swap <target> <target>
 
+Exchange two panes' places
+
 Exchange two panes' places, or send a pane to a free place. A target is a
 place (2C: window 2, place C, as the name bars show it), a process name, or
 a Backmux process ID, each by the shortest prefix that is unique; anything
@@ -12,3 +14,5 @@ terminal must be displaying panes; with several, run swap from the intended
 terminal's pane. Example: backmux swap editor,reviewer
 
 Interactive control: Ctrl-Space s. See backmux help panes for its keys.
+[agent]
+An agent's tasks don't need this command; backmux help lists them.

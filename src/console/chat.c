@@ -662,7 +662,7 @@ static bool pick_matches(const struct chat *c, const struct pick_entry *e) {
     if (c->filter_len == 0) return true;
     if (e->kind == TH_CALL && !strncmp(e->key, c->filter, c->filter_len)) return true;
     for (const char *p = e->label; *p; p++)
-        if (!strncasecmp(p, c->filter, c->filter_len)) return true;
+        if (hold_name_starts_like(p, c->filter, c->filter_len)) return true;
     return false;
 }
 
@@ -805,7 +805,7 @@ static char *with_assist(const struct chat *c, const char *text, size_t len, siz
         "The user is seeking assistance with the application running in Backmux\n"
         "session \"%s\".\n"
         "\n"
-        "Immediately run `backmux help tui` to familiarize yourself with the\n"
+        "Immediately run `backmux help assist` to familiarize yourself with the\n"
         "terminal inspection and control interface.\n"
         "\n"
         "Capture and examine a screenshot of the application using:\n"

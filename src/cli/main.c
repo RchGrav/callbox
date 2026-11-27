@@ -541,15 +541,7 @@ int hold_cli_main(int argc, char **argv) {
         return 0;
     }
     if (owned && !strcmp(command, "help")) {
-        int rc = 0;
-        if (cmd_argc > 1) {
-            fprintf(stderr, "usage: backmux help [topic]\n");
-            rc = HOLD_EXIT_USAGE;
-        } else if (cmd_argc == 1 && (!strcmp(cmd_argv[0], "--help") || !strcmp(cmd_argv[0], "-h"))) {
-            rc = hold_show_help(NULL);
-        } else {
-            rc = hold_show_help(cmd_argc == 1 ? cmd_argv[0] : NULL);
-        }
+        int rc = hold_help_command(cmd_argc, cmd_argv);
         free(cmd_argv);
         return rc;
     }

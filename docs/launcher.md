@@ -44,7 +44,7 @@ The path is made absolute, but symlinks are not resolved, because a venv's pytho
 
 The environment:
 
-- Every process gets `BACKMUX_ID`, and `BACKMUX_NAME` when it has a name. A process placed from inside another process also gets `BACKMUX_PARENT`, so a worker can reply to the agent that started it.
+- Every process gets `BACKMUX_ID`, and `BACKMUX_NAME` when it has a name. A process placed from inside another process also gets `BACKMUX_PARENT`, the launcher's ID (its name only when it has no ID), so a worker given its task on the command line, with no message header to reply to, can report back. The ID because a name can be renamed or reused after a purge; `backmux help` shows the parent's current name as "Started by".
 - A terminal process runs on Backmux's own terminal, so it gets `TERM=xterm-256color`, and `TMUX`, `TMUX_PANE`, `STY`, `WINDOW`, `TERM_PROGRAM`, and `TERM_PROGRAM_VERSION` are removed. Otherwise a program that sees `TMUX` would act on the launcher's tmux. `-e` values are applied after this, so they win.
 - A root process in the system store starts from an empty environment with a fixed `PATH`.
 - Under sudo, the program starts in `/`. The launch is refused if `/` is not root-owned or is group- or world-writable.

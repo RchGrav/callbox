@@ -377,14 +377,14 @@ static int resolve_name_or_id(const struct hold_invocation *inv,
  * name bars show it), or a process name or id (resolve_name_or_id). A place
  * that is also a name or the start of an id is refused, not guessed. Why
  * places: every verb takes the words a person sees on the screen. */
-static int resolve_action_token(const struct hold_invocation *inv,
-                                const struct hold_store *current_user_store,
-                                const struct hold_store *system_store,
-                                const char *command,
-                                const char *token,
-                                bool report_missing,
-                                struct hold_resolved_target **targets_out,
-                                int *count_out) {
+static int resolve_word(const struct hold_invocation *inv,
+                        const struct hold_store *current_user_store,
+                        const struct hold_store *system_store,
+                        const char *command,
+                        const char *token,
+                        bool report_missing,
+                        struct hold_resolved_target **targets_out,
+                        int *count_out) {
     const char *atom = NULL;
     char place_id[ID_STR_LEN + 2], place_name[ALIAS_MAX_LEN + 2], resolved[ID_STR_LEN];
     if (hold_parse_id_token(token, &atom) == ID_TOKEN_PLAIN &&
@@ -407,6 +407,30 @@ static int resolve_action_token(const struct hold_invocation *inv,
     return resolve_name_or_id(inv, current_user_store, system_store, command, token, report_missing, targets_out, count_out);
 }
 
+/* A word as a target, also in the polite form help shows ("Sleek Carbon"
+ * for sleek_carbon): an exact name still wins, then the word read back. */
+static int resolve_action_token(const struct hold_invocation *inv,
+                                const struct hold_store *current_user_store,
+                                const struct hold_store *system_store,
+                                const char *command,
+                                const char *token,
+                                bool report_missing,
+                                struct hold_resolved_target **targets_out,
+                                int *count_out) {
+    char friendly[ALIAS_MAX_LEN + 1];
+    if (hold_friendly_name(token, friendly, sizeof(friendly))) {
+        if (hold_valid_alias(token)) { /* a capital only: the word may be a name as it is */
+            int rc = resolve_word(inv, current_user_store, system_store, command, token, false, targets_out, count_out);
+            if (rc != 5) return rc;
+            free(*targets_out);
+        }
+        int rc = resolve_word(inv, current_user_store, system_store, command, friendly, false, targets_out, count_out);
+        if (rc == 5 && report_missing) (void)hold_report_not_found(token); /* the word as it was typed */
+        return rc;
+    }
+    return resolve_word(inv, current_user_store, system_store, command, token, report_missing, targets_out, count_out);
+}
+
 int hold_resolve_action_token(const struct hold_invocation *inv,
                                 const struct hold_store *current_user_store,
                                 const struct hold_store *system_store,
@@ -426,7 +450,10 @@ bool hold_token_resolves(const struct hold_invocation *inv,
                          const char *token) {
     const char *atom = NULL;
     enum id_token_scope scope = hold_parse_id_token(token, &atom);
-    if (scope == ID_TOKEN_INVALID || (!hold_valid_id_prefix(atom) && !hold_valid_alias(atom))) return true; /* let the caller report it */
+    char friendly[ALIAS_MAX_LEN + 1];
+    if (scope == ID_TOKEN_INVALID ||
+        (!hold_valid_id_prefix(atom) && !hold_valid_alias(atom) && !hold_friendly_name(atom, friendly, sizeof(friendly))))
+        return true; /* let the caller report it */
     struct hold_resolved_target *targets = NULL;
     int count = 0;
     int rc = resolve_action_token(inv, current_user_store, system_store, command, token, false, &targets, &count);

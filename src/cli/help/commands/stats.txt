@@ -1,8 +1,12 @@
 usage: backmux stats <target> [--no-stream]
 
+Show CPU and memory use
+
 Show process-group CPU usage, resident memory, and process count. Refresh
 once per second until Ctrl-C. --no-stream, or non-terminal stdout, prints
 one sample. CPU usage is summed across the group and can exceed 100%.
 
 Resource measurement is implemented on Linux. On macOS, unavailable
 measurements appear as zero; they do not establish actual resource usage.
+[agent]
+Tasks: backmux help check

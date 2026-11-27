@@ -15,13 +15,14 @@ New to Backmux? [Install it](install.md), then run the
 | Navigate panes, windows, and chat | `backmux help panes` | [Interactive controls](backmux.md) |
 | Troubleshoot a terminal UI | `backmux help tui` | [Drive a TUI](../src/cli/help/guides/tui.txt) |
 | Debug with your coding agent while using the app yourself | `backmux help share` | [Share a terminal app](../src/cli/help/guides/share.txt) |
-| Launch another agent and check its work | `backmux help agents` | [Work with another agent](../src/cli/help/guides/agents.txt) |
+| See what an agent can do: the agent task pages | `backmux help agents` | [Agent tasks](../src/cli/help/tasks/index.txt) |
 | Send messages and receive replies across harnesses | `backmux help messaging` | [Exchange messages](../src/cli/help/guides/messaging.txt) |
 | Run a service or CI job, check it, and clean up | `backmux help service` | [Run in the background](../src/cli/help/guides/service.txt) |
 
 ## Look up a command
 
-`backmux help` is the short overview. `backmux help all` prints the complete
+`backmux help` is the short overview. `backmux help all` is the index of
+commands, guides and agent tasks; `backmux manual` prints the complete
 reference, including every command's detailed help and all launch flags.
 Use `backmux COMMAND --help` when you know which command you need.
 

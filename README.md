@@ -105,11 +105,11 @@ is available in the terminal and as a plain-text page in this repository.
 | Navigate panes, windows, and chat | `backmux help panes` | [Interactive controls](docs/backmux.md) |
 | Inspect and troubleshoot a terminal UI | `backmux help tui` | [Drive a TUI](src/cli/help/guides/tui.txt) |
 | Debug a TUI with your coding agent, on a shared screen | `backmux help share` | [Work on the same app](src/cli/help/guides/share.txt) |
-| Start another agent, give it work, and check progress | `backmux help agents` | [Work with another agent](src/cli/help/guides/agents.txt) |
+| See what an agent can do: the agent task pages | `backmux help agents` | [Agent tasks](src/cli/help/tasks/index.txt) |
 | Exchange messages from inside or outside Backmux | `backmux help messaging` | [Send and receive messages](src/cli/help/guides/messaging.txt) |
 | Run a background service or CI job and clean up | `backmux help service` | [Run in the background](src/cli/help/guides/service.txt) |
 
-**Every command and flag:** `backmux help all`. For one command, use
+**Every command, guide and agent task:** `backmux help all` (the index; `backmux manual` prints all of it). Every key: `backmux help keys`. For one command, use
 `backmux COMMAND --help`. `backmux help launch` covers launch options;
 `backmux help targets`, `scripting`, and `system` explain targeting,
 exit codes, and root-managed processes.

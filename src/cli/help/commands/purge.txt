@@ -1,20 +1,20 @@
 usage: backmux purge [<target>|all] [-a|--all] [-s|--system] [-u|--user]
                      [--force]
 
+Remove ended records
+
 Remove process records and their stored logs, screens, and message history.
 Without a target, remove eligible ended records from the selected store.
 With a target, remove that process's record.
 
-  -a, --all        include stale records; does not change store selection
+  -a, --all        include stale records (from an earlier boot, or whose
+                   process no longer matches); stops nothing and does not
+                   change store selection. Not the same as purge all.
   -u, --user       select the invoking user's store (the default)
   -s, --system     select the root-managed store; invoke sudo if needed
-  --force          with a target: allow removal when saved or running
-                   without a target: include stale records, as -a does
-
-TARGETED REMOVAL
-With a target, --force stops a running process before removing its record.
-An ordinary sweep preserves saved profiles and running processes, including
-when --force is used without a target.
+  --force          with a target: remove it even when saved, stopping it
+                   first if it runs; without a target: as -a. A sweep
+                   always keeps saved profiles and running processes.
 
 REMOVE ALL UNSAVED PROCESSES
 purge all stops running, unsaved processes and removes unsaved records in
@@ -23,4 +23,6 @@ Saved profiles are preserved.
 
 --name assigns a name at launch; it does not save the profile. save and
 rename mark profiles as saved. Removing a record releases its name.
-Aliases: rm, prune, drop. Use end to stop a process without requesting removal.
+Aliases: rm, prune, drop. end stops a process and keeps its record.
+[agent]
+Tasks: backmux help cleanup

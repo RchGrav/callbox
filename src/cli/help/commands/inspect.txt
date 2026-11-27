@@ -1,5 +1,7 @@
 usage: backmux inspect <target>
 
+Print a record as JSON
+
 Print process details as a JSON array. Fields include the Backmux process ID,
 name, state, operating-system PIDs, command arguments, launch mode, and
 log_path. For a running process, Stdio describes file descriptors 0, 1, and 2
@@ -7,3 +9,5 @@ where that information is available.
 
 Use info for a concise text summary, logs for captured output, and peek for
 the terminal screen. Recorded environment values appear in inspect output.
+[agent]
+Tasks: backmux help check

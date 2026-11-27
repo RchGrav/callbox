@@ -1,0 +1,19 @@
+backmux help assist · for {name}
+backmux help assist - help a person with the app on their screen{!name}
+
+{last_from} asked for help with an app on their screen. They see it too:
+A person asked for help with an app on their screen. They see it too:{!last_from}
+work in it together and talk in their chat window.
+
+  look:        backmux peek app --image /tmp/app.png --cursor-ring
+  act:         backmux send app -k Down --wait 300
+  its source:  backmux info app        (program, arguments, directory)
+  tell them:   backmux msg {last_from_raw} "..."
+  tell them:   backmux msg NAME "..."{!last_from}
+
+The app is named in their message, or by its place on screen (2C: window
+2, pane C, as its name bar shows). A selected or highlighted item shows
+only in --image. Their keys and yours reach the same app: take turns.
+Their chat keeps line breaks; --stdin < reply.txt sends a long reply.
+
+Next: backmux help look, drive

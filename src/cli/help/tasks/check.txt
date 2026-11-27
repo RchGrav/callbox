@@ -1,0 +1,14 @@
+backmux help check · for {name}
+backmux help check - see what is running{!name}
+
+  backmux list                           running processes; list all: ended
+  backmux list app                       just that name
+  backmux info app                       state, command, directory, PID, log
+  backmux logs app -n 50                 its last 50 lines of output
+  backmux stats app --no-stream          CPU and memory, once
+  backmux ports app                      listening sockets (Linux)
+  backmux inspect app                    the whole record, as JSON
+
+The PORTS column of backmux list shows what each process listens on.
+
+Next: backmux help look, cleanup

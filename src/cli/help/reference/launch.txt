@@ -81,7 +81,7 @@ ATTACHMENT AND LOGS
 COMMON OPTIONS
   --quiet          suppress normal status notes on stderr
   --system         request the root-managed store; see help system for routing
-  -h, --help       show help (also backmux COMMAND --help)
+  -h, --help       show help (also backmux <command> --help)
   -V, --version    print the version
 
 Launch value options accept --flag=value. Terminal processes default to

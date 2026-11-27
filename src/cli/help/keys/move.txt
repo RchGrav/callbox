@@ -1,0 +1,6 @@
+
+Move mode (base only)
+  arrows h j k l  Swap with the pane that way
+  1-9             Send it to that window; leave
+  ?               Show these keys
+  Esc Enter       Leave move mode

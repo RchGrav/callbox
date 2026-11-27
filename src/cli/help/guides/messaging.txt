@@ -1,3 +1,12 @@
+[agent inside]
+Messages to you arrive as input; reply with the command in their header:
+backmux help reply. This page is for senders outside backmux.
+[agent outside]
+backmux help messaging is the walkthrough for people. An agent's tasks:
+backmux help reply (send), replies (get the answers).
+[agent]
+The whole page: backmux help --full messaging
+[person]
 backmux help messaging - send messages and receive replies
 
 Send work to a terminal agent through its input console and receive reports

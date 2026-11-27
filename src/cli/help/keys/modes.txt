@@ -1,0 +1,5 @@
+
+MODES
+A mode lasts until Esc or Enter; the bar shows its name (PANE, WINDOW,
+RESIZE, MOVE) while it lasts.
+

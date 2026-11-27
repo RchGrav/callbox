@@ -44,17 +44,17 @@ static const char usage_attach[] = "usage: backmux attach <target> [--detach-key
 static const struct hold_cli_command_spec command_specs[] = {
     /* cli/main.c parses launch commands and forwards arguments after PROGRAM.
      * These rows provide help and reserve command names from process naming. */
-    {"call", NULL, 1, -1, 0, "usage: backmux call [--name NAME] [options] <program> [<args>...]"},
-    {"server", NULL, 1, -1, 0, "usage: backmux server [--name NAME] [-w] [options] <program> [<args>...]"},
-    {"detach", NULL, 1, -1, 0, "usage: backmux detach [--name NAME] [options] <program> [<args>...]"},
+    {"call", NULL, 1, -1, 0, "usage: backmux call [--name <name>] [options] <program> [<args>...]"},
+    {"server", NULL, 1, -1, 0, "usage: backmux server [--name <name>] [-w] [options] <program> [<args>...]"},
+    {"detach", NULL, 1, -1, 0, "usage: backmux detach [--name <name>] [options] <program> [<args>...]"},
     {"list", NULL, 0, 2, SPEC_ALL | SPEC_LIVE | SPEC_SCOPE | SPEC_STRICT,
      "usage: backmux list [all] [-s|--system] [-u|--user] [-a|--all] [name]"},
-    {"info", NULL, 1, 1, SPEC_STRICT, "usage: backmux info <name|id>"},
-    {"recall", NULL, 1, 1, SPEC_STRICT, "usage: backmux recall <name|id>"},
-    {"start", "recall", 1, 1, SPEC_STRICT, "usage: backmux start <name|id>   (alias for recall)"},
-    {"delete", NULL, 1, 1, SPEC_STRICT, "usage: backmux delete <name|id>"},
-    {"set", NULL, 2, -1, SPEC_OWN_HELP, "usage: backmux set <name|id> <setting>[=<value>]"},
-    {"unset", NULL, 2, 2, SPEC_OWN_HELP, "usage: backmux unset <name|id> <setting>"},
+    {"info", NULL, 1, 1, SPEC_STRICT, "usage: backmux info <target>"},
+    {"recall", NULL, 1, 1, SPEC_STRICT, "usage: backmux recall <target>"},
+    {"start", "recall", 1, 1, SPEC_STRICT, "usage: backmux start <target>   (alias for recall)"},
+    {"delete", NULL, 1, 1, SPEC_STRICT, "usage: backmux delete <target>"},
+    {"set", NULL, 2, -1, SPEC_OWN_HELP, "usage: backmux set <target> <setting>[=<value>]"},
+    {"unset", NULL, 2, 2, SPEC_OWN_HELP, "usage: backmux unset <target> <setting>"},
     {"swap", NULL, 1, 2, SPEC_STRICT, "usage: backmux swap <target>,<target>"},
     {"layout", NULL, 1, 2, SPEC_STRICT, "usage: backmux layout list | save NAME | load NAME | rm NAME | default [NAME]"},
     {"manual", NULL, 0, 0, SPEC_STRICT, "usage: backmux manual"},
@@ -96,8 +96,8 @@ static const struct hold_cli_command_spec command_specs[] = {
      "settings: detach-size COLS ROWS, chat-name NAME"},
     /* cli/main.c parses shell launches; this row provides help. */
     {"shell", NULL, 0, -1, 0,
-     "usage: backmux shell [--name NAME] [--size COLS ROWS] [-e KEY=VALUE]... [--rm]\n"
-     "                     [shell [args...]]"},
+     "usage: backmux shell [--name <name>] [--size <cols> <rows>] [-e <key>=<value>]... [--rm]\n"
+     "                     [<shell> [<args>...]]"},
     {"attach", NULL, 1, 1, SPEC_STRICT | SPEC_KEYS, usage_attach},
     {"console", "attach", 1, 1, SPEC_STRICT | SPEC_KEYS, "usage: backmux console <target> [--detach-keys KEYS]"},
     {"purge", NULL, 0, 1, SPEC_PURGE_FLAGS,
@@ -110,7 +110,7 @@ static const struct hold_cli_command_spec command_specs[] = {
      "usage: backmux purge [<target>] [-a|--all] [--force]"},
     {"save", NULL, 1, 1, SPEC_STRICT, "usage: backmux save <target>"},
     {"rename", NULL, 2, 2, SPEC_STRICT, "usage: backmux rename <target> <name>"},
-    {"help", NULL, 0, 1, 0, "usage: backmux help [topic]"},
+    {"help", NULL, 0, 2, 0, "usage: backmux help [--full] [topic]"},
 };
 
 static const struct hold_cli_command_spec *find_public_command_spec(const char *s) {
@@ -219,8 +219,9 @@ static const char *const help_renamed[][2] = {
 
 /* The complete reference reuses the same pages as per-command help. Only
  * the introduction is authored separately; command coverage and aliases
- * come from the parser's table rather than a second hand-maintained list. */
-static int show_all_help(void) {
+ * come from the parser's table rather than a second hand-maintained list.
+ * It is the manual's, not help all's: help all is an index (below). */
+static int show_reference(void) {
     static const char *const reference[] = {
         "reference/all", "reference/launch", "reference/targets",
         "reference/system", "reference/scripting"
@@ -241,8 +242,7 @@ static int show_all_help(void) {
     }
     puts("COMMAND ALIASES");
     for (size_t i = 0; i < sizeof(command_specs) / sizeof(command_specs[0]); i++)
-        if (command_specs[i].canon)
-            printf("  %-12s %s\n", command_specs[i].name, command_specs[i].canon);
+        if (command_specs[i].canon) printf("  %-12s %s\n", command_specs[i].name, command_specs[i].canon);
     puts("\nHELP TOPIC ALIASES");
     for (size_t i = 0; i < sizeof(help_renamed) / sizeof(help_renamed[0]); i++)
         printf("  %-12s %s\n", help_renamed[i][0], help_renamed[i][1]);
@@ -250,31 +250,75 @@ static int show_all_help(void) {
 }
 
 /* Help pages are compiled from src/cli/help. Command aliases share their
- * canonical command's page; guides, reference, and extra topics use names. */
-int hold_show_help(const char *topic) {
+ * canonical command's page; guides, reference, extra topics and agent tasks
+ * use names. Every page is for its reader (runtime/help_reader.c) unless
+ * full: an agent gets its task index for help, help all and help agents,
+ * and a task page only as far as it applies. Why: help all once printed
+ * every page (43 KB), the first thing an agent runs; an agent needs its
+ * tasks, small, each pointing to the next. */
+int hold_show_help_for(const char *topic, bool full) {
+    struct hold_help_view view;
+    hold_help_reader_view(&view, full);
     if (!topic || !*topic) {
-        hold_usage();
-        return 0;
+        if (!view.agent) {
+            hold_usage();
+            return 0;
+        }
+        topic = "agents";
     }
     for (size_t i = 0; i < sizeof(help_renamed) / sizeof(help_renamed[0]); i++)
         if (!strcmp(topic, help_renamed[i][0])) topic = help_renamed[i][1];
-    if (!strcmp(topic, "all")) return show_all_help();
-    static const char *const sections[] = {"guides/", "reference/", "extra/"};
+    if (!strcmp(topic, "all")) topic = view.agent ? "agents" : "index";
+    if (!strcmp(topic, "agents")) topic = "tasks/index";
+    if (!strcmp(topic, "index") || !strcmp(topic, "tasks/index"))
+        return hold_help_print_view(topic, &view) == 0 ? 0 : HOLD_EXIT_USAGE;
+    if (!strcmp(topic, "keys")) { /* the keys pages, one source with the Ctrl-Space ? panel */
+        static const char *const keys[] = {"keys/about", "keys/prefix", "keys/modes", "keys/pane",
+                                           "keys/window", "keys/resize", "keys/move", "keys/more"};
+        for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]) && (i == 0 || view.full || !view.agent); i++)
+            if (hold_help_print_view(keys[i], &view) != 0) return HOLD_EXIT_USAGE;
+        return 0;
+    }
+    static const char *const sections[] = {"guides/", "reference/", "extra/", "tasks/"};
     char name[96];
     for (size_t i = 0; i < sizeof(sections) / sizeof(sections[0]); i++)
-        if (hold_checked_snprintf(name, sizeof(name), "%s%s", sections[i], topic) == 0 && hold_help_print(name) == 0)
+        if (hold_checked_snprintf(name, sizeof(name), "%s%s", sections[i], topic) == 0 &&
+            hold_help_print_view(name, &view) == 0)
             return 0;
     const struct hold_cli_command_spec *spec = find_public_command_spec(topic);
     if (spec && hold_checked_snprintf(name, sizeof(name), "commands/%s", spec->canon ? spec->canon : spec->name) == 0 &&
-        hold_help_print(name) == 0)
+        hold_help_print_view(name, &view) == 0)
         return 0;
-    fprintf(stderr, "backmux: unknown help topic '%s'; use backmux help help for the topic index\n", topic);
+    fprintf(stderr, "backmux: unknown help topic '%s'; backmux help --full all lists them\n", topic);
     return HOLD_EXIT_USAGE;
 }
 
-/* manual combines the command reference and worked examples. */
+int hold_show_help(const char *topic) {
+    return hold_show_help_for(topic, false);
+}
+
+/* backmux help [--full] [topic]. --full: the whole page, not the reader's
+ * part of it (for writing docs, for tests, for a reader in another
+ * situation). -h and --help after help are help's overview, as before. */
+int hold_help_command(int argc, char **argv) {
+    bool full = false;
+    const char *topic = NULL;
+    for (int i = 0; i < argc; i++) {
+        if (!strcmp(argv[i], "--full")) full = true;
+        else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) continue;
+        else if (!topic) topic = argv[i];
+        else {
+            fprintf(stderr, "usage: backmux help [--full] [topic]\n");
+            return HOLD_EXIT_USAGE;
+        }
+    }
+    return hold_show_help_for(topic, full);
+}
+
+/* manual: everything in one text - the complete reference and the worked
+ * examples - for whoever wants to read it all. */
 int hold_show_manual(void) {
-    int rc = show_all_help();
+    int rc = show_reference();
     if (rc != 0) return rc;
     putchar('\n');
     return hold_help_print("extra/examples") == 0 ? 0 : HOLD_EXIT_USAGE;

@@ -1,28 +1,24 @@
-usage: backmux help [TOPIC]
+[agent]
+usage: backmux help [--full] [<task>|<command>]
+
+backmux help is your front page: what you can do, a task per line.
+backmux help <task> shows one task; backmux help <command> one command.
+--full shows the whole page, every reader's part.
+[person]
+usage: backmux help [--full] [<topic>]
+
+Show help on a topic
 
 Show help without starting or changing a process. With no topic, show the
 overview. backmux -h and backmux --help show the same overview.
 
-INTERACTIVE USE
-  panes            pane navigation, windows, layout, profiles, and chat
-  share            collaborate with an agent on a terminal application
+Help is for whoever runs it. An agent (a harness such as claude or codex
+among its parent processes) gets its task index for help, help all, and
+help agents, and each page only as far as it applies to it: inside
+backmux or outside, with its own name. --full shows the whole page.
 
-AUTOMATION AND MESSAGING
-  tui              inspect and control a terminal application
-  agents           launch agents, assign work, and inspect progress
-  messaging        send messages and receive replies through inboxes
-  service          run background services and capture job results
-
-REFERENCE
-  COMMAND          command syntax, options, behavior, and related operations
-  launch           launch modes and options
-  targets          names, IDs, prefixes, and lookup order
-  system           user and root-managed stores
-  scripting        stdout, stderr, timeouts, and exit codes
-  aliases          Docker-style command and option mappings
-  all              complete command and option reference
-  examples         application and automation examples
-  features         capability overview
+Guides, commands, and agent tasks: backmux help all. Every key: backmux help
+keys. One command: backmux help <command>.
 
 Topic aliases: users = share, comms = messaging, services = service,
 run = launch. Command aliases share the canonical command's help.

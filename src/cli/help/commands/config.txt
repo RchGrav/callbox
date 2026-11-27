@@ -1,17 +1,20 @@
 usage: backmux config get <setting>
        backmux config set <setting> <value>
        backmux config unset <setting>
-settings: detach-size COLS ROWS, chat-name NAME, agents NAME..., slide on|off
+settings: detach-size <cols> <rows>, chat-name <name>, agents <name>...,
+          slide on|off
+
+Change your defaults
 
 Read or change user defaults in ~/.config/backmux/config.
 
-  detach-size COLS ROWS
+  detach-size <cols> <rows>
     Default size for new detached terminal processes without --size.
     Precedence: --size, detach-size, invoking terminal size, then 80 24.
     Foreground launches ignore this setting. Existing processes retain
     their size; use backmux resize to change it.
 
-  chat-name NAME
+  chat-name <name>
     Preferred name when creating your chat inbox, shared by your terminals.
     An existing inbox keeps its name. If the preference is unset or the name
     is unavailable, Backmux generates a name.
@@ -31,3 +34,5 @@ before saving it. unset removes the saved value. A sudo launch reads the
 invoking user's defaults; change those defaults without sudo.
 
 Example: backmux config set detach-size 100 30
+[agent]
+An agent's tasks don't need this command; backmux help lists them.

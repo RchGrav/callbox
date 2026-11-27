@@ -1,152 +1,64 @@
-backmux help panes - terminal controls, panes, windows, and chat
+[agent]
+Panes, windows and keys are a person's view of backmux; an agent works
+through commands instead. Its tasks: backmux help.
+The whole page: backmux help --full panes
+[person]
+backmux help panes - panes, windows, places, views and layouts
 
-A pane displays one attached terminal process. A window holds up to four
+A pane shows one attached terminal process; the process runs on whether
+or not a pane shows it. backmux shell starts with panes: a cleared screen,
+your shell in it, chat open, the bar along the bottom. From any attach,
+Ctrl-Space Enter adds a new terminal and Ctrl-Space l attaches another
+process. Every key is in backmux help keys.
+
+WINDOWS AND PLACES
+Nine windows form a 3x3 grid (1 2 3 / 4 5 6 / 7 8 9), and the screen moves
+over it in half-window steps: Alt-arrows past the screen's edge slide it,
+smoothly unless backmux config set slide off. A window holds up to four
 panes, in places A (top left), B (right), C (bottom left), D (bottom right)
-and E (the bottom across); which places are filled is the window's shape.
-The nine windows form a 3x3 grid (1 2 3 / 4 5 6 / 7 8 9), and the screen
-moves over it in half-window steps. Pane controls require an interactive
-terminal and a two-key detach sequence. From a single-process attach, press
-Ctrl-Space Enter for a new terminal or Ctrl-Space l to attach another
-process. The controls below apply
-while the pane interface is active. backmux shell starts with it: a cleared
-screen, chat open, the bar along the bottom.
+and E (the bottom across). Which places are filled is the window's shape:
+A, AB, AE, ABC (B tall), ABD (A tall), ACD (A across the top), ABE (E across
+the bottom) or ABCD. A place is written 1A to 9E, as the name bars show it,
+and names its process for every command: backmux peek 2C.
 
-PREFIX AND HELP
-The default prefix is Ctrl-Space: press and release it, then press a command
-key. It has no timeout. Press Ctrl-Space twice to send one Ctrl-Space to the
-program. Unrecognized prefix commands are discarded. A custom two-key
---detach-keys sequence changes the prefix and detach key; help shows those
-configured keys.
-
-  Ctrl-Space ?     show keyboard shortcuts
-  Ctrl-Space Enter a new terminal (your shell, in the active pane's
-                   directory) at the next place
-  Ctrl-Space |     split the active pane: a new terminal on its right
-  Ctrl-Space -     split the active pane: a new terminal under it
-  Ctrl-Space l     open the process launcher
-  Ctrl-Space o O   the next / previous pane, across every window
-  Ctrl-Space p     enter Pane Navigation mode
-  Ctrl-Space t     enter Window Navigation mode
-  Ctrl-Space r     enter Pane Resizing mode
-  Ctrl-Space m     enter Pane Placement mode
-
-In a mode, press ? for contextual help. Esc or Enter exits the mode.
-Esc closes contextual help first; press Esc again to exit the mode.
-
-PANE NAVIGATION
-  Alt-arrows       focus the adjacent pane; past the screen's edge, slide
-                   half a window that way across the grid (unless the
-                   active pane is locked, or the grid ends there)
-  Click a pane     focus that pane
-
-In Pane Navigation mode:
-  arrows, h j k l   focus an adjacent pane (h left, j down, k up, l right)
-  a                open the launcher on its running terminals
-  g                select an attached pane by name
-  z                toggle the active pane's full-screen view
-
-THE LAUNCHER
-Ctrl-Space l, or a counter on the bar. Tab or Left/Right steps through its
-lists, Up/Down selects, Enter acts, Esc cancels:
-  Terminals        running terminal processes: attach one as a pane
-  Consoles         pipe-input processes and servers: open one in a viewer
-                   pane (NAME-view runs backmux attach, NAME-log backmux
-                   logs -f; either leaves no record once closed)
-  Ended            ended processes: start one again; a terminal becomes a
-                   pane (a shell comes back with backmux NAME)
-
-WINDOW NAVIGATION
-In Window Navigation mode:
-  1-9              go to that window and exit the mode
-  arrows, h j k l  the window that way on the 3x3 grid
-
-PANE RESIZING
-In Pane Resizing mode:
-  arrows, h j k l        expand toward an adjacent pane
-  Shift-arrows, H J K L  shrink at the selected shared divider
-  =                     equalize the current window's dividers
-
-Only shared dividers can move. Resizing changes the attached programs'
-terminal dimensions. Full-screen view does not resize dividers.
-
-PLACES, SHAPES AND VIEWS
-Where panes really are is the base layout; what the screen shows is the base
-through a view. Places are written 1A to 9E; the shapes are A, AB, AE, ABC
-(B tall), ABD (A tall), ACD (A across the top), ABE (E across the bottom)
-and ABCD. A new pane grows its window into the next shape; a split halves
-the active pane (A down: AE; E right: ACD).
-
-  Ctrl-Space s     swap: two places (2C, or C in the active pane's window);
-                   a free place reshapes its window around the pane sent
-  Ctrl-Space a     view: by name, in the base's places (again: off)
-  Ctrl-Space w     view: spread over all nine windows (again: off)
-  Ctrl-Space d     view: packed four to a window (again: off)
-  Ctrl-Space z     toggle the active pane's full-screen view
-  Ctrl-Space f     hide or show the bar along the bottom
-  Ctrl-Space i     hide or show the name bars (Info)
-
-Views never change the base: turning one off shows the base as it was.
-Swapping works in any view; Pane Placement mode moves panes in the base
-view only:
-  arrows, h j k l   swap with an adjacent pane
-  1-9              move the active pane to that window and exit the mode
-
-Moving a pane to another window leaves the view where it is. Layout changes
-preserve the running processes. For scripted swaps by place, name or ID,
-see backmux help swap.
+THE BASE AND ITS VIEWS
+Where panes really are is the base layout. Attach, split, swap, move and a
+pane leaving change it: a new pane grows its window into the next shape,
+and a split halves the active pane (A down: AE; E right: ACD). The screen
+shows the base through a view: by name, spread over all nine windows, or
+packed four to a window. A view never changes the base; turning it off
+shows the base as it was. Swapping works in any view, moving only in the
+base. Layout changes never stop a process.
 
 LAYOUTS
-  Ctrl-Space L     the Layouts panel: Enter loads, s saves (over the one
-                   loaded), n saves as a new name, d makes it the default
-A layout keeps the base by name; loading one never ends a process (panes
-not in it are let go, ended ones are started again). The bar shows the
-layout's name, with * once panes have moved since. backmux shell opens with
-the default. See backmux help layout.
+A layout keeps the base by name, in ~/.config/backmux/layouts/<name>, as
+plain text. Loading one never ends a process: panes not in it are let go,
+ended ones start again. The bar shows its name, with * once panes have
+moved since; backmux shell opens the default one. Ctrl-Space L opens the
+Layouts panel; backmux help layout has the commands.
 
-NAME BARS AND THE BAR
-With Info on, each pane's name bar shows its place (1A) and state at the left,
-its name boxed in the middle, and what it runs with its CPU and memory at
-the right. Click the name box (or Ctrl-Space n) to type a new name over it:
-Enter renames, Esc or a click elsewhere keeps the name.
+THE LAUNCHER, NAME BARS AND THE BAR
+The launcher (Ctrl-Space l, or a counter on the bar) lists running
+terminals, consoles (servers and pipe-input processes, opened in a viewer
+pane that leaves no record) and ended processes, to attach, view or start
+again. With Info on, each pane's name bar shows its place and state, its
+name (click it to rename), and what it runs with its CPU and memory. The
+bar shows the counters, your chat name, Info, the grid and its windows,
+the view toggles, Zoom, Lock, Slide, ?, the machine's load and the clock;
+on a narrow terminal items shorten, then the least useful go.
 
-The bar along the bottom, from the left: running terminals (green),
-consoles that scroll (blue), ended processes (red) - click one for its list
-in the launcher - then your chat name (opens or hides chat; red while
-messages wait), Info, a minimap of the 3x3 grid, the windows (those in view
-highlighted; click one to go there), Sort, Spread and Pack, Zoom, Lock, ?,
-Slide (the view slides when it moves; backmux config set slide off), and
-the machine's CPU and memory. Toggles look different on and off. On a
-narrow terminal items shorten, then the least useful go.
-
-PROFILES AND INPUT
-  Ctrl-Space n     rename the active pane's process; also save its profile
-  Ctrl-Space ;     save the active process profile, optionally under a new name
-  Ctrl-Space \     toggle pane lock
-
-A locked pane forwards Alt-arrows to its program instead of changing focus.
-Prefix commands remain available. Saving preserves a process profile from
-purge; it does not save the window layout.
+PROFILES, LOCK AND DETACH
+Ctrl-Space n renames the active process and saves its profile; Ctrl-Space ;
+saves the profile (its record survives purge), not the layout. A locked
+pane passes Alt-arrows to its program; prefix keys still work. Ctrl-Space q
+detaches the active pane and leaves its process running; detaching the
+last pane returns to your shell. backmux attach <target> reconnects; end
+and kill stop processes.
 
 CHAT
-Chat lists agent harnesses only (claude, codex, gemini, ...; see backmux
-help shell), each with its harness's name.
-  Ctrl-Space c     open chat (on the active pane's agent, if it is one); hide
-                   it when chat has keyboard focus, or return focus to it
-  Esc             hide chat
-  Tab             open the recipient picker; type to filter, Up/Down to
-                   select, Enter to confirm
-  Enter           send the message
-  Ctrl-J          insert a newline
-  Ctrl-S          Assist: ask the agent for help with the app on screen
-  Up/Down         scroll conversation history; PageUp/PageDown scroll a page
+Chat lists agent harnesses only (claude, codex, gemini, ...). Ctrl-Space c
+opens it or moves the keyboard into it (again: hides it); there, Tab picks
+the recipient, Enter sends, Ctrl-S ticks Assist, Esc hides it. Drag its
+title bar to move it. backmux help share brings an agent into your app.
 
-Drag the chat title bar to move the window or its lower-right corner to
-resize it. Click its close control to hide it. Click a pane to return
-keyboard focus to that program.
-
-DETACH
-Ctrl-Space q detaches the active pane and leaves its process running. Other
-panes remain attached. Detaching the final pane returns to the caller.
-Use backmux attach NAME to reconnect; end and kill stop processes.
-
-See backmux help attach, shell, msg, set, and config.
+See backmux help keys, layout, swap, attach, shell, and config.

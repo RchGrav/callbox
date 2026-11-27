@@ -1,0 +1,32 @@
+
+THE LAUNCHER (Ctrl-Space l)
+  Tab, Left/Right  Step through Terminals, Consoles, Ended
+  Up/Down          Select
+  Enter            Attach it, view it, or start it again
+  Esc              Close
+
+THE LAYOUTS PANEL (Ctrl-Space L)
+  Enter           Load the selected layout
+  s               Save over the loaded layout
+  n               Save as a new name
+  d               Make it the default
+  Esc             Close
+
+CHAT (Ctrl-Space c)
+  Tab             Pick the recipient; type to filter
+  Enter           Send
+  Ctrl-J          New line
+  Ctrl-S          Toggle Assist: ask the agent about the app on screen
+  Up/Down         Scroll; PageUp/PageDown by a page
+  Esc             Hide chat
+
+RENAMING (Ctrl-Space n, or click the name on a name bar)
+  Enter           Rename
+  Esc             Keep the name
+
+MOUSE
+  Click a pane            Focus it
+  Click a bar item        Act on it (the counters open the launcher)
+  Drag chat's title bar   Move chat; its lower-right corner resizes it
+
+Next: backmux help panes (what panes, windows and places are).

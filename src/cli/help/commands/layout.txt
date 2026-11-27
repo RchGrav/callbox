@@ -1,17 +1,20 @@
-usage: backmux layout list | save NAME | load NAME | rm NAME | default [NAME]
+usage: backmux layout list | save <name> | load <name> | rm <name>
+       backmux layout default [<name>]
+
+Save and load pane layouts
 
 A layout is where your panes are, kept by name: each pane's place (1A..9E),
 by its process, each window's split lines, and where the view is. It lives
 in ~/.config/backmux/layouts/NAME as plain text you can read and edit.
 
   list           the saved layouts; the default is marked
-  save NAME      keep the panes of the terminal showing them as NAME
+  save <name>      keep the panes of the terminal showing them as NAME
                  (a view on - sort, spread, pack - is saved as it shows)
-  load NAME      put NAME's panes in that terminal: panes not in it are let
+  load <name>      put NAME's panes in that terminal: panes not in it are let
                  go (their processes run on), panes already there move,
                  running ones are attached, ended ones are started again
-  rm NAME        remove the saved layout (no process is touched)
-  default NAME   the layout backmux shell opens with (its own shell joins
+  rm <name>        remove the saved layout (no process is touched)
+  default <name>   the layout backmux shell opens with (its own shell joins
                  it); default alone prints it, and exits 1 when unset
 
 save and load act on the terminal showing panes: run them inside one of its
@@ -21,3 +24,5 @@ name on the bar shows a * when the panes have moved since it was saved.
 
 Example: backmux layout save work; backmux layout default work
 See backmux help panes.
+[agent]
+An agent's tasks don't need this command; backmux help lists them.

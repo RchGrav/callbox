@@ -122,14 +122,14 @@ See [Store](store.md) and [Docker-style syntax](docker-familiarity-contract.md).
 ## Chat, panes, and help
 
 Interactive terminal controls use Ctrl-Space followed by a command key.
-Ctrl-Space l opens the process launcher; Ctrl-Space p enters Pane Navigation.
+Ctrl-Space l opens the process launcher; Ctrl-Space p enters Pane mode.
 Ctrl-Space c opens the person's chat window over the attached process; it
 lists agent harnesses only. `backmux shell` starts with chat open and the bar
 along the bottom, which the mouse can reach every control from.
 Chat uses its own inbox name; it is not the shell process's message receiver.
 
-Ctrl-Space ? shows the command help. Within Pane Navigation, Window
-Navigation, Pane Resizing, or Pane Placement, `?` shows the relevant controls.
+Ctrl-Space ? shows the command help. Within Pane, Window, Resize, or Move
+mode (as the bar names them), `?` shows that mode's controls.
 The [interactive reference](backmux.md) lists the implemented shortcuts.
 The [shell and chat guide](shell.md) covers messaging and display behavior.
 

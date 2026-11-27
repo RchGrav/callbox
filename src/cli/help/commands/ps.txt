@@ -1,4 +1,6 @@
-usage: backmux ps [-a|--all] [name]
+usage: backmux ps [-a|--all] [<name>]
+
+Docker-style process list
 
 List active processes from your user store and the root-managed store.
 Under root, show only the root-managed store. Processes whose state is
@@ -9,3 +11,5 @@ Columns: PROCESS ID, COMMAND, CREATED, STATUS, PORTS, NAMES. PROCESS ID is
 the Backmux process ID, not the operating-system PID. Private root-managed
 processes show a 'hidden' command. ps does not accept store-selection flags;
 use list for --user, --system, and an owner column.
+[agent]
+Tasks: backmux help check

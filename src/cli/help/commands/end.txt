@@ -1,8 +1,12 @@
 usage: backmux end [--print] <target>...
 
+End: SIGTERM, then SIGKILL
+
 Stop each target's process group with SIGTERM. If it remains running after
 five seconds, send SIGKILL. Records and logs are retained unless the process
 was launched with --rm.
 
 --print displays the signal command without executing it. stop is an alias.
 Use kill for immediate SIGKILL, or purge to remove ended process records.
+[agent]
+Tasks: backmux help cleanup

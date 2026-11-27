@@ -1,0 +1,14 @@
+backmux help cleanup · for {name}
+backmux help cleanup - stop processes and remove their records{!name}
+
+  backmux end app worker                 SIGTERM, then SIGKILL after 5 s
+  backmux kill app                       SIGKILL now
+  backmux purge app                      remove one ended process and its
+                                         log, freeing its name
+
+end keeps the record and log for logs, wait and recall; purge removes
+them, and refuses a running process (exit 2): end it first. Purge by
+name: a bare backmux purge removes every ended process not kept with
+backmux save, other agents' too.
+
+Next: backmux help check

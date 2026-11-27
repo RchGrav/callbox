@@ -1,3 +1,8 @@
+[agent]
+backmux help tui is the walkthrough for people. An agent's tasks cover
+it one page each: backmux help look, drive, test.
+The whole page: backmux help --full tui
+[person]
 backmux help tui - inspect and control a terminal application
 
 Launch an application in a detached terminal, inspect its screen, send

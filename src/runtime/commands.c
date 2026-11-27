@@ -254,7 +254,14 @@ int hold_cmd_console_action(const struct hold_invocation *inv,
 }
 
 void hold_usage(void) {
-    /* Keep the introduction in the compiled plain-text overview. */
-    printf("backmux %s\n", HOLD_VERSION);
-    (void)hold_help_print("overview");
+    /* Keep the introduction in the compiled plain-text overview. An agent
+     * gets its own front page instead: its task index (help_reader.c). */
+    struct hold_help_view view;
+    hold_help_reader_view(&view, false);
+    if (view.agent) {
+        (void)hold_help_print_view("tasks/index", &view);
+        return;
+    }
+    printf("backmux %s - keeps programs running, shares their terminals\n", HOLD_VERSION);
+    (void)hold_help_print_view("overview", &view);
 }

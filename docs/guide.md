@@ -231,7 +231,7 @@ event was not delivered). Value flags take `--flag value` or `--flag=value`.
 
 Every program started with backmux knows its own address: backmux sets
 `BACKMUX_NAME` and `BACKMUX_ID` in its environment, and `BACKMUX_PARENT`
-when it was launched from inside another process. `backmux msg` types a message into the receiver's input, behind a sender
+(the launcher's ID) when it was launched from inside another process. `backmux msg` types a message into the receiver's input, behind a sender
 and reply-command header (`backmux send` types text as it is). Enter follows
 unless `--no-enter` leaves the message unsubmitted. The receiving harness decides what happens to input while it
 is busy; Backmux does not schedule the work or confirm its completion.

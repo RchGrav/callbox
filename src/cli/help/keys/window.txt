@@ -1,0 +1,6 @@
+
+Window mode
+  1-9             Go to that window; leave the mode
+  arrows h j k l  Go to the window that way
+  ?               Show these keys
+  Esc Enter       Leave window mode

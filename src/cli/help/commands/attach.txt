@@ -1,4 +1,13 @@
-usage: backmux attach <target> [--detach-keys KEYS]
+[agent]
+attach hands this terminal to the process until you detach; an agent's
+shell has no keyboard on it. To see and drive a process: backmux help
+look, drive.
+
+The whole page: backmux help --full attach
+[person]
+usage: backmux attach <target> [--detach-keys <keys>]
+
+Attach to a running process
 
 Connect this terminal to a running process's console. Terminal processes
 and pipe-input processes (-i without -t) support attach. console is an alias.
@@ -12,7 +21,7 @@ Ctrl-Space is a prefix: press and release it, then press the next key.
 The prefix has no timeout. Press it twice to send one Ctrl-Space to the
 program. An unrecognized prefix command is discarded.
 
---detach-keys KEYS changes the detach sequence for this attach. For example,
+--detach-keys <keys> changes the detach sequence for this attach. For example,
 --detach-keys ctrl-a,ctrl-d uses Ctrl-A as the prefix and Ctrl-D to detach.
 Two-key sequences retain pane and chat controls under the new prefix.
 A one-key sequence such as ctrl-] detaches immediately; sequences of other

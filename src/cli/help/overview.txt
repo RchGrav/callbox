@@ -1,37 +1,48 @@
+[inside]
+Agents reach you as {chat}: your chat name (Ctrl-Space c opens chat).
+[all]
 
 LAUNCH PROGRAMS
-  backmux call PROGRAM [ARGS...]       start an attached terminal process
-  backmux server PROGRAM [ARGS...]     start a background process with a log
-  backmux detach PROGRAM [ARGS...]     start a detached terminal process
-  backmux shell [SHELL [ARGS...]]       start an attached shell
-  Add --name NAME before PROGRAM to choose a process name.
+  backmux shell [<shell>]                 Start your shell, with panes and chat
+  backmux call <program> [<args>]         Start a terminal program, attached
+  backmux detach <program> [<args>]       Start a terminal program, detached
+  backmux server <program> [<args>]       Start a program with no terminal
+  Put --name <name> before <program> to name it; otherwise one is made.
 
 MANAGE PROCESSES
-  backmux list [all]                   list active processes; all adds records
-  backmux attach TARGET               attach to a running process's console
-  backmux tail TARGET                 follow new output from a running process
-  backmux end TARGET...                send SIGTERM, then SIGKILL if needed
-  backmux kill TARGET...               send SIGKILL immediately
-  backmux recall TARGET                restart using recorded launch settings
-  backmux info TARGET                  show process details and settings
-  backmux purge                        remove ended, unsaved process records
-  backmux purge all                    stop and remove all unsaved processes
+  backmux list [all]                      List running processes; all: ended too
+  backmux attach <target>                 Attach this terminal to it
+  backmux tail <target>                   Follow its new output
+  backmux info <target>                   Show its state, command, settings
+  backmux end <target>...                 End it: SIGTERM, SIGKILL after 5 s
+  backmux kill <target>...                End it now: SIGKILL
+  backmux recall <target>                 Start an ended one again, as before
+  backmux purge                           Remove ended, unsaved records
+  backmux purge all                       End and remove all unsaved ones
+
+AUTOMATE AND MESSAGE
+  backmux peek <target>                   Read its screen: text, JSON, or PNG
+  backmux send <target> <text>...         Type into it; -k <key> sends keys
+  backmux wait <target> [--match <text>]  Wait for text, quiet, or exit
+  backmux msg <target> <text>             Message it; it can reply to you
 
 MANAGE PROFILES
-  backmux save TARGET                  protect a process record from purge
-  backmux delete TARGET                remove an ended process, including saved
-  backmux set TARGET SETTING[=VALUE]    change a process setting
-  backmux unset TARGET SETTING         clear an optional process setting
+  backmux save <target>                   Keep its record through purge
+  backmux set <target> <setting>=<value>  Change program, args, working, name
+  backmux unset <target> <setting>        Clear a setting
+  backmux delete <target>                 Remove an ended record, even saved
 
-TERMINAL CONTROLS
-  Ctrl-Space q                         detach the active pane; keep it running
-  Ctrl-Space c                         open or hide the chat window
-  Ctrl-Space ?                         show keyboard shortcuts
-  backmux help panes                   pane navigation, windows, layout, chat
+<target> is a process name, its ID, or its place on screen (2C): help targets.
+
+TERMINAL CONTROLS  (press Ctrl-Space, release it, then the key)
+  Ctrl-Space q                            Detach; the process keeps running
+  Ctrl-Space c                            Open chat or move into it; again hides
+  Ctrl-Space ?                            Show the keys (backmux help keys)
 
 HELP AND REFERENCE
-  backmux help COMMAND                 command syntax, options, and behavior
-  backmux help help                    index of workflow and reference topics
-  backmux help aliases                 Docker-style command and option mappings
-  backmux help all                     complete command and option reference
-  backmux manual                       reference and worked examples
+  backmux help <command>                  One command: usage, options, details
+  backmux help all                        Index: commands, guides, agent tasks
+  backmux help panes                      Panes, windows, places, layouts, chat
+  backmux help agents                     The page an agent gets as its help
+  backmux help aliases                    Docker-style commands and options
+  backmux manual                          All of it, with worked examples

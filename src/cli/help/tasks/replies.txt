@@ -1,0 +1,18 @@
+backmux help replies · for {inbox}
+backmux help replies - get replies to messages sent from outside{!inbox}
+
+Outside backmux, the first backmux msg makes an inbox and prints its name;
+every agent in the same harness (subagents too) shares it. Replies wait
+there for an hour. Timeouts here are in milliseconds.
+
+  backmux inbox --wait --timeout 600000  the next reply (exit 7: timed out)
+  backmux msg NAME "text" --wait-reply   send, then wait for the next reply
+  backmux monitor                        print replies as they come; run it
+                                         in the background
+  backmux inbox                          every reply kept, oldest first;
+                                         marks them read
+
+The next reply is whoever writes next: read its sender. inbox and monitor
+share what is unread, so use one reader at a time.
+
+Next: backmux help reply

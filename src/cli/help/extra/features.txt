@@ -51,4 +51,4 @@ USE RESTRICTED AND SHARED ENVIRONMENTS
   logs stay private.
   See help system for store selection and sudo behavior.
 
-Start with backmux help for task guides; use help all for the full reference.
+Start with backmux help; help all is the index, manual the whole text.

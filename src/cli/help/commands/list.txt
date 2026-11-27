@@ -1,4 +1,6 @@
-usage: backmux list [all] [-s|--system] [-u|--user] [-a|--all] [name]
+usage: backmux list [all] [-s|--system] [-u|--user] [-a|--all] [<name>]
+
+List processes
 
 List active processes with owner, command, age, status, ports, and name.
 Processes whose state is Unknown remain visible. all includes ended records.
@@ -16,3 +18,5 @@ home directory root. Private root-managed processes show 'hidden' for owner
 and command to other users.
 
 For a combined user and root-managed view without an owner column, use ps.
+[agent]
+Tasks: backmux help check

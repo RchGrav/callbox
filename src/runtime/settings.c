@@ -15,8 +15,8 @@
 #include "backmux/console.h"
 
 static const char set_usage[] =
-    "usage: backmux set <name|id> <setting>[=<value>]\n"
-    "       backmux unset <name|id> <setting>\n"
+    "usage: backmux set <target> <setting>[=<value>]\n"
+    "       backmux unset <target> <setting>\n"
     "settings: working=DIR, program=PROGRAM, args=ARGS (or: args -- ARG...), name=NAME\n";
 
 static const char *label_of(const struct hold_run_record *r, char *display, size_t n) {

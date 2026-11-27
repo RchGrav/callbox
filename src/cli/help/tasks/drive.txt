@@ -1,0 +1,23 @@
+backmux help drive · for {name}
+backmux help drive - type into a terminal app and wait for it{!name}
+
+  backmux send app 'text'                type text; nothing is added
+  backmux send app -k Enter              a key: Enter Tab Escape Up F5 ...
+  backmux send app -k C-c -k M-x         C- Ctrl, M- Alt, S- Shift
+  backmux send app ':wq' -k Enter --wait 300
+                                         then wait: new output, 300 ms quiet
+  backmux send app --mouse click,4,0     click column 4, row 0 (from 0)
+  backmux resize app 100 30              new size; the app gets SIGWINCH
+
+  backmux wait app --match 'Ready'       until the text is on screen
+  backmux wait app --idle 300            until 300 ms without output
+  backmux wait app                       until it exits; prints its code
+
+Text and keys go in the order given. --mouse exits 9 when the app has not
+turned the mouse on. wait gives up after 30 s, send --wait after 10 s
+(exit 7; --timeout changes either); exit 8: the app ended first; exit
+10: it has no terminal (a server).
+send --wait needs new output: a key the app ignores times out. Quiet
+output is not proof the app is done: look at the screen.
+
+Next: backmux help look (check the result)

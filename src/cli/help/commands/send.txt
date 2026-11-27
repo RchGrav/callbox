@@ -1,34 +1,38 @@
-usage: backmux send <target> [TEXT]... [--text TEXT] [-k KEY]...
-                 [--keys "K1 K2"] [--enter] [--paste TEXT|-] [--stdin] [--seq]
-                 [--mouse ACTION,COL,ROW[,BUTTON]] [--wait MS [--timeout MS]]
+usage: backmux send <target> [<text>]... [--text <text>] [-k <key>]...
+                 [--keys "K1 K2"] [--enter] [--paste <text>|-] [--stdin] [--seq]
+                 [--mouse <action>,<col>,<row>[,<button>]]
+                 [--wait <ms> [--timeout <ms>]]
+
+Send text, keys, mouse input
 
 Send input without attaching. Terminal processes and pipe-input processes
-(-i without -t) accept input; plain -d and -dw processes do not.
+(-i without -t) accept input; server processes do not.
 Input operations are applied in argument order.
 
 TEXT AND KEYS
-  TEXT             send literal text; adjacent arguments add no spaces
-  --text TEXT      send literal text, including text starting with a dash
+  <text>           send literal text; adjacent arguments add no spaces
+  --text <text>    send literal text, including text starting with a dash
   --               treat all remaining arguments as literal text
-  -k, --key KEY    send Enter, Tab, Escape, Backspace, Space, Up, Down, Left,
+  -k, --key <key>  send Enter, Tab, Escape, Backspace, Space, Up, Down, Left,
                    Right, Home, End, PageUp, PageDown, Insert, Delete,
                    or F1-F24; modifiers: C- (Ctrl), M- (Alt), S- (Shift)
-  --keys "K1 K2"   send several keys, for example --keys "C-a C-k"
+  --keys "<k1> <k2>"
+                   send several keys, for example --keys "C-a C-k"
   --enter          send Enter
-  --paste TEXT     paste text; use bracketed paste when enabled by the program
+  --paste <text>   paste text; use bracketed paste when enabled by the program
                    (--paste - reads stdin)
   --stdin          send stdin as literal input
 
 MOUSE
-  --mouse ACTION,COL,ROW[,BUTTON]
+  --mouse <action>,<col>,<row>[,<button>]
                    send click, press, release, move, drag, scroll-up, or
-                   scroll-down. COL,ROW are zero-based. BUTTON: 1 left
+                   scroll-down. <col>,<row> are zero-based. BUTTON: 1 left
                    (default), 2 middle, 3 right. Drag: press, drag, release.
                    Exit 9 means mouse reporting is disabled and the mouse
                    event was not delivered.
 
 OUTPUT WAIT
-  --wait MS        after sending, require new output followed by MS of idle
+  --wait <ms>      after sending, require new output followed by MS of idle
                    output; --timeout bounds this wait (default: 10 s)
   --seq            print the output counter captured before input delivery,
                    for use with backmux wait --since
@@ -40,3 +44,5 @@ send Escape in a separate invocation when that distinction matters.
 --wait can time out after successful delivery if no output follows the input.
 Durations accept milliseconds or ms, s, m suffixes, such as 1.5s, up to
 24 hours. --timeout 0 disables the timeout. See backmux help wait.
+[agent]
+Tasks: backmux help drive

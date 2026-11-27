@@ -1,0 +1,7 @@
+Pane mode
+  arrows h j k l  Focus the pane that way
+  a               Attach a process as a pane
+  g               Go to a pane by name
+  z               Toggle zoom
+  ?               Show these keys
+  Esc Enter       Leave pane mode

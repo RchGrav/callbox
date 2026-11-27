@@ -1,24 +1,26 @@
-usage: backmux wait <target> [--idle [MS]] [--match TEXT | --regex RE]
-                 [--since SEQ] [--exit] [--timeout MS]
+usage: backmux wait <target> [--idle [<ms>]] [--match <text> | --regex <re>]
+                 [--since <seq>] [--exit] [--timeout <ms>]
+
+Wait for text, quiet, or exit
 
 Wait for screen content, output idle time, or process exit. With no condition,
 wait for exit. For inbox messages, use inbox --wait or monitor.
 
 SCREEN CONDITIONS
-  --idle [MS]      wait for idle output (default: 500 ms). The process must
+  --idle [<ms>]    wait for idle output (default: 500 ms). The process must
                    have produced output; without --since, the idle interval
                    starts no earlier than this wait. A process that has
                    never produced output does not meet this condition.
-  --match TEXT     succeed when TEXT appears on screen; existing text counts
-  --regex RE       match a POSIX extended regular expression on screen
-  --since SEQ      require output after SEQ before testing screen conditions
+  --match <text>   succeed when TEXT appears on screen; existing text counts
+  --regex <re>     match a POSIX extended regular expression on screen
+  --since <seq>    require output after SEQ before testing screen conditions
                    on a running process; obtain SEQ with send --seq
 
 PROCESS EXIT AND TIMEOUT
   --exit           succeed when the process ends. An exit-only wait prints
-                   its recorded exit code; plain -d records none and prints
-                   -1. Use -dw when the program's exit code is required.
-  --timeout MS     limit the wait; 0 disables the timeout. Defaults: 30 s for
+                   its recorded exit code; a server started without -w (plain
+                   -d) records none and prints -1: use server -w (-dw).
+  --timeout <ms>   limit the wait; 0 disables the timeout. Defaults: 30 s for
                    screen conditions, no timeout for an exit-only wait.
 
 When conditions are combined, any one can complete the wait. Screen
@@ -41,3 +43,5 @@ exit code is separate; capture that value to propagate a job's result:
 
   code=$(backmux wait job)
   exit "$code"
+[agent]
+Tasks: backmux help drive, serve, job

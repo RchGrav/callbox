@@ -1,13 +1,18 @@
-usage: backmux logs <target> [--follow|-f] [--tail|-n N]
+usage: backmux logs <target> [--follow|-f] [--tail|-n <n>]
+
+Print a process's output
 
 Print captured output without removing terminal escape sequences. Terminal
 logs may contain color and cursor controls; the log is an output stream,
 not a rendered screen snapshot.
 
   -f, --follow     print retained output, then follow new output until exit
-  -n N, --tail N   start with the newest N lines; --tail=N is also accepted
+  -n <n>, --tail <n>
+                   start with the newest N lines; --tail=<n> is also accepted
 
 For compatibility, --plain, --print, and -p are accepted but do not change
 the output or strip escape sequences. The log_path field in inspect output
 identifies the file. Use peek for the screen and tail to follow only new
 output from a running process.
+[agent]
+Tasks: backmux help check

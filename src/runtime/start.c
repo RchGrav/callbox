@@ -112,9 +112,9 @@ static int clear_process_environment(void) {
 }
 
 /* The process's own identity, exported to the held program: BACKMUX_ID and
- * BACKMUX_NAME are its address (backmux send/peek/wait accept either), and
- * BACKMUX_PARENT names the process that launched it, when it was launched
- * from inside one (an agent starting a worker), so the worker can reply.
+ * BACKMUX_NAME are its address; BACKMUX_PARENT is the launcher's ID, so a
+ * worker given its task on the command line (no header to reply to) can
+ * report back - an ID, as a name can be renamed or reused after a purge.
  * Captured in the launcher before fork; always overrides inherited values. */
 static struct {
     char id[ID_STR_LEN];
@@ -128,8 +128,8 @@ static void child_identity_prepare(const char *id, const char *name, bool tty) {
     memset(&g_child_identity, 0, sizeof(g_child_identity));
     snprintf(g_child_identity.id, sizeof(g_child_identity.id), "%s", id ? id : "");
     snprintf(g_child_identity.name, sizeof(g_child_identity.name), "%s", name ? name : "");
-    const char *parent = getenv("BACKMUX_NAME");
-    if (!parent || !*parent) parent = getenv("BACKMUX_ID");
+    const char *parent = getenv("BACKMUX_ID");
+    if (!parent || !hold_valid_id(parent)) parent = getenv("BACKMUX_NAME"); /* a launcher with no ID: its name */
     if (parent && strlen(parent) < sizeof(g_child_identity.parent) && strcmp(parent, g_child_identity.name) != 0)
         snprintf(g_child_identity.parent, sizeof(g_child_identity.parent), "%s", parent);
     g_child_identity.set = g_child_identity.id[0] != '\0';

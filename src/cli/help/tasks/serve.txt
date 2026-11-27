@@ -1,0 +1,22 @@
+backmux help serve · for {name}
+backmux help serve - run a server and wait until it is ready{!name}
+
+On a terminal, the server's ready line can be waited for:
+
+  backmux detach --name web python3 -u -m http.server 8080
+  backmux wait web --match 'Serving HTTP' --timeout 10s
+        exit 0: ready; 7: timed out; 8: it ended first (then backmux wait
+        web prints its exit code). --match is plain text and counts lines
+        printed before wait started; --regex takes a pattern.
+  backmux logs web -n 50                 its last 50 lines
+  backmux ports web                      its listening sockets (Linux)
+
+To restart it when it fails, start it with no terminal instead (terminal
+processes cannot restart) and check it another way, such as curl:
+
+  backmux server --name api --restart on-failure ./server --port 8080
+
+backmux end web stops it (backmux wait web then prints 143, SIGTERM's
+code); backmux purge web removes it and frees the name.
+
+Next: backmux help check, cleanup

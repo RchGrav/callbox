@@ -586,7 +586,7 @@ int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const 
         return 2;
     }
     if (st != STATE_EXITED && st != STATE_FAILED && st != STATE_UNKNOWN && !(allow_stale && st == STATE_STALE)) {
-        fprintf(stderr, "backmux: error: process %s is %s and cannot be purged\n", id, hold_state_str(st));
+        fprintf(stderr, "backmux: error: %s is %s and cannot be purged: backmux end %s first\n", r.has_name && r.name[0] ? r.name : id, hold_state_str(st), r.has_name && r.name[0] ? r.name : id);
         hold_free_run_record(&r);
         return 2;
     }

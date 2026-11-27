@@ -1,5 +1,14 @@
-usage: backmux shell [--name NAME] [--size COLS ROWS] [-e KEY=VALUE]... [--rm]
-                     [shell [args...]]
+[agent]
+shell is a person's interactive shell with panes and chat; an agent
+needs none of it. Its tasks: backmux help.
+
+The whole page: backmux help --full shell
+[person]
+usage: backmux shell [--name <name>] [--size <cols> <rows>]
+                     [-e <key>=<value>]... [--rm]
+                     [<shell> [<args>...]]
+
+Start your shell, panes, chat
 
 Start an attached shell on a pseudoterminal (PTY). It continues running after
 detachment. recall restarts an ended shell using its recorded launch settings.
@@ -11,6 +20,7 @@ account's login shell if available, then /bin/sh.
 
 A shell opens on a cleared screen of its own (your lines come back when you
 leave), with the bar along the bottom, its name bar, and chat open with the
-keyboard on the shell. Esc hides chat; Ctrl-Space c brings it back;
+keyboard on the shell. Ctrl-Space c moves the keyboard into chat (again:
+hides it), and Esc there hides it;
 Ctrl-Space l attaches another process as a pane. Reattaching to a shell
 brings all of it back. See backmux help panes for interactive controls.

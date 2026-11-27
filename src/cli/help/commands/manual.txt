@@ -1,5 +1,7 @@
 usage: backmux manual
 
+Print the whole manual
+
 Print the complete command and option reference followed by worked examples.
 To read it in a pager: backmux manual | less
 

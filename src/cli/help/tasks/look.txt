@@ -1,0 +1,18 @@
+backmux help look · for {name}
+backmux help look - read a terminal app's screen{!name}
+
+A terminal process's screen stays in memory whether or not anyone is
+attached, so a person's app can be read while they use it.
+
+  backmux peek app                       the screen as text
+  backmux peek app --ruler               with column and row numbers, from 0
+  backmux peek app --json                text, cursor, modes, size, counter
+  backmux peek app --image s.png --cursor-ring    a color PNG to read
+  backmux peek app --last-alt            the full-screen frame shown last
+
+Text and --json leave out color, bold and reverse video: pictures, and a
+menu's selected item, show only in --image (--image s.png --text gives
+both in one call). app is a name, an ID, or a place on screen (2C: window
+2, pane C; backmux help targets); backmux list shows the names.
+
+Next: backmux help drive (type into it), reply (report what it shows)

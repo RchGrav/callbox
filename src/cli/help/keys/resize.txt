@@ -1,0 +1,7 @@
+
+Resize mode
+  arrows h j k l        Grow the pane that way
+  Shift-arrows H J K L  Shrink it from that side
+  =                     Even out the dividers
+  ?                     Show these keys
+  Esc Enter             Leave resize mode

@@ -1,12 +1,14 @@
-usage: backmux msg <target> TEXT... [--stdin] [--no-enter] [-- TEXT...]
-                   [--wait-reply [--timeout MS]]
-       backmux msg [<target>] --received [ID]
+usage: backmux msg <target> <text>... [--stdin] [--no-enter] [-- <text>...]
+                   [--wait-reply [--timeout <ms>]]
+       backmux msg [<target>] --received [<id>]
+
+Message a process or person
 
 Send a message to a managed process or an inbox. Terminal and pipe-input
 processes receive it as program input, behind a header naming the sender
 and how to reply, followed by Enter by default:
 
-  [msg from NAME; reply: backmux msg NAME "..."] TEXT
+  [msg from <name>; reply: backmux msg <name> "..."] <text>
 
 To type text into a program as it is, use backmux send. Messages to an
 outside sender or a person's chat name are stored in that inbox.
@@ -17,20 +19,21 @@ SEND OPTIONS
   --               treat remaining arguments as text, including leading dashes
   --wait-reply     from outside a managed process, send and wait for the first
                    new inbox message; a message from any sender can satisfy it
-  --timeout MS     limit the reply wait (default: 0, no timeout)
+  --timeout <ms>   limit the reply wait (default: 0, no timeout)
   -h, --help       show this page
 
 RECEIVED-MESSAGE HISTORY
-  --received [ID]  list a process's delivered messages, or read one by delivery
+  --received [<id>]
+                   list a process's delivered messages, or read one by delivery
                    ID. Supply the target, or omit it inside the recipient
                    process. Use inbox to read an outside sender's messages.
 
 SENDER AND DELIVERY
 Inside a managed process, BACKMUX_ID or BACKMUX_NAME identifies the sender.
 Outside managed processes, the first send creates an inbox and prints its
-name on stderr. Replies use backmux msg NAME TEXT in either case.
+name on stderr. Replies use backmux msg <name> <text> in either case.
 
-TEXT arguments are joined with spaces. For program input, terminal control
+<text> arguments are joined with spaces. For program input, terminal control
 sequences are stripped; multiline text uses bracketed paste when enabled,
 otherwise line breaks become spaces. Outside inboxes retain message text.
 
@@ -40,10 +43,12 @@ It does not correlate replies with a request or restrict them to one sender.
 Delivery does not establish task completion; application input queueing
 depends on the receiving program.
 
-Plain -d and -dw processes have no input console and reject messages
+server processes (-d, -dw) have no input console and reject messages
 (exit 10). Each receiving process accepts at most 20 messages per minute;
 outside inboxes do not use this limit. Sender headers provide reply
 addresses, not authenticated identity.
 
 --wait-reply accepts whole milliseconds and exits 7 on timeout or 8 if the
 inbox expires. See backmux help messaging, inbox, monitor, and set.
+[agent]
+Tasks: backmux help reply

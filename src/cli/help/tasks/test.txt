@@ -1,0 +1,16 @@
+backmux help test · for {name}
+backmux help test - start an app of your own and test it{!name}
+
+  backmux detach --name app --size 80 24 ./my-tui --flag
+  backmux wait app --idle 300            until it has drawn
+  backmux peek app                       look (backmux help look)
+  backmux send app -k Down --wait 300    act (backmux help drive)
+  backmux send app q                     quit it the app's own way
+  backmux wait app                       its exit code, once it ends
+  backmux purge app                      remove it, freeing the name
+
+detach starts it on a terminal of its own; --size keeps results the same
+from run to run. A person can watch with backmux attach app. backmux
+recall app runs it again as recorded.
+
+Next: backmux help drive, cleanup

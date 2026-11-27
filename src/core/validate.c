@@ -42,6 +42,58 @@ bool hold_valid_alias(const char *alias) {
     return true;
 }
 
+/* A name as help shows it ("Sleek Carbon") back to the name: lower case,
+ * spaces for underscores. Why: help shows names in that polite form, so
+ * whoever types one back - in a command, or in chat's recipient search -
+ * must reach the process. True only when the word needed it (a space or a
+ * capital) and the result is a valid name. */
+bool hold_friendly_name(const char *word, char *out, size_t n) {
+    if (!word || !out || n == 0) return false;
+    size_t len = strlen(word);
+    if (len >= n) return false;
+    bool changed = false;
+    for (size_t i = 0; i <= len; i++) {
+        unsigned char c = (unsigned char)word[i];
+        if (c == ' ') c = '_', changed = true;
+        else if (isupper(c)) c = (unsigned char)tolower(c), changed = true;
+        out[i] = (char)c;
+    }
+    return changed && hold_valid_alias(out);
+}
+
+/* Whether s starts with the first n bytes of want, as names are searched:
+ * any case, and a space matches an underscore, so a name typed as help
+ * shows it ("sleek carbon") finds sleek_carbon (chat's recipient search). */
+bool hold_name_starts_like(const char *s, const char *want, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        int a = tolower((unsigned char)s[i]), b = tolower((unsigned char)want[i]);
+        if (a == ' ') a = '_';
+        if (b == ' ') b = '_';
+        if (!s[i] || a != b) return false;
+    }
+    return true;
+}
+
+/* The polite form of a name, for people and agents to read: "sleek_carbon"
+ * shows as "Sleek Carbon". The underscore form exists for the Docker
+ * resemblance; help shows this one (hold_friendly_name reads it back). */
+void hold_friendly_display(const char *name, char *out, size_t n) {
+    if (!out || n == 0) return;
+    size_t i = 0;
+    bool start = true;
+    for (; name && name[i] && i + 1 < n; i++) {
+        unsigned char c = (unsigned char)name[i];
+        if (c == '_') {
+            out[i] = ' ';
+            start = true;
+            continue;
+        }
+        out[i] = (char)(start ? toupper(c) : c);
+        start = c == '-';
+    }
+    out[i] = '\0';
+}
+
 bool hold_valid_record(const struct hold_run_record *r) {
     return r && r->pid > 0 && r->pgid > 1 && hold_valid_id(r->id) &&
            (r->run_id[0] == '\0' || hold_valid_id(r->run_id));

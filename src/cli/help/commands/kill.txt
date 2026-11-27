@@ -1,6 +1,10 @@
 usage: backmux kill [--print] <target>...
 
+End now: SIGKILL
+
 Send SIGKILL immediately to each target's process group. Records and logs
 are retained unless the process was launched with --rm. --print displays the
 signal command without executing it.
 Use end to send SIGTERM first and allow up to five seconds for shutdown.
+[agent]
+Tasks: backmux help cleanup

@@ -1,0 +1,29 @@
+backmux help reply · for {name}
+backmux help reply - message a person or a process{!name}
+
+[inside]
+Every message to this process arrives as input, after a header:
+  [msg from NAME; reply: backmux msg NAME "..."]
+Reply with that command. A reply needs no acknowledgement; sending one
+starts a loop.
+[outside]
+Replies to your messages wait in your inbox: backmux help replies.
+[all]
+
+  backmux msg NAME "text"                to a person: shows in their chat
+                                         to a process: typed in, then Enter
+  backmux msg NAME --no-enter "text"     typed in, without Enter
+  backmux msg NAME --stdin < notes.txt   the text from a file
+[inside]
+  backmux msg --received [ID]            what has arrived here; with an ID,
+                                         that message in full
+[all]
+
+Control characters are stripped. To a program, line breaks become spaces
+unless it takes bracketed paste (Claude Code does); a person's chat keeps
+them. msg prints a delivery ID (backmux msg NAME --received ID shows that
+message). A process takes at most 20 messages a minute. Delivered means it
+reached the input, not that the work is done. Processes with no terminal
+(server) take no messages.
+
+Next: backmux help look (see what they see)

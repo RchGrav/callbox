@@ -55,6 +55,29 @@ int hold_operator_name(const struct hold_store *store, bool create, char *name, 
     return operator_name_for(store, key, NULL, create, name, n, made);
 }
 
+/* A live inbox named by *word, also in its polite form ("Rich Chat" for
+ * rich_chat, as help shows names); on a match *word is the inbox's name. */
+bool hold_inbox_target(const struct hold_store *store, const char **word) {
+    static char friendly[ALIAS_MAX_LEN + 1];
+    if (hold_valid_alias(*word) && hold_inbox_live(store, *word)) return true;
+    if (!hold_friendly_name(*word, friendly, sizeof(friendly)) || !hold_inbox_live(store, friendly)) return false;
+    *word = friendly;
+    return true;
+}
+
+/* The inbox this harness already answers to (or, with person, the
+ * person's chat name), never making one: help names it, and help only
+ * reads. 0: found; 1: none; -1: error. */
+int hold_operator_name_peek(const struct hold_store *store, bool person, char *name, size_t n) {
+    char dir[HOLD_PATH_MAX], key[128], comm[32] = "";
+    struct stat st;
+    if (hold_checked_snprintf(dir, sizeof(dir), "%s/inbox", store->base) != 0 || stat(dir, &st) != 0) return 1;
+    if (person) snprintf(key, sizeof(key), "person uid %ld", (long)getuid());
+    else if (!harness_key(key, sizeof(key), comm, sizeof(comm)))
+        snprintf(key, sizeof(key), "operator uid %ld", (long)getuid());
+    return hold_inbox_find(store, key, name, n);
+}
+
 /* The person's chat name: one per account, the same in every terminal (chat
  * follows them), their chosen chat-name when that is free, else generated.
  * It is an operator inbox like any sender's outside a process, so agents reply

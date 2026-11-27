@@ -1,3 +1,8 @@
+[agent]
+backmux help service is the walkthrough for people. An agent's tasks:
+backmux help serve (a server, until ready), job (a command, its code).
+The whole page: backmux help --full service
+[person]
 backmux help service - run background services and CI jobs
 
 Run jobs and services in the background with output captured in a log.
@@ -20,26 +25,27 @@ RUN A JOB AND RETURN ITS RESULT
   because it cannot record the exit code.
 
 KEEP A SERVICE UP WHILE TESTS RUN
-  This example needs Python 3, curl, a free port 8080, and your test script.
+  This example needs Python 3, a free port 8080, and your test script.
   Run it from the directory you want to serve.
 
     set -e
-    backmux -d --name web -- python3 -u -m http.server 8080
+    backmux -dt --name web -- python3 -u -m http.server 8080
     trap 'backmux end web; backmux purge web' EXIT
-    curl --retry 10 --retry-connrefused --retry-delay 1 \
-      --fail --silent --show-error http://127.0.0.1:8080/ >/dev/null
-    backmux inspect web
+    backmux wait web --match 'Serving HTTP' --timeout 10s
     ./run-tests.sh || { backmux logs web -n 200; exit 1; }
     backmux logs web -n 20
 
-  The HTTP request checks readiness; a background service has no screen
-  for wait --match. inspect shows the recorded state and log path. The trap
-  stops the service and removes its record when the script exits. Without
-  purge, the name remains taken. Use distinct names for concurrent CI runs.
+  -dt gives the service a terminal, so wait --match sees its ready line:
+  exit 0 once it shows, 8 if the server ends first (backmux wait web then
+  prints its exit code), 7 at the timeout. -u keeps Python's output
+  unbuffered, so the line shows at once. The trap stops the service and
+  removes its record when the script exits; without purge, the name
+  remains taken. Use distinct names for concurrent CI runs.
 
-  A successful request alone cannot identify the server: port 8080 must be
-  free before launch. Replace the URL with your service's readiness endpoint
-  and ./run-tests.sh with the tests that exercise it.
+  A service that prints no ready line, or must restart when it fails,
+  runs with no terminal instead (terminal processes cannot restart):
+  start it with -d --restart on-failure and check readiness another way,
+  such as curl --retry 10 --retry-connrefused --fail on its endpoint.
 
 CHECK A SERVICE WHILE IT RUNS
     backmux ps

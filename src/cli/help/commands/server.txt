@@ -1,4 +1,6 @@
-usage: backmux server [--name NAME] [-w] [options] <program> [<args>...]
+usage: backmux server [--name <name>] [-w] [options] <program> [<args>...]
+
+Start a program, no terminal
 
 Start a background process with output captured in a log and no terminal or
 input console. Use tail to follow new output, or logs to read captured output.
@@ -10,5 +12,7 @@ A plain server launch without -w, --rm, or an active restart policy leaves
 no Backmux helper and does not record an exit code. --rm and active restart
 policies also retain exit tracking.
 
-Options include --name, -e KEY=VALUE, --env-file, --rm, and --restart.
+Options include --name, -e <key>=<value>, --env-file, --rm, and --restart.
 Equivalent launch: backmux run -d. See backmux help launch and help service.
+[agent]
+Tasks: backmux help job, serve

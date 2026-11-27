@@ -16,7 +16,7 @@ their exact spelling. Source references identify where to verify each concept.
 | **PID** | Operating-system process identifier. It is distinct from a Backmux process ID. | `include/backmux/types.h`, `src/runtime/state.c` |
 | **Backmux process ID** / **ID** | Identifier of the stored process record. Recall reuses it; a new launch gets a new ID. Use the qualified form where confusion with a PID is possible. | `src/store/lifecycle.c`, `src/runtime/call.c` |
 | **name** | Human-readable process name, generated or explicitly assigned. Renaming updates the record's name and saves it. | `src/runtime/start.c`, `src/runtime/call.c` |
-| **target** | Command argument identifying a managed process by name or ID, or an inbox where supported. Scope and prefix forms depend on the command. Use `backmux help targets` for exact syntax. | `src/runtime/resolve.c`, `src/store/resolve.c`, `src/runtime/inbox.c` |
+| **target** / `<target>` | Command argument identifying a managed process: its name, its ID or a unique ID prefix, the place it is on screen (2C), or its polite form ("Sleek Carbon" for sleek_carbon), or an inbox where supported. Written `<target>` in usage lines (it replaced `<name\|id>` when places became targets). Use `backmux help targets` for exact syntax. | `src/runtime/resolve.c`, `src/store/resolve.c`, `src/runtime/inbox.c` |
 | **process record** | Stored metadata for a managed process, including identity, launch recipe, and lifecycle information. Records can outlive the process. | `include/backmux/types.h`, `src/store/record.c`, `src/store/record_read.c` |
 | **launch recipe** | Stored program, arguments, environment overrides, working directory, and launch options used by recall. `recipe` remains the internal field name. | `struct hold_recipe` in `include/backmux/types.h`, `src/runtime/call.c` |
 | **profile** / **saved profile** | A process record and launch recipe marked `saved`, protecting it from ordinary purge operations. Explicit `delete` or targeted `purge --force` can remove it. It is not a separate file format or a saved multi-pane layout. | `src/runtime/call.c`, `src/runtime/list.c`, `src/runtime/settings.c` |
@@ -36,7 +36,8 @@ bare-target reconnect-or-restart behavior.
 | **launch** | Start a program under Backmux and establish its tracking and I/O resources. | `src/runtime/start.c` |
 | **recall** | Restart from the stored recipe using the existing process ID and log. The `recall` command refuses a target confirmed running; bare `backmux NAME` instead attaches to or follows a running target. | `src/runtime/settings.c`, `src/runtime/call.c` |
 | **attach** | Connect the current terminal to a process console. A newer attach replaces the previous client. | `src/console/attach.c`, `src/console/broker.c` |
-| **detach** | Disconnect the terminal while leaving the process running. In pane controls it removes the active pane. The `detach` launch command starts a detached terminal process. | `src/console/mux.c`, `src/console/attach.c`, `src/cli/main.c` |
+| **detach** | Disconnect the terminal while leaving the process running. In pane controls it removes the active pane. The `detach` launch command starts a detached terminal process. Detach is the act; what the process becomes is a **background process**. |
+| **background process** | A process with no terminal attached to it: one detached, or started with `detach` or `server`. A server differs by never having a terminal at all, so describe `server` as "a program with no terminal", not as a background process. | `src/console/mux.c`, `src/console/attach.c`, `src/cli/main.c` |
 | **follow** | Continue reading output as it is appended to a log. It does not provide interactive program input. | `src/runtime/observe.c`, `src/console/client.c` |
 | **end** | Send SIGTERM, wait up to five seconds, then send SIGKILL if the validated process group remains running. `stop` is an alias. | `src/runtime/signal.c`, `src/cli/specs.c` |
 | **kill** | Send SIGKILL to the target process group. | `src/runtime/signal.c` |
@@ -65,7 +66,7 @@ purge used by `delete` can stop a target found running on that later check.
 | **terminal process** | Managed process connected to a pseudoterminal (PTY). It can appear in a pane. | `src/runtime/start.c`, `src/console/mux.c` |
 | **PTY** / **pseudoterminal** | Operating-system terminal device pair used for terminal input, output, size, and modes. Explain the abbreviation in introductory material. | `src/term/spawn.c`, `src/term/tty.c` |
 | **pipe-input process** | Process launched with `-i` without `-t`; on the non-restart path, a broker relays input/output through pipes. It is not a terminal process. | `src/runtime/start.c`, `src/console/broker.c` |
-| **console** | Connection providing a managed process's input and output through its broker. The endpoint may be a Unix-domain socket or FIFO. | `src/console/broker.c`, `src/console/socket.c`, `src/console/fifo.c` |
+| **console** | Connection providing a managed process's input and output through its broker. The endpoint may be a Unix-domain socket or FIFO. In new text people read, keep the word for the launcher's list of processes without a terminal (servers, pipe input) and say "input" for the connection, so one word has one meaning. | `src/console/broker.c`, `src/console/socket.c`, `src/console/fifo.c` |
 | **broker** | Process that owns the program's terminal or pipes, maintains its screen model and log, and serves attach/control clients. | `src/console/broker.c` |
 | **pane** | Region displaying an attached terminal process. A pane is a view, not the process or its profile. | `src/console/mux.c` |
 | **active pane** | Selected pane receiving forwarded program input. The chat window or a control mode may temporarily own keyboard focus. | `focused`, `key_in`, and `set_focus` in `src/console/mux.c` |
@@ -79,8 +80,8 @@ purge used by `delete` can stop a target found running on that later check.
 | **launcher** | Window listing running terminals, consoles that scroll, and ended processes, to attach, view, or start again. | `draw_procs` and `launch_pick` in `src/console/mux.c` |
 | **agent harness** | A program chat talks to: a known harness (claude, codex, ...) or one named with `--agent`. | `src/console/agents.c` |
 | **Assist** | Chat's checkbox: the next message asks the agent to inspect the app on screen with `peek` and answer with `msg`. | `with_assist` in `src/console/chat.c` |
-| **full screen** | Pane display filling its current window. Use **full-screen** before a noun, as in “full-screen program.” | `relayout` and `command` in `src/console/mux.c` |
-| **pane lock** | Setting that forwards Alt-arrow keys to the active program instead of using them for adjacent-pane focus. Prefix commands remain available. | `pane_locked` and `key_in` in `src/console/mux.c` |
+| **zoom** | The active pane filling the screen (Ctrl-Space z; Zoom on the bar). Use zoom, the bar's word and tmux's, not "full-screen view". Keep **full-screen** for programs, as in “full-screen program.” | `relayout` and `command` in `src/console/mux.c` |
+| **lock** / **pane lock** | Setting that forwards Alt-arrow keys to the active program instead of using them for adjacent-pane focus. Prefix commands remain available. Say what it locks: "Lock: Alt-arrows to app". | `pane_locked` and `key_in` in `src/console/mux.c` |
 | **prefix** | First key of a control sequence, normally Ctrl-Space. A command key follows it. Repeating the prefix forwards one prefix byte to the program. | `src/term/pump.c`, `src/console/attach.c`, `src/console/mux.c` |
 | **control mode** | Pane, window, resize, or move mode. Subsequent keys act within that mode; `?` shows its help. | `mode_key` in `src/console/mux.c` |
 | **picker** | List for selecting a pane or a message recipient. | `draw_jump` in `src/console/mux.c`; `draw_picker` in `src/console/chat.c` |
@@ -88,8 +89,8 @@ purge used by `delete` can stop a target found running on that later check.
 | **screen snapshot** | Captured screen state. Text, JSON, and image representations are available through `peek`; it is not the same as the output log. | `src/runtime/screen_cmds.c`, `src/screen/render.c` |
 | **idle output** | No new program output for the requested interval, subject to the wait command's sequence conditions. It does not mean the program is ready for input or has completed a task. | `check_wait` in `src/console/broker.c` |
 
-Use functional help headings such as **Pane Navigation**, **Window Navigation**,
-**Pane Resizing**, and **Pane Placement**. Use **focus** for keyboard selection,
+Name the control modes as the bar shows them: **Pane mode**, **Window mode**,
+**Resize mode**, and **Move mode** (PANE, WINDOW, RESIZE, MOVE on the bar). Use **focus** for keyboard selection,
 **move** for relocating a pane, and **swap** for exchanging two panes.
 
 ## Messaging and storage

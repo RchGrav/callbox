@@ -1,0 +1,15 @@
+backmux help job · for {name}
+backmux help job - run a command in the background, get its exit code{!name}
+
+backmux server runs a command with no terminal; its output goes to a log.
+
+  backmux server -w --name checks make test
+  code=$(backmux wait checks)            wait; prints the command's code
+  backmux logs checks -n 100             what it printed
+  backmux purge checks                   remove it, freeing the name
+
+-w keeps the exit code; without it, wait prints -1. wait itself exits 0
+once the command ends, whatever its code: use the printed value.
+backmux wait checks --timeout 10m gives up after ten minutes (exit 7).
+
+Next: backmux help check, cleanup

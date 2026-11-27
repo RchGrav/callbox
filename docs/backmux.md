@@ -36,10 +36,10 @@ sending either byte to the program.
 | Layouts | Ctrl-Space L | The Layouts panel: load, save, save as, set the default. |
 | Next / previous pane | Ctrl-Space o / O | Every pane in order, A to E, window 1 to 9, round again; the view follows. tmux's key. |
 | Command help | Ctrl-Space ? | Display the prefix-command reference. |
-| Pane Navigation | Ctrl-Space p | Enter pane navigation mode. |
-| Window Navigation | Ctrl-Space t | Enter window navigation mode. |
-| Pane Resizing | Ctrl-Space r | Enter pane resizing mode. |
-| Pane Placement | Ctrl-Space m | Enter pane placement mode. |
+| Pane mode | Ctrl-Space p | Enter Pane mode (the bar shows PANE). |
+| Window mode | Ctrl-Space t | Enter Window mode (WINDOW). |
+| Resize mode | Ctrl-Space r | Enter Resize mode (RESIZE). |
+| Move mode | Ctrl-Space m | Enter Move mode (MOVE). |
 | Swap places | Ctrl-Space s | Two places: `2C`, or `C` for the active pane's window. A free place reshapes its window. Works in every view. |
 | Maximize pane | Ctrl-Space z | Toggle the active pane between its window layout and full-window display. |
 | Bottom bar | Ctrl-Space f | Hide or show the bar along the bottom. |
@@ -63,17 +63,17 @@ input until it exits, so repeated navigation or resizing needs no prefix.
 
 | Mode | Control | Operation |
 | --- | --- | --- |
-| Pane Navigation | Arrow keys or h/j/k/l | Focus the adjacent pane in that direction. |
-| Pane Navigation | a | Open the launcher on its list of running terminal processes. |
-| Pane Navigation | g | Open the pane list and select a pane by process name. |
-| Pane Navigation | z | Toggle the active pane's maximized view. |
-| Window Navigation | 1–9 | Go to that window (if it has panes) and exit the mode. |
-| Window Navigation | Arrow keys or h/j/k/l | Go to the window that way on the 3×3 grid (Left/Right: the previous or next with panes). |
-| Pane Resizing | Arrow keys or h/j/k/l | Grow the active pane toward an adjacent split boundary. |
-| Pane Resizing | Shift-arrow keys or H/J/K/L | Shrink the active pane from that split boundary. |
-| Pane Resizing | = | Reset the current window's split proportions to equal divisions. |
-| Pane Placement | Arrow keys or h/j/k/l | Swap the active pane with its neighbor in that direction (base view only). |
-| Pane Placement | 1–9 | Move the active pane to that window and exit the mode if space is available (base view only). |
+| Pane mode | Arrow keys or h/j/k/l | Focus the adjacent pane in that direction. |
+| Pane mode | a | Open the launcher on its list of running terminal processes. |
+| Pane mode | g | Open the pane list and select a pane by process name. |
+| Pane mode | z | Toggle the active pane's maximized view. |
+| Window mode | 1–9 | Go to that window (if it has panes) and exit the mode. |
+| Window mode | Arrow keys or h/j/k/l | Go to the window that way on the 3×3 grid (Left/Right: the previous or next with panes). |
+| Resize mode | Arrow keys or h/j/k/l | Grow the active pane toward an adjacent split boundary. |
+| Resize mode | Shift-arrow keys or H/J/K/L | Shrink the active pane from that split boundary. |
+| Resize mode | = | Reset the current window's split proportions to equal divisions. |
+| Move mode | Arrow keys or h/j/k/l | Swap the active pane with its neighbor in that direction (base view only). |
+| Move mode | 1–9 | Move the active pane to that window and exit the mode if space is available (base view only). |
 
 Resizing works on one window; between windows the lines sit halfway. Moving
 works in the base view only: a view is computed from the base, so a pane

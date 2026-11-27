@@ -1,4 +1,6 @@
-usage: backmux info <name|id>
+usage: backmux info <target>
+
+Show a process's details
 
 Show a running or ended process's identity, launch kind, state, recorded exit
 information, command, arguments, working directory, message format, saved
@@ -6,3 +8,5 @@ status, timestamps, and available log and console paths.
 
 Environment variable names are shown without their values. To inspect the
 stored record as JSON, including recorded environment values, use inspect.
+[agent]
+Tasks: backmux help check
