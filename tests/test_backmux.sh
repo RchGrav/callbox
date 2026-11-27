@@ -327,6 +327,9 @@ new_env() {
     ACTOR_HOME="$TEST_ROOT/home"
     mkdir -p "$ACTOR_HOME" || return 1
     chmod 700 "$ACTOR_HOME" || return 1
+    # The view slides when it moves between windows; tests check where
+    # things land, so it is off here (the slide has a test of its own).
+    mkdir -p "$ACTOR_HOME/.config/backmux" && printf 'slide off\n' >"$ACTOR_HOME/.config/backmux/config" || return 1
   fi
 
   HOME="$ACTOR_HOME"
@@ -7086,6 +7089,7 @@ run_test "footers, f, lock and Alt-arrows, w a d rearranging, n rename and ; sav
 run_test "chat is the person's: messages behind the header, replies come back, it follows them" test_chat_is_the_persons
 run_test "the grid: half-window slides, o and O, a new terminal at the next place" test_grid_new_terminals_and_splits
 run_test "splits: the active pane halved, the window takes the shape named (AE, ACD)" test_splits_make_the_shape_named
+run_test "the slide: a move between windows passes through frames in between" test_slide_shows_frames_between
 run_test "backmux shell: a cleared screen of its own, chat up, the bar, f, Esc, the keys framed" test_shell_is_the_persons_screen
 run_test "chat lists running agent harnesses only; --agent remembers one; Assist asks for help with the app" test_chat_agents_only_and_assist
 run_test "the bar's counters open the launcher: attach, open a log, start again" test_bar_counters_launch

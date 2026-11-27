@@ -172,6 +172,7 @@ static void key_in(struct mux *m, const unsigned char *k, size_t n) {
 
 /* Returns 1 to detach. */
 int mux_handle_input(struct mux *m, const unsigned char *buf, size_t n) {
+    if (mux_sliding(m)) mux_slide_stop(m); /* a key mid-slide: straight to where it was going */
     unsigned char all[4096 + 64];
     size_t total = 0;
     memcpy(all, m->esc, m->esc_len);

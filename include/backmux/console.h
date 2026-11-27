@@ -173,6 +173,10 @@ bool hold_console_heard_output(void);
 void hold_agents_set_extra(const char *list);
 /* Whose config to read that list from (and again every few seconds). */
 void hold_agents_set_home(const char *home);
+/* Whose config the compositor reads and writes (set with the agents' home). */
+const char *hold_console_home(void);
+/* Whether the view slides when it moves (config slide; default on). */
+void hold_console_set_slide(bool on);
 /* Whether a program name is a harness's; out gets the harness's name. */
 bool hold_agent_name(const char *word, char *out, size_t n);
 bool hold_agent_of_argv(char *const *argv, int argc, char *out, size_t n);

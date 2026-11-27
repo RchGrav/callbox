@@ -223,10 +223,9 @@ static void draw_name_bar(struct mux *m, struct pane *p, struct comp_want *want)
     }
 }
 
-void mux_render(struct mux *m) {
-    mux_advertise(m);
-    if (!m->dirty) return;
-    m->dirty = false;
+/* The panes in view, their split lines and name bars, into the frame;
+ * want gets the active pane's cursor and modes. What a slide moves. */
+void mux_compose_panes(struct mux *m, struct comp_want *want) {
     comp_begin(m->comp, NULL);
     struct pane *f = m->active && m->active->visible ? m->active : NULL;
     bool full = m->full && m->full == f;
@@ -252,56 +251,70 @@ void mux_render(struct mux *m) {
         int el = mux_text_cols(empty);
         mux_put(m, m->arows / 2, el < m->tcols ? (m->tcols - el) / 2 : 0, m->tcols, empty, &ST_NB_STAT);
     }
-    struct comp_want want = {0};
+    memset(want, 0, sizeof(*want));
     struct hold_screen_modes modes = {0};
     if (f) hold_screen_modes(f->scr, &modes);
-    want.app_cursor_keys = modes.app_cursor_keys;
-    want.app_keypad = modes.app_keypad;
-    want.bracketed_paste = modes.bracketed_paste;
+    want->app_cursor_keys = modes.app_cursor_keys;
+    want->app_keypad = modes.app_keypad;
+    want->bracketed_paste = modes.bracketed_paste;
     /* clicks and drags come here (click to move between panes, chat's
      * window dragged); plain movement only when the focused program asked
      * for it, which it then gets */
-    want.mouse = modes.mouse == HOLD_MOUSE_MOVE ? HOLD_MOUSE_MOVE : HOLD_MOUSE_DRAG;
-    want.cursor_visible = false;
+    want->mouse = modes.mouse == HOLD_MOUSE_MOVE ? HOLD_MOUSE_MOVE : HOLD_MOUSE_DRAG;
+    want->cursor_visible = false;
     if (f) {
         struct hold_snapshot snap;
         if (hold_screen_snapshot(f->scr, &snap) == 0) {
-            want.cursor_row = f->row + snap.cursor_row;
-            want.cursor_col = f->col + snap.cursor_col;
-            want.cursor_visible = snap.modes.cursor_visible;
+            want->cursor_row = f->row + snap.cursor_row;
+            want->cursor_col = f->col + snap.cursor_col;
+            want->cursor_visible = snap.modes.cursor_visible;
             hold_snapshot_free(&snap);
         }
-        want.cursor_style = hold_screen_cursor_style(f->scr);
-        want.title = hold_screen_title(f->scr);
+        want->cursor_style = hold_screen_cursor_style(f->scr);
+        want->title = hold_screen_title(f->scr);
     }
     /* name bars: every pane's while Info is on; else only a pane with
-     * something to show right now (swap's letters, a name being typed, a
+     * something to show right now (swap's places, a name being typed, a
      * notice with no bar to say it in) */
     bool info = mux_info_on(m);
     for (int k = 0; k < n; k++) {
         struct pane *p = vis[k];
         bool needed = m->swapping || (m->prompt != PROMPT_NONE && m->prompt_pane == p) ||
                       (p == f && m->now < m->notice_until && !mux_bar_on(m));
-        if (info || needed) draw_name_bar(m, p, &want);
+        if (info || needed) draw_name_bar(m, p, want);
     }
-    /* chat over the panes, then any other floating window over chat: only
-     * one is up at a time anyway */
-    if (m->chat) chat_draw(m->chat, m->comp, m->now, &want);
+}
+
+/* Over the panes: chat, then any other floating window over chat (only one
+ * is up at a time anyway), the keys, the bar; then the frame goes out. */
+void mux_finish_frame(struct mux *m, struct comp_want *want) {
+    if (m->chat) chat_draw(m->chat, m->comp, m->now, want);
     if (m->fl == FL_PROCS) {
         mux_draw_procs(m);
-        want.cursor_visible = false;
+        want->cursor_visible = false;
     } else if (m->fl == FL_JUMP) {
         draw_jump(m);
-        want.cursor_visible = false;
+        want->cursor_visible = false;
     }
     if (m->help) {
         mux_draw_help(m);
-        want.cursor_visible = false;
+        want->cursor_visible = false;
     }
     if (mux_bar_on(m)) mux_draw_bar(m);
-    else if (!f && m->now < m->notice_until) mux_put(m, m->trows - 1, 0, m->tcols, m->notice, &ST_BAD); /* no pane to say it in */
+    else if (!(m->active && m->active->visible) && m->now < m->notice_until)
+        mux_put(m, m->trows - 1, 0, m->tcols, m->notice, &ST_BAD); /* no pane to say it in */
     char *buf = NULL;
     size_t len = 0, cap = 0;
-    if (comp_flush(m->comp, &want, &buf, &len, &cap) == 0 && len) (void)hold_write_all(STDOUT_FILENO, buf, len);
+    if (comp_flush(m->comp, want, &buf, &len, &cap) == 0 && len) (void)hold_write_all(STDOUT_FILENO, buf, len);
     free(buf);
+}
+
+void mux_render(struct mux *m) {
+    mux_advertise(m);
+    if (!m->dirty) return;
+    m->dirty = false;
+    struct comp_want want;
+    if (mux_slide_frame(m, &want)) return; /* sliding: that drew the frame */
+    mux_compose_panes(m, &want);
+    mux_finish_frame(m, &want);
 }

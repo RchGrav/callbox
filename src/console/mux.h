@@ -152,6 +152,12 @@ struct mux {
      * top-right, bottom-left, bottom-right) and where the lines are */
     struct pane *cell[4];
     int gx, gyl, gyr;
+    /* the slide (mux_slide.c): the frame before the view moved, the one
+     * after, how far it moved (quadrants) and since when */
+    struct hold_snapshot slide_from, slide_to;
+    bool slide_pending; /* the frame after is still to be composed */
+    int slide_dx, slide_dy;
+    int64_t slide_start;
     enum mode mode;
     bool help;   /* keyboard help for the active mode or prefix commands */
     bool swapping;  /* prefix s: places (1A, or A in this window) say what goes where */
@@ -220,6 +226,7 @@ struct mux {
  * not to one run, so they live here. */
 extern bool g_bar;
 extern bool g_info;
+extern bool g_slide; /* the view slides when it moves (config slide; the bar's Slide) */
 extern char g_locked[MUX_MAX_PANES][ID_STR_LEN];
 
 /* ---- drawing ----------------------------------------------------------- */
@@ -324,6 +331,9 @@ bool mux_resize_toward(struct mux *m, char dir, bool grow);
 struct pane *mux_find(const struct mux *m, const char *word, int *slot, const char **why);
 /* mux_slide.c */
 void mux_slide_begin(struct mux *m, int nx, int ny);
+bool mux_slide_frame(struct mux *m, struct comp_want *want);
+bool mux_sliding(const struct mux *m);
+void mux_slide_stop(struct mux *m);
 /* mux_procs.c */
 void mux_load_picks(struct mux *m);
 void mux_refresh_stats(struct mux *m);
@@ -346,6 +356,8 @@ void mux_draw_frame(struct mux *m, int y, int x, int h, int w, const char *title
 void mux_key_label(unsigned char k, char out[16]);
 void mux_human_bytes(uint64_t b, char *out, size_t n);
 void mux_render(struct mux *m);
+void mux_compose_panes(struct mux *m, struct comp_want *want);
+void mux_finish_frame(struct mux *m, struct comp_want *want);
 /* mux_help.c */
 void mux_draw_help(struct mux *m);
 /* mux_bar.c */

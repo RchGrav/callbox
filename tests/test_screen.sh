@@ -224,3 +224,34 @@ test_bar_counters_launch() {
   "$HOLD_BIN" end base side srv gone1 term >/dev/null 2>&1 || true
 }
 
+# The slide: with slide on, the view moving to the next window passes
+# through frames between the two (the split line part of the way across),
+# then settles where it goes; a key mid-slide ends it at once. Sampled, so
+# a few tries: under load a frame between can be missed.
+test_slide_shows_frames_between() {
+  local i try seen=0 col
+  "$HOLD_BIN" config set slide on >/dev/null || return 1
+  "$HOLD_BIN" detach --name l1 -- sh -c 'echo L1-UP; exec cat' >/dev/null || return 1
+  start_term term l1 100 20 || return 1
+  "$HOLD_BIN" detach --name x1 -- sh -c 'echo X1-UP; exec cat' mark-x1 >/dev/null || return 1
+  pick_pane term mark-x1 || return 1
+  "$HOLD_BIN" swap x1 2A >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" send term -k C-Space -k t -k 1 || return 1
+  for i in $(seq 1 30); do [ "$(mux_viewport)" = "0 0" ] && break; sleep 0.1; done
+  for try in 1 2 3; do
+    "$HOLD_BIN" send term -k C-Space -k t -k 2 || return 1
+    for i in $(seq 1 12); do
+      col=$(screen_pos term 'X1-UP' 2>/dev/null | cut -d' ' -f1 || true)
+      if [ -n "$col" ] && [ "$col" -gt 0 ]; then seen=1; break; fi
+      sleep 0.015
+    done
+    for i in $(seq 1 30); do [ "$(mux_viewport)" = "2 0" ] && break; sleep 0.1; done
+    [ "$seen" -eq 1 ] && break
+    "$HOLD_BIN" send term -k C-Space -k t -k 1 || return 1
+    sleep 0.4
+  done
+  [ "$seen" -eq 1 ] || { echo "no frame between the two windows was seen" >&2; return 1; }
+  [ "$(mux_viewport)" = "2 0" ] || { echo "the slide did not settle on window 2: $(mux_viewport)" >&2; return 1; }
+  "$HOLD_BIN" wait term --regex '^X1-UP' --timeout 3000 >/dev/null || { echo "X1 is not at the left once settled" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" end l1 x1 term >/dev/null 2>&1 || true
+}

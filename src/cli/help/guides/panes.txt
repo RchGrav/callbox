@@ -106,7 +106,8 @@ consoles that scroll (blue), ended processes (red) - click one for its list
 in the launcher - then your chat name (opens or hides chat; red while
 messages wait), Info, a minimap of the 3x3 grid, the windows (those in view
 highlighted; click one to go there), Sort, Spread and Pack, Zoom, Lock, ?,
-and the machine's CPU and memory. Toggles look different on and off. On a
+Slide (the view slides when it moves; backmux config set slide off), and
+the machine's CPU and memory. Toggles look different on and off. On a
 narrow terminal items shorten, then the least useful go.
 
 PROFILES AND INPUT

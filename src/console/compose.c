@@ -94,6 +94,20 @@ int comp_set_size(struct compositor *c, int rows, int cols) {
     return 0;
 }
 
+/* The frame composed so far, copied out (cells only): what the slide
+ * moves between. -1 when there is none or no memory. */
+int comp_take_frame(const struct compositor *c, struct hold_snapshot *out) {
+    memset(out, 0, sizeof(*out));
+    if (!c->frame) return -1;
+    size_t n = (size_t)c->rows * (size_t)c->cols;
+    out->cells = malloc(n * sizeof(*out->cells));
+    if (!out->cells) return -1;
+    memcpy(out->cells, c->frame, n * sizeof(*out->cells));
+    out->rows = (uint16_t)c->rows;
+    out->cols = (uint16_t)c->cols;
+    return 0;
+}
+
 void comp_size(const struct compositor *c, int *rows, int *cols) {
     *rows = c->rows;
     *cols = c->cols;

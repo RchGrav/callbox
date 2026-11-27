@@ -166,6 +166,15 @@ width, where four meet every pane is one quadrant; each goes back to its
 size when the view lines up with one window again. Between windows the lines
 sit halfway.
 
+**The slide.** When the view moves half a window or a whole one along one
+axis, the panes slide over for about 140 ms instead of jumping. Why: a
+half-window shift puts what was on the right on the left, and a jump reads as
+everything changing at once; the slide shows which way it went and that
+nothing was lost. A key pressed mid-slide ends it at once and acts; held
+keys move at full speed. It is drawn from the panes' screens as they are (the
+programs are not asked anything); over a slow link, turn it off with
+`backmux config set slide off` or Slide on the bar.
+
 **One way to name a pane.** `backmux swap` (and the compositor's own
 requests) take a place, a process name, or a process id, by the shortest
 prefix that is unique. An exact name or id wins; anything that could mean
@@ -214,6 +223,7 @@ the keys do. From the left:
 | Minimap | Two braille cells: a dot for each window of the 3×3 grid in view | |
 | Window numbers | Windows with panes; those in view highlighted (1, 2 or 4) | Go to that window |
 | Sort, Spread, Pack | The view; highlighted while on | Toggle it |
+| Slide | Whether the view slides when it moves | Toggle it (kept in the config) |
 | Zoom, Lock | Highlighted while on, for the active pane | Toggle |
 | `?` | | The keys |
 | CPU, MEM, time | The machine's load and memory | |

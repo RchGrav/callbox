@@ -5,6 +5,11 @@
 
 bool g_bar = true;  /* prefix f: the bar along the bottom */
 bool g_info = true; /* prefix i, or Info on the bar: every pane's name bar and stats */
+bool g_slide = true; /* the view slides when it moves; config slide off, or the bar's Slide, turns it off */
+
+void hold_console_set_slide(bool on) {
+    g_slide = on;
+}
 char g_locked[MUX_MAX_PANES][ID_STR_LEN];
 
 /* ---- the loop ---------------------------------------------------------- */

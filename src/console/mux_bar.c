@@ -127,6 +127,9 @@ void mux_draw_bar(struct mux *m) {
     b = ITEM(2, 3, mux_pane_locked(m->active) ? &ST_BTN_ON : &ST_BTN_OFF, BA_LOCK, 0);
     snprintf(b->full, sizeof(b->full), " Lock ");
     snprintf(b->brief, sizeof(b->brief), " L ");
+    b = ITEM(2, 1, g_slide ? &ST_BTN_ON : &ST_BTN_OFF, BA_SLIDE, 0);
+    snprintf(b->full, sizeof(b->full), " Slide ");
+    snprintf(b->brief, sizeof(b->brief), " ~ ");
     b = ITEM(2, 6, &ST_BTN_OFF, BA_HELP, 0);
     snprintf(b->full, sizeof(b->full), " ? ");
     if (m->sys_cpu >= 0) {
@@ -208,6 +211,11 @@ void mux_bar_click(struct mux *m, enum bar_act act, int arg) {
         return;
     case BA_ZOOM: (void)mux_command(m, 'z'); return;
     case BA_LOCK: (void)mux_command(m, '\\'); return;
+    case BA_SLIDE: /* the slide on or off, kept in the config for next time */
+        g_slide = !g_slide;
+        if (hold_console_home()) (void)hold_settings_put(hold_console_home(), "slide", g_slide ? "on" : "off");
+        mux_notice(m, "slide %s", g_slide ? "on" : "off");
+        return;
     case BA_HELP:
         m->fl = FL_NONE;
         m->help = true;

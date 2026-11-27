@@ -1,7 +1,7 @@
 usage: backmux config get <setting>
        backmux config set <setting> <value>
        backmux config unset <setting>
-settings: detach-size COLS ROWS, chat-name NAME, agents NAME...
+settings: detach-size COLS ROWS, chat-name NAME, agents NAME..., slide on|off
 
 Read or change user defaults in ~/.config/backmux/config.
 
@@ -21,6 +21,10 @@ Read or change user defaults in ~/.config/backmux/config.
     (claude, codex, agy, antigravity, pi, hermes, crush, opencode, gemini,
     aider, goose, copilot). Chat lists processes that run them. A launch
     with --agent adds its program's name; set replaces the list.
+
+  slide on|off
+    Whether the view slides when it moves between windows (on unless set
+    off). Turn it off over a slow link; Slide on the bar toggles it too.
 
 get prints the saved value and exits 1 if unset. set validates the value
 before saving it. unset removes the saved value. A sudo launch reads the

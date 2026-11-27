@@ -77,6 +77,10 @@ static bool name_matches(const char *word, const char *name) {
     return !strncmp(word, name, l) && (word[l] == '\0' || word[l] == '-' || word[l] == '_');
 }
 
+const char *hold_console_home(void) {
+    return g_home[0] ? g_home : NULL;
+}
+
 void hold_agents_set_home(const char *home) {
     snprintf(g_home, sizeof(g_home), "%s", home ? home : "");
     g_read_at = 0;

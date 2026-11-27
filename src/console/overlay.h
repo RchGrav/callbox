@@ -40,6 +40,8 @@ void comp_free(struct compositor *c);
 /* The attached terminal's size; a change repaints everything. */
 int comp_set_size(struct compositor *c, int rows, int cols);
 void comp_size(const struct compositor *c, int *rows, int *cols);
+/* The frame composed so far, copied out (free out->cells with free()). */
+int comp_take_frame(const struct compositor *c, struct hold_snapshot *out);
 /* Forget what the terminal shows and how it is set: the next frame clears
  * and repaints it and sends every mode (a terminal just attached). */
 void comp_invalidate(struct compositor *c);
