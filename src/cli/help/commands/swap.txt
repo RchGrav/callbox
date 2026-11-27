@@ -1,9 +1,11 @@
-usage: backmux swap <name|id>,<name|id>
-       backmux swap <name|id> <name|id>
+usage: backmux swap <target>,<target>
+       backmux swap <target> <target>
 
-Exchange two panes' positions, identified by process name or Backmux process
-ID. ID prefixes of at least four characters are accepted. This command does
-not use the pane letters displayed by the interactive swap control.
+Exchange two panes' places, or send a pane to a free place. A target is a
+place (2C: window 2, place C, as the name bars show it), a process name, or
+a Backmux process ID, each by the shortest prefix that is unique; anything
+that could mean two things is refused. Sending a pane to a free place
+reshapes that window around it (see backmux help panes).
 
 From inside a pane, swap selects that pane's terminal. Otherwise, exactly one
 terminal must be displaying panes; with several, run swap from the intended

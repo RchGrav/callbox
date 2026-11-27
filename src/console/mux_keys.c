@@ -3,7 +3,7 @@
 #include "mux.h"
 
 void mux_prompt_open(struct mux *m, enum prompt kind) {
-    struct pane *p = mux_focused(m);
+    struct pane *p = m->active;
     if (!p || !p->id[0]) return;
     m->prompt = kind;
     m->prompt_pane = p;
@@ -20,7 +20,7 @@ static void prompt_done(struct mux *m) {
     enum prompt kind = m->prompt;
     m->prompt = PROMPT_NONE;
     m->prompt_pane = NULL;
-    if (!p || mux_slot_of(m, p) < 0) return;
+    if (!p || mux_base_slot(m, p) < 0) return;
     m->in[m->in_len] = '\0';
     bool changed = m->in_len > 0 && strcmp(m->in, p->name) != 0;
     char err[200];
@@ -31,7 +31,7 @@ static void prompt_done(struct mux *m) {
             return;
         }
         snprintf(p->name, sizeof(p->name), "%s", m->in);
-        if (m->chat && p == mux_focused(m)) chat_set_screen(m->chat, p->scr, p->name);
+        if (m->chat && p == m->active) chat_set_screen(m->chat, p->scr, p->name);
         m->advertise = true;
         mux_notice(m, kind == PROMPT_SAVE ? "saved as %s" : "renamed to %s", p->name);
         return;
@@ -79,36 +79,47 @@ void mux_prompt_key(struct mux *m, const unsigned char *k, size_t n) {
     }
 }
 
+/* Swap: the first place names a pane, the second where it goes - a pane
+ * there trades places with it; a free place reshapes that window around it
+ * (mux_shape.c). Swapping works in every view: it names places in the base.
+ * The view stays where it is: sending a pane away is not going after it. */
+void mux_swap_choose(struct mux *m, int slot) {
+    m->dirty = true;
+    if (slot < 0 || slot >= MUX_SLOTS) return;
+    if (m->swap_first < 0) {
+        if (m->base[slot]) m->swap_first = slot;
+        else mux_notice(m, "swap: no pane at %d%c", slot / MUX_POS + 1, "ABCDE"[slot % MUX_POS]);
+        return;
+    }
+    struct pane *p = m->base[m->swap_first];
+    const char *why = mux_base_send(m, p, slot);
+    m->swapping = false;
+    m->swap_digit = 0;
+    if (why) mux_notice(m, "swap: %s", why);
+    mux_relayout(m);
+    mux_focus_in_view(m);
+}
+
+/* A place typed: a window number and a letter (2C), or a letter alone for
+ * the active pane's window. */
 void mux_swap_key(struct mux *m, const unsigned char *k, size_t n) {
     m->dirty = true;
     if (n == 1 && (k[0] == 0x1b || k[0] == '\r' || k[0] == '\n')) {
         m->swapping = false;
+        m->swap_digit = 0;
         return;
     }
     if (n != 1) return;
-    int w = mux_window_of_key(k[0]);
-    if (w >= 0) { /* a number sends the pane to that window */
-        int from = m->swap_first >= 0 ? m->swap_first : m->focus;
-        struct pane *p = m->slot[from];
-        if (mux_move_pane(m, from, w) != 0) mux_notice(m, "window %d is full", mux_window_key(w));
-        else mux_follow_here(m, p);
-        m->swapping = false;
+    if (k[0] >= '1' && k[0] <= '9') {
+        m->swap_digit = (char)k[0];
         return;
     }
-    int s = mux_letter_slot(k[0]);
-    if (s < 0) return;
-    if (m->swap_first < 0) {
-        if (m->slot[s]) m->swap_first = s; /* the first is a pane */
-        return;
-    }
-    struct pane *p = m->slot[m->swap_first];
-    if (m->slot[s]) {
-        mux_do_swap(m, m->swap_first, s);
-    } else if (mux_move_pane(m, m->swap_first, s / 4) != 0) { /* past the panes there: to that window */
-        mux_notice(m, "window %d is full", mux_window_key(s / 4));
-    }
-    mux_follow_here(m, p);
-    m->swapping = false;
+    int pos = toupper(k[0]) - 'A';
+    if (pos < 0 || pos >= MUX_POS) return;
+    int here = mux_base_slot(m, m->active);
+    int w = m->swap_digit ? m->swap_digit - '1' : here >= 0 ? here / MUX_POS : 0;
+    m->swap_digit = 0;
+    mux_swap_choose(m, w * MUX_POS + pos);
 }
 
 /* An arrow, plain or with a modifier: 'A' up 'B' down 'C' right 'D' left,
@@ -139,6 +150,18 @@ static void leave_mode(struct mux *m) {
     m->dirty = true;
 }
 
+/* Moving panes is the base's: a view (sort, spread, pack) is computed from
+ * it, so a pane moved there would have nowhere to stay. Says so. */
+static bool base_view(struct mux *m) {
+    if (!m->sort && m->arr == ARR_BASE) return true;
+    mux_notice(m, "panes move in the base: turn off %s first", m->sort ? "Sort" : m->arr == ARR_SPREAD ? "Spread" : "Pack");
+    return false;
+}
+
+static int window_of_digit(unsigned char c) {
+    return c >= '1' && c <= '9' ? c - '1' : -1;
+}
+
 void mux_mode_key(struct mux *m, const unsigned char *k, size_t n) {
     m->dirty = true;
     if (n == 1 && (k[0] == 0x1b || k[0] == '\r' || k[0] == '\n')) {
@@ -153,13 +176,14 @@ void mux_mode_key(struct mux *m, const unsigned char *k, size_t n) {
     m->help = false;
     int mod = 1;
     char dir = mux_arrow_of(k, n, &mod, true);
-    int w = n == 1 ? mux_window_of_key(k[0]) : -1;
-    struct pane *f = mux_focused(m);
+    int w = n == 1 ? window_of_digit(k[0]) : -1;
+    struct pane *f = m->active;
     switch (m->mode) {
     case MODE_PANE:
         if (dir) {
-            int s = mux_neighbor(m, dir);
-            if (s >= 0) mux_set_focus(m, s);
+            struct pane *to = mux_neighbor(m, dir);
+            if (to) mux_set_focus(m, to);
+            else (void)mux_shift(m, dir);
         } else if (n == 1 && k[0] == 'a') {
             leave_mode(m);
             m->pick_cat = PK_TTY;
@@ -167,41 +191,57 @@ void mux_mode_key(struct mux *m, const unsigned char *k, size_t n) {
         } else if (n == 1 && k[0] == 'g') {
             leave_mode(m);
             mux_open_floater(m, FL_JUMP);
-        } else if (n == 1 && k[0] == 'z' && f && mux_win_count(m, m->view) > 1) {
+        } else if (n == 1 && k[0] == 'z' && f) {
             m->full = m->full == f ? NULL : f;
             mux_relayout(m);
         }
         return;
-    case MODE_TAB:
+    case MODE_TAB: /* windows: a number goes there; arrows step across the grid */
         if (w >= 0) {
-            if (mux_win_count(m, w) == 0) mux_notice(m, "window %d is empty", mux_window_key(w));
+            if (mux_window_count(m->shown, w) == 0) mux_notice(m, "window %d is empty", mux_window_key(w));
             else {
-                mux_set_focus(m, w * 4);
+                mux_align(m, w);
+                mux_focus_in_view(m);
                 leave_mode(m);
             }
-        } else if (dir == 'D' || dir == 'C') {
-            int to = dir == 'D' ? mux_prev_window(m, m->view) : mux_next_window(m, m->view);
-            mux_set_focus(m, to * 4);
+        } else if (dir) {
+            int at = mux_view_window(m), to = at;
+            if (dir == 'D' || dir == 'C') to = mux_window_step(m, at, dir == 'C' ? 1 : -1);
+            else {
+                for (int r = at + (dir == 'B' ? 3 : -3); r >= 0 && r < MUX_MAX_WINDOWS && to == at; r += dir == 'B' ? 3 : -3)
+                    if (mux_window_count(m->shown, r) > 0) to = r;
+            }
+            if (to != at || !mux_view_aligned(m)) {
+                mux_align(m, to);
+                mux_focus_in_view(m);
+            }
         }
         return;
     case MODE_RESIZE:
-        if (dir) mux_resize_toward(m, dir, mod != 2);
-        else if (n == 1 && k[0] == '=') {
-            m->colpct[m->view] = m->lpct[m->view] = m->rpct[m->view] = 0;
+        if (dir) {
+            if (!mux_resize_toward(m, dir, mod != 2) && !mux_view_aligned(m))
+                mux_notice(m, "lines move on one window: the view is between windows");
+        } else if (n == 1 && k[0] == '=') {
+            int vw = mux_view_window(m);
+            m->colpct[vw] = m->lpct[vw] = m->rpct[vw] = 0;
             mux_relayout(m);
         }
         return;
     case MODE_MOVE:
-        if (dir) {
-            int s = mux_neighbor(m, dir);
-            if (s >= 0 && f) {
-                mux_do_swap(m, m->focus, s);
-                mux_follow(m, f);
+        if ((dir || w >= 0) && !base_view(m)) return;
+        if (dir && f) {
+            struct pane *to = mux_neighbor(m, dir);
+            if (to) {
+                (void)mux_base_send(m, f, mux_base_slot(m, to));
+                mux_relayout(m);
+                mux_set_focus(m, f);
             }
         } else if (w >= 0 && f) {
-            if (mux_move_pane(m, m->focus, w) != 0) mux_notice(m, "window %d is full", mux_window_key(w));
+            const char *why = mux_base_to_window(m, f, w);
+            if (why) mux_notice(m, "%s", why);
             else {
-                mux_follow_here(m, f);
+                mux_relayout(m);
+                if (!f->visible) mux_focus_in_view(m); /* sent away: the view stays */
                 leave_mode(m);
             }
         }
@@ -242,14 +282,13 @@ void mux_floater_key(struct mux *m, const unsigned char *seq, size_t n) {
         }
         return;
     case FL_JUMP: {
-        int rows = 0;
-        for (int i = 0; i < MUX_MAX_PANES; i++) rows += m->slot[i] != NULL;
+        int rows = mux_pane_total(m);
         if (up && m->pick_sel > 0) m->pick_sel--;
         else if (down && m->pick_sel + 1 < rows) m->pick_sel++;
         else if (enter) {
-            for (int i = 0, k = 0; i < MUX_MAX_PANES; i++) {
-                if (!m->slot[i]) continue;
-                if (k++ == m->pick_sel) mux_set_focus(m, i);
+            for (int i = 0, k = 0; i < MUX_SLOTS; i++) {
+                if (!m->shown[i]) continue;
+                if (k++ == m->pick_sel) mux_set_focus(m, m->shown[i]);
             }
             m->fl = FL_NONE;
         }
@@ -275,8 +314,20 @@ void mux_open_floater(struct mux *m, enum floater f) {
 
 /* Dispatch a key following the prefix. Return 1 to detach the last pane.
  * Unrecognized command keys are consumed; repeating the prefix forwards it. */
+/* A view toggle changed: lay out again with the active pane still in view
+ * (the view follows it to wherever the new arrangement put it). */
+static void view_changed(struct mux *m, const char *what, bool on) {
+    mux_relayout(m);
+    if (m->active) {
+        m->active->visible = false;
+        mux_relayout(m);
+        mux_set_focus(m, m->active);
+    }
+    mux_notice(m, "%s %s", what, on ? "on" : "off: the base again");
+}
+
 int mux_command(struct mux *m, unsigned char key) {
-    struct pane *f = mux_focused(m);
+    struct pane *f = m->active;
     m->help = false;
     m->dirty = true;
     if (key == m->prefix) { /* the prefix twice: one is the program's, locked or not */
@@ -307,7 +358,7 @@ int mux_command(struct mux *m, unsigned char key) {
         m->swap_first = -1;
         return 0;
     case 'z':
-        if (f && mux_win_count(m, m->view) > 1) {
+        if (f && (m->full == f || mux_pane_total(m) > 1)) {
             m->full = m->full == f ? NULL : f;
             mux_relayout(m);
         }
@@ -320,9 +371,23 @@ int mux_command(struct mux *m, unsigned char key) {
         g_info = !g_info;
         mux_relayout(m);
         return 0;
-    case 'o': /* the launcher */
+    case 'o': /* the next pane, in order across every window (tmux's key) */
+    case 'O':
+        mux_cycle(m, key == 'o' ? 1 : -1);
+        return 0;
+    case 'l': /* the launcher */
         m->pick_cat = PK_TTY;
         mux_open_floater(m, FL_PROCS);
+        return 0;
+    case '\r': /* a new terminal: your shell, where the view puts the next pane */
+    case '\n':
+        mux_new_terminal(m, 0);
+        return 0;
+    case '|': /* split the active pane: the new terminal on its right */
+        mux_new_terminal(m, 'r');
+        return 0;
+    case '-': /* split the active pane: the new terminal under it */
+        mux_new_terminal(m, 'd');
         return 0;
     case 'n':
         mux_prompt_open(m, PROMPT_RENAME);
@@ -333,14 +398,17 @@ int mux_command(struct mux *m, unsigned char key) {
     case '\\':
         if (f) mux_set_locked(f, !mux_pane_locked(f));
         return 0;
-    case 'w':
-        mux_arrange(m, ARRANGE_SPREAD);
+    case 'a': /* the view: by name, or the base's order again */
+        m->sort = !m->sort;
+        view_changed(m, "Sort", m->sort);
         return 0;
-    case 'a':
-        mux_arrange(m, ARRANGE_ALPHA);
+    case 'w': /* the view: spread over every window, or the base again */
+        m->arr = m->arr == ARR_SPREAD ? ARR_BASE : ARR_SPREAD;
+        view_changed(m, "Spread", m->arr == ARR_SPREAD);
         return 0;
-    case 'd':
-        mux_arrange(m, ARRANGE_DENSE);
+    case 'd': /* the view: packed four to a window, or the base again */
+        m->arr = m->arr == ARR_PACK ? ARR_BASE : ARR_PACK;
+        view_changed(m, "Pack", m->arr == ARR_PACK);
         return 0;
     case 'p':
         m->mode = MODE_PANE;

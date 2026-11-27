@@ -176,7 +176,7 @@ void mux_chat_key_pressed(struct mux *m) {
     }
     replay_log(m);
     m->fl = FL_NONE; /* one floating window at a time */
-    struct pane *f = mux_focused(m);
+    struct pane *f = m->active;
     /* on the agent in focus, if it is one; chat talks only to agents */
     if (!chat_visible(m->chat) && f && f->id[0] && f->agent[0]) chat_open_on(m->chat, f->id, f->name);
     else if (chat_has_keyboard(m->chat)) chat_put_away(m->chat);
@@ -185,7 +185,9 @@ void mux_chat_key_pressed(struct mux *m) {
 }
 
 /* chat/mux.<pid>: which panes this terminal shows, for backmux swap from
- * any shell or agent. "view N" (0-based) then one "SLOT ID NAME" per pane. */
+ * any shell or agent: "view W" (the window the view starts on, 0-based),
+ * "viewport X Y" (in quadrants), then one "PLACE ID NAME" per pane, its
+ * place in the base ("1A"), then one "shown PLACE NAME" per pane in view order. */
 void mux_advertise(struct mux *m) {
     if (!m->advertise) return;
     m->advertise = false;
@@ -193,11 +195,20 @@ void mux_advertise(struct mux *m) {
     if (hold_checked_snprintf(dir, sizeof(dir), "%s/chat", m->store->base) != 0 || hold_mkdir_p_mode(dir, 0700) != 0 ||
         hold_checked_snprintf(path, sizeof(path), "%s/mux.%d", dir, (int)getpid()) != 0)
         return;
-    char buf[MUX_MAX_PANES * (ID_STR_LEN + ALIAS_MAX_LEN + 8) + 32];
-    size_t k = (size_t)snprintf(buf, sizeof(buf), "view %d\n", m->view);
-    for (int i = 0; i < MUX_MAX_PANES; i++)
-        if (m->slot[i] && k < sizeof(buf))
-            k += (size_t)snprintf(buf + k, sizeof(buf) - k, "%d %s %s\n", i + 1, m->slot[i]->id[0] ? m->slot[i]->id : "-",
-                                  m->slot[i]->name);
+    char buf[MUX_MAX_PANES * (ID_STR_LEN + 2 * ALIAS_MAX_LEN + 24) + 64];
+    size_t k = (size_t)snprintf(buf, sizeof(buf), "view %d\nviewport %d %d\n", mux_view_window(m), m->vx, m->vy);
+    for (int i = 0; i < MUX_SLOTS; i++)
+        if (m->base[i] && k < sizeof(buf)) {
+            char at[4];
+            mux_position_label(m, m->base[i], at);
+            k += (size_t)snprintf(buf + k, sizeof(buf) - k, "%s %s %s\n", at, m->base[i]->id[0] ? m->base[i]->id : "-",
+                                  m->base[i]->name);
+        }
+    /* and where the view shows each: "shown PLACE NAME" (sort, spread and
+     * pack move panes on screen, never in the base) */
+    for (int i = 0; i < MUX_SLOTS; i++)
+        if (m->shown[i] && k < sizeof(buf))
+            k += (size_t)snprintf(buf + k, sizeof(buf) - k, "shown %d%c %s\n", i / MUX_POS + 1, "ABCDE"[i % MUX_POS],
+                                  m->shown[i]->name);
     mux_write_small(path, buf, k < sizeof(buf) ? k : sizeof(buf) - 1);
 }

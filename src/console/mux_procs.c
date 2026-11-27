@@ -101,10 +101,10 @@ void mux_refresh_stats(struct mux *m) {
         m->mem_total = mt;
         m->mem_used = mt > ma ? mt - ma : 0;
     }
-    for (int i = 0; i < MUX_MAX_PANES; i++)
-        if (m->slot[i]) {
-            mux_pane_identify(m, m->slot[i]);
-            mux_pane_load(m->slot[i], m->now);
+    for (int i = 0; i < MUX_SLOTS; i++)
+        if (m->base[i]) {
+            mux_pane_identify(m, m->base[i]);
+            mux_pane_load(m->base[i], m->now);
         }
     m->dirty = true;
 }
@@ -186,7 +186,7 @@ void mux_draw_procs(struct mux *m) {
 }
 
 /* A process as a pane, by its record's console. */
-static bool open_pane_id(struct mux *m, const char *id, const char *fallback_name) {
+static bool open_pane_id(struct mux *m, const char *id, const char *fallback_name, char split) {
     struct hold_run_record r;
     char path[HOLD_PATH_MAX];
     if (hold_load_record_by_id(m->store->record_dir, id, &r, path, sizeof(path)) != 0) {
@@ -206,6 +206,20 @@ static bool open_pane_id(struct mux *m, const char *id, const char *fallback_nam
     if (!np) {
         mux_notice(m, "cannot attach %s: %s", name, why ? why : "console unavailable");
         return false;
+    }
+    if (split) {
+        /* the split was checked before the terminal started; the pane is
+         * placed beside the active one, and made active */
+        if (!mux_base_split(m, np, split)) {
+            mux_pane_free(np);
+            mux_notice(m, "that split no longer fits");
+            return false;
+        }
+        mux_relayout(m);
+        mux_set_focus(m, np);
+        mux_relayout(m);
+        mux_pane_identify(m, np);
+        return true;
     }
     if (mux_add_pane(m, np) != 0) {
         mux_pane_free(np);
@@ -254,7 +268,7 @@ void mux_launch_pick(struct mux *m, const struct pick *p) {
             mux_notice(m, "cannot open %s: %s", p->name, err[0] ? err : "the viewer did not start");
             return;
         }
-        (void)open_pane_id(m, id, p->name);
+        (void)open_pane_id(m, id, p->name, 0);
         return;
     }
     if (p->shell) {
@@ -266,6 +280,38 @@ void mux_launch_pick(struct mux *m, const struct pick *p) {
         mux_notice(m, "cannot start %s: %s", p->name, err[0] ? err : "backmux failed");
         return;
     }
-    if (p->tty) (void)open_pane_id(m, p->id, p->name);
+    if (p->tty) (void)open_pane_id(m, p->id, p->name, 0);
     else mux_notice(m, "started %s", p->name);
+}
+
+/* A new terminal (prefix Enter, or a split: prefix | to the right, prefix -
+ * below): the person's shell, started in the background in the active
+ * pane's working directory, then attached where the view puts the next pane
+ * - or, split, beside the active one. Why the active pane's directory: the
+ * pane you are in is almost always where the next one is wanted (Zellij
+ * does the same; tmux uses the session's). */
+void mux_new_terminal(struct mux *m, char split) {
+    if (mux_pane_total(m) >= MUX_MAX_PANES) {
+        mux_notice(m, "pane limit reached (%d)", MUX_MAX_PANES);
+        return;
+    }
+    if (split && !mux_can_split(m, split)) {
+        mux_notice(m, "no room to split %s here: a window holds four", split == 'r' ? "right" : "down");
+        return;
+    }
+    const char *shell = getenv("SHELL");
+    if (!shell || shell[0] != '/' || access(shell, X_OK) != 0) shell = "/bin/sh";
+    char cwd[HOLD_PATH_MAX] = "";
+    if (m->active && m->active->pid > 0) {
+        pid_t fg = 0, at = m->active->pid;
+        if (hold_proc_foreground_group(at, &fg) == 0 && fg > 0) at = fg;
+        if (hold_proc_cwd(at, cwd, sizeof(cwd)) != 0 && hold_proc_cwd(m->active->pid, cwd, sizeof(cwd)) != 0) cwd[0] = '\0';
+    }
+    char err[200], id[ID_STR_LEN + 8];
+    char *args[] = {"-dt", "--", (char *)shell, NULL};
+    if (mux_run_self_in(cwd[0] ? cwd : NULL, args, err, sizeof(err), id, sizeof(id)) != 0 || !id[0]) {
+        mux_notice(m, "cannot start a terminal: %s", err[0] ? err : "backmux failed");
+        return;
+    }
+    (void)open_pane_id(m, id, "terminal", split);
 }

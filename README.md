@@ -54,7 +54,7 @@ Join the program with `backmux attach demo`. Press **Ctrl-Space, then q**
 to detach and leave it running. An agent can still inspect the screen and
 send input while you are attached.
 
-While attached, **Ctrl-Space o** opens the process launcher, which brings
+While attached, **Ctrl-Space l** opens the process launcher, which brings
 another running process in beside this one as a pane. **Ctrl-Space c** opens
 the chat window, which lists your agents, and **Ctrl-Space ?** displays
 command help. `backmux shell` opens your shell on its own screen with chat

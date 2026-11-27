@@ -44,8 +44,15 @@
 #include "backmux/console_internal.h"
 #include "overlay.h"
 
-#define MUX_MAX_WINDOWS 9 /* selected by number keys 1-9 */
-#define MUX_MAX_PANES (MUX_MAX_WINDOWS * 4)
+#define MUX_MAX_WINDOWS 9 /* a 3x3 grid, numbered 1-9 in reading order */
+#define MUX_MAX_PANES (MUX_MAX_WINDOWS * 4) /* four to a window */
+/* A window's places: A top-left, B right, C bottom-left, D bottom-right, E
+ * the bottom across. Which are filled names the window's shape (mux_shape.c). */
+enum { POS_A, POS_B, POS_C, POS_D, POS_E, MUX_POS };
+#define MUX_SLOTS (MUX_MAX_WINDOWS * MUX_POS)
+/* The view's arrangement: the base as it is, spread over every window, or
+ * packed four to a window from the first. */
+enum arrangement { ARR_BASE, ARR_SPREAD, ARR_PACK };
 #define MUX_FRAME_MS 16      /* output is drawn at most this often */
 #define MUX_LOOK_MS 250      /* how often chat looks at the inbox and its owner */
 /* How often a FIFO pane is read without poll saying so. Why: macOS's poll
@@ -86,6 +93,8 @@ struct pane {
     int64_t cpu_at;
     int cpu_pct;  /* -1 not known */
     uint64_t rss; /* bytes, 0 not known */
+    bool visible; /* on screen in the current view */
+    int order;    /* its place in the base's reading order (a stable sort by name) */
 };
 
 /* FL_PROCS: the process launcher - running terminals to attach as panes,
@@ -115,7 +124,8 @@ struct pick {
 };
 
 /* A clickable stretch of the bar, as last drawn. */
-enum bar_act { BA_NONE, BA_TTY, BA_SCROLL, BA_ENDED, BA_CHAT, BA_INFO, BA_WINDOW, BA_ZOOM, BA_LOCK, BA_HELP };
+enum bar_act { BA_NONE, BA_TTY, BA_SCROLL, BA_ENDED, BA_CHAT, BA_INFO, BA_WINDOW, BA_ZOOM, BA_LOCK, BA_HELP,
+               BA_SORT, BA_ARR, BA_LAYOUT, BA_SLIDE };
 struct bar_hit {
     int x0, x1;
     enum bar_act act;
@@ -125,12 +135,28 @@ struct bar_hit {
 struct mux {
     const struct hold_store *store;
     char me[ALIAS_MAX_LEN + 1];
-    struct pane *slot[MUX_MAX_PANES]; /* window w holds slot[w*4 .. w*4+3], dense from its start */
-    struct pane *full; /* the pane toggled full screen, NULL none */
+    /* The base layout: where panes really are, window w's place p at
+     * base[w * MUX_POS + p]. Only attach, split, swap, move and a pane
+     * leaving change it (mux_shape.c). shown is the base through the view. */
+    struct pane *base[MUX_SLOTS];
+    struct pane *shown[MUX_SLOTS];
+    bool sort;             /* the view: by name (prefix a) */
+    enum arrangement arr;  /* the view: base, spread (prefix w), pack (prefix d) */
+    bool layout_dirty;     /* the base differs from the layout last loaded or saved */
+    struct pane *active;   /* the pane keys go to */
+    struct pane *full;     /* the pane toggled full screen, NULL none */
+    /* the viewport on the 3x3 grid, in quadrants (0..4 each): even = on a
+     * window, odd = between two */
+    int vx, vy;
+    /* the screen as laid out last: the pane owning each quarter (top-left,
+     * top-right, bottom-left, bottom-right) and where the lines are */
+    struct pane *cell[4];
+    int gx, gyl, gyr;
     enum mode mode;
     bool help;   /* keyboard help for the active mode or prefix commands */
-    bool swapping;  /* prefix s: letters (and a number) say what goes where */
-    int swap_first; /* the first pane chosen, -1 none yet */
+    bool swapping;  /* prefix s: places (1A, or A in this window) say what goes where */
+    int swap_first; /* the first place chosen (a base slot), -1 none yet */
+    char swap_digit; /* a window number typed, waiting for its letter, 0 none */
     enum prompt prompt;
     struct pane *prompt_pane;
     char in[ALIAS_MAX_LEN + 1];
@@ -140,8 +166,6 @@ struct mux {
     int colpct[MUX_MAX_WINDOWS], lpct[MUX_MAX_WINDOWS], rpct[MUX_MAX_WINDOWS];
     int64_t fifo_probe_at; /* the next read of FIFO panes poll said nothing of */
     bool assumed;          /* the frame on the terminal was assumed (inline) */
-    int view;  /* the window on screen */
-    int focus; /* a slot on the window on screen */
     struct compositor *comp;
     int trows, tcols;
     bool dirty;
@@ -240,14 +264,11 @@ static const struct comp_style ST_WIN_CUR = {HOLD_ATTR_BOLD, 16, 150};
 static const struct comp_style ST_MODE = {HOLD_ATTR_BOLD, 16, 220};
 static const struct comp_style ST_NOTE = {HOLD_ATTR_BOLD, 230, 235};
 
-enum arrange { ARRANGE_SPREAD, ARRANGE_ALPHA, ARRANGE_DENSE };
 
 /* ---- the compositor's functions, by file ---------------------------- */
 /* mux_pane.c */
 bool mux_pane_locked(const struct pane *p);
 void mux_set_locked(const struct pane *p, bool on);
-char mux_slot_letter(int slot);
-int mux_letter_slot(unsigned char c);
 int64_t mux_mono_ms(void);
 void mux_notice(struct mux *m, const char *fmt, ...);
 int mux_frame(int fd, unsigned char type, const void *payload, uint16_t len);
@@ -258,39 +279,57 @@ struct pane *mux_pane_open(const char *id, const char *name, const char *sock, i
 void mux_pane_identify(struct mux *m, struct pane *p);
 void mux_pane_load(struct pane *p, int64_t now);
 int mux_run_self(char *const args[], char *err, size_t en, char *out, size_t on);
-/* mux_layout.c */
-int mux_win_count(const struct mux *m, int w);
+int mux_run_self_in(const char *cwd, char *const args[], char *err, size_t en, char *out, size_t on);
+/* mux_shape.c */
+bool mux_shape_valid(unsigned mask);
+unsigned mux_window_mask(struct pane *const *slots, int w);
+int mux_window_count(struct pane *const *slots, int w);
+void mux_shape_rect(unsigned mask, int pos, int *x, int *y, int *w, int *h);
+bool mux_reshape(struct pane *const cur[MUX_POS], struct pane *extra, struct pane *pin, int pin_pos,
+                 struct pane *out[MUX_POS]);
+int mux_base_slot(const struct mux *m, const struct pane *p);
+int mux_shown_slot(const struct mux *m, const struct pane *p);
+void mux_position_label(const struct mux *m, const struct pane *p, char out[4]);
+int mux_parse_position(const char *w);
+bool mux_base_add(struct mux *m, struct pane *p);
+void mux_base_remove(struct mux *m, struct pane *p);
+const char *mux_base_send(struct mux *m, struct pane *p, int to);
+bool mux_can_split(const struct mux *m, char dir);
+bool mux_base_split(struct mux *m, struct pane *np, char dir);
+const char *mux_base_to_window(struct mux *m, struct pane *p, int w);
+void mux_view_compute(struct mux *m);
 int mux_pane_total(const struct mux *m);
+bool mux_has_pane(const struct mux *m, const char *id);
+/* mux_layout.c */
+int mux_view_window(const struct mux *m);
+bool mux_view_aligned(const struct mux *m);
 int mux_window_key(int w);
-int mux_next_window(const struct mux *m, int w);
-void mux_lines_of(const struct mux *m, int w, int rows, int cols, int *left, int *ltop, int *rtop);
 void mux_go_alt(struct mux *m);
 bool mux_decorated(const struct mux *m);
 bool mux_bar_on(const struct mux *m);
 bool mux_info_on(const struct mux *m);
 void mux_relayout(struct mux *m);
-struct pane *mux_focused(const struct mux *m);
-void mux_set_focus(struct mux *m, int slot);
+void mux_set_focus(struct mux *m, struct pane *p);
+void mux_align(struct mux *m, int w);
 void mux_settle(struct mux *m);
+void mux_focus_in_view(struct mux *m);
 int mux_add_pane(struct mux *m, struct pane *p);
-bool mux_has_pane(const struct mux *m, const char *id);
-int mux_slot_of_name(const struct mux *m, const char *w);
-void mux_do_swap(struct mux *m, int a, int b);
-int mux_move_pane(struct mux *m, int slot, int w);
-int mux_slot_at(const struct mux *m, int row, int col);
-int mux_window_of_key(unsigned char c);
-int mux_slot_of(const struct mux *m, const struct pane *p);
-void mux_follow(struct mux *m, struct pane *p);
-void mux_follow_here(struct mux *m, struct pane *p);
-void mux_arrange(struct mux *m, enum arrange how);
-int mux_neighbor(const struct mux *m, char dir);
-int mux_prev_window(const struct mux *m, int w);
-void mux_resize_toward(struct mux *m, char dir, bool grow);
+struct pane *mux_pane_at(const struct mux *m, int row, int col);
+struct pane *mux_neighbor(const struct mux *m, char dir);
+bool mux_shift(struct mux *m, char dir);
+int mux_window_step(const struct mux *m, int w, int step);
+void mux_cycle(struct mux *m, int step);
+bool mux_resize_toward(struct mux *m, char dir, bool grow);
+/* mux_find.c */
+struct pane *mux_find(const struct mux *m, const char *word, int *slot, const char **why);
+/* mux_slide.c */
+void mux_slide_begin(struct mux *m, int nx, int ny);
 /* mux_procs.c */
 void mux_load_picks(struct mux *m);
 void mux_refresh_stats(struct mux *m);
 void mux_draw_procs(struct mux *m);
 void mux_launch_pick(struct mux *m, const struct pick *p);
+void mux_new_terminal(struct mux *m, char split);
 /* mux_chat.c */
 void mux_write_small(const char *path, const char *text, size_t len);
 size_t mux_read_small(const char *path, char *out, size_t cap);
@@ -316,6 +355,7 @@ void mux_bar_click(struct mux *m, enum bar_act act, int arg);
 void mux_prompt_open(struct mux *m, enum prompt kind);
 void mux_prompt_key(struct mux *m, const unsigned char *k, size_t n);
 void mux_swap_key(struct mux *m, const unsigned char *k, size_t n);
+void mux_swap_choose(struct mux *m, int slot);
 char mux_arrow_of(const unsigned char *k, size_t n, int *mod, bool letters);
 void mux_mode_key(struct mux *m, const unsigned char *k, size_t n);
 void mux_floater_key(struct mux *m, const unsigned char *seq, size_t n);

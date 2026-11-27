@@ -33,13 +33,9 @@ void mux_handle_mouse(struct mux *m, int b, int x, int y, bool release) {
         return;
     }
     if (m->swapping) {
-        /* a click on a pane picks it, as its letter would */
-        int s = mux_slot_at(m, row, col);
-        char letter = mux_slot_letter(s);
-        if (!motion && !release && !wheel && letter) {
-            unsigned char lk = (unsigned char)letter;
-            mux_swap_key(m, &lk, 1);
-        }
+        /* a click on a pane picks it, as its place would */
+        struct pane *sp = mux_pane_at(m, row, col);
+        if (!motion && !release && !wheel && sp) mux_swap_choose(m, mux_base_slot(m, sp));
         return;
     }
     if (m->fl == FL_JUMP) {
@@ -78,18 +74,17 @@ void mux_handle_mouse(struct mux *m, int b, int x, int y, bool release) {
     }
     /* A click changes focus; pointer motion alone does not. A click on a
      * name box types a new name over it. */
-    int s = mux_slot_at(m, row, col);
-    struct pane *p = s >= 0 ? m->slot[s] : NULL;
+    struct pane *p = mux_pane_at(m, row, col);
     if (press && p && mux_info_on(m) && row == p->brow && p->brow == p->row - 1) {
-        if (s != m->focus) mux_set_focus(m, s);
+        if (p != m->active) mux_set_focus(m, p);
         if (col >= p->box_col && col < p->box_col + p->box_w && p->id[0]) mux_prompt_open(m, PROMPT_RENAME);
         return; /* the name bar is not the program's */
     }
-    if (press && s >= 0 && s != m->focus) {
-        mux_set_focus(m, s);
+    if (press && p && p != m->active) {
+        mux_set_focus(m, p);
         return; /* the click that moves focus is not the program's */
     }
-    if (!p || s != m->focus) return;
+    if (!p || p != m->active) return;
     if (row < p->row || row >= p->row + p->rows) return; /* its name bar is not the program's */
     struct hold_screen_modes modes;
     hold_screen_modes(p->scr, &modes);
@@ -107,7 +102,7 @@ void mux_handle_mouse(struct mux *m, int b, int x, int y, bool release) {
 }
 
 static void flush_keys(struct mux *m) {
-    struct pane *p = mux_focused(m);
+    struct pane *p = m->active;
     if (m->out_len && p) mux_pane_send(p, m->out, m->out_len);
     m->out_len = 0;
 }
@@ -115,7 +110,7 @@ static void flush_keys(struct mux *m) {
 void mux_to_pane(struct mux *m, const unsigned char *b, size_t n) {
     if (m->out_len + n > sizeof(m->out)) flush_keys(m);
     if (n > sizeof(m->out)) {
-        struct pane *p = mux_focused(m);
+        struct pane *p = m->active;
         if (p) mux_pane_send(p, b, n);
         return;
     }
@@ -156,15 +151,19 @@ static void key_in(struct mux *m, const unsigned char *k, size_t n) {
     } else if (m->chat && chat_has_keyboard(m->chat)) {
         chat_input(m->chat, k, n, m->now);
     } else {
-        /* Alt-arrows move between panes, without the prefix - unless the
-         * pane is locked (its program gets them), or there is no pane that
-         * way (then they are the program's too). */
+        /* Alt-arrows move between panes without the prefix, and past the
+         * screen's edge the view slides half a window that way, across the
+         * grid of windows - unless the pane is locked (its program gets
+         * them), or the grid ends there (then they are the program's too). */
         int mod = 1;
         char dir = mux_arrow_of(k, n, &mod, false);
-        int s = dir && mod == 3 && !mux_pane_locked(mux_focused(m)) ? mux_neighbor(m, dir) : -1;
-        if (s >= 0) {
+        bool mine = dir && mod == 3 && !mux_pane_locked(m->active);
+        struct pane *to = mine ? mux_neighbor(m, dir) : NULL;
+        if (to) {
             flush_keys(m);
-            mux_set_focus(m, s);
+            mux_set_focus(m, to);
+        } else if (mine && (flush_keys(m), mux_shift(m, dir))) {
+            /* moved: the view went that way */
         } else {
             mux_to_pane(m, k, n);
         }

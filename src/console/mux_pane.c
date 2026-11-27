@@ -20,17 +20,6 @@ void mux_set_locked(const struct pane *p, bool on) {
         }
 }
 
-/* Slot letters span windows: A-D in window 1, E-H in window 2, through Z.
- * Number keys can move panes to windows whose slots have no letter. */
-char mux_slot_letter(int slot) {
-    return slot >= 0 && slot < 26 ? (char)('A' + slot) : 0;
-}
-
-int mux_letter_slot(unsigned char c) {
-    int k = toupper(c) - 'A';
-    return k >= 0 && k < 26 && k < MUX_MAX_PANES && isalpha(c) ? k : -1;
-}
-
 int64_t mux_mono_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -198,6 +187,11 @@ void mux_pane_load(struct pane *p, int64_t now) {
  * this layer never reaches into the store's writers, so it runs them. */
 /* out (when given) gets the first line it printed: a launch's process id. */
 int mux_run_self(char *const args[], char *err, size_t en, char *out, size_t on) {
+    return mux_run_self_in(NULL, args, err, en, out, on);
+}
+
+/* As mux_run_self, started in cwd (NULL: here). */
+int mux_run_self_in(const char *cwd, char *const args[], char *err, size_t en, char *out, size_t on) {
     if (err && en) err[0] = '\0';
     if (out && on) out[0] = '\0';
     char self[HOLD_PATH_MAX];
@@ -224,6 +218,8 @@ int mux_run_self(char *const args[], char *err, size_t en, char *out, size_t on)
         }
         if (fo) dup2(fileno(fo), STDOUT_FILENO);
         dup2(fileno(fe), STDERR_FILENO);
+        if (cwd && chdir(cwd) != 0) { /* gone since: start where we are */
+        }
         int argc = 0;
         while (args[argc]) argc++;
         char **argv = calloc((size_t)argc + 2, sizeof(char *));

@@ -15,8 +15,8 @@ char g_locked[MUX_MAX_PANES][ID_STR_LEN];
 
 static void drop_ended(struct mux *m) {
     bool any = false;
-    for (int i = 0; i < MUX_MAX_PANES; i++) {
-        struct pane *p = m->slot[i];
+    for (int i = 0; i < MUX_SLOTS; i++) {
+        struct pane *p = m->base[i];
         if (p && p->ended) {
             bool detached = p->detach_ms && m->now - p->detach_ms < MUX_DETACH_MS;
             if (detached && mux_pane_total(m) == 1) {
@@ -27,9 +27,14 @@ static void drop_ended(struct mux *m) {
             /* A missing endpoint confirms console closure, not process exit.
              * An existing endpoint may belong to a replacement attach. */
             else if (!detached && !hold_path_exists(p->sock)) mux_notice(m, "%s: console closed", p->name);
+            mux_base_remove(m, p);
+            if (m->active == p) m->active = NULL;
+            if (m->full == p) m->full = NULL;
+            if (m->app == p) m->app = NULL;
+            if (m->prompt_pane == p) m->prompt = PROMPT_NONE, m->prompt_pane = NULL;
             mux_pane_free(p);
-            m->slot[i] = NULL;
             any = true;
+            i = -1; /* the window may have closed up: look again from the start */
         }
     }
     if (any) mux_settle(m);
@@ -161,7 +166,7 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
             /* the one pane left: windows keep their numbers, so it need not
              * be in the first */
             struct pane *p = NULL;
-            for (int i = 0; i < MUX_MAX_PANES && !p; i++) p = m->slot[i];
+            for (int i = 0; i < MUX_SLOTS && !p; i++) p = m->base[i];
             /* the last frame, with nothing over the program: inline nothing
              * repaints after this, so nothing of chat may be left on it */
             m->dirty = true;
@@ -181,14 +186,21 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
         if (hold_checked_snprintf(req_path, sizeof(req_path) - 8, "%s/chat/mux.%d.swap", store->base, (int)getpid()) == 0 &&
             mux_read_small(req_path, req, sizeof(req))) {
             unlink(req_path);
-            char a[96] = "", b[96] = "", why2[160] = "bad request";
+            char a[96] = "", b[96] = "", why2[200] = "bad request";
             int ok = -1;
-            /* by name or id only: whoever asks cannot see this screen */
+            /* a place, a name or an id, by its shortest unique prefix
+             * (mux_find.c); the second may be a free place */
             if (sscanf(req, "%95s %95s", a, b) == 2) {
-                int sa = mux_slot_of_name(m, a), sb = mux_slot_of_name(m, b);
-                if (sa < 0 || sb < 0) snprintf(why2, sizeof(why2), "%s is not a pane in that terminal", sa < 0 ? a : b);
+                int sa = -1, sb = -1;
+                const char *wa = NULL, *wb = NULL, *wsend = NULL;
+                struct pane *pa = mux_find(m, a, &sa, &wa), *pb = mux_find(m, b, &sb, &wb);
+                (void)pb;
+                if (!pa) snprintf(why2, sizeof(why2), "%s", wa ? wa : "no pane there");
+                else if (sb < 0) snprintf(why2, sizeof(why2), "%s", wb ? wb : "no such place");
+                else if ((wsend = mux_base_send(m, pa, sb)) != NULL) snprintf(why2, sizeof(why2), "%s", wsend);
                 else {
-                    mux_do_swap(m, sa, sb);
+                    mux_relayout(m);
+                    mux_focus_in_view(m);
                     ok = 0;
                 }
             }
@@ -204,14 +216,14 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
         mux_render(m);
 
         struct pollfd pfds[1 + MUX_MAX_PANES + CHAT_MAX_OUTBOUND];
-        int idx[MUX_MAX_PANES];
+        int idx[MUX_SLOTS];
         nfds_t nf = 0;
         pfds[nf++] = (struct pollfd){.fd = STDIN_FILENO, .events = POLLIN};
-        for (int i = 0; i < MUX_MAX_PANES; i++) {
+        for (int i = 0; i < MUX_SLOTS; i++) {
             idx[i] = -1;
-            if (m->slot[i]) {
+            if (m->base[i]) {
                 idx[i] = (int)nf;
-                pfds[nf++] = (struct pollfd){.fd = m->slot[i]->rfd, .events = POLLIN};
+                pfds[nf++] = (struct pollfd){.fd = m->base[i]->rfd, .events = POLLIN};
             }
         }
         /* chat's sends in flight, and its timers (a lone Esc, a hint) */
@@ -236,9 +248,9 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
         bool probe = m->now >= m->fifo_probe_at;
         if (probe) m->fifo_probe_at = m->now + MUX_FIFO_PROBE_MS;
         if (pr <= 0) m->dirty = true; /* timers: names that expire, notices */
-        for (int i = 0; i < MUX_MAX_PANES; i++) {
+        for (int i = 0; i < MUX_SLOTS; i++) {
             if (idx[i] < 0) continue;
-            struct pane *p = m->slot[i];
+            struct pane *p = m->base[i];
             /* a FIFO pane (separate read and write ends) is read on the probe
              * too: the rfd is non-blocking, so nothing there is EAGAIN */
             bool fifo_probe = probe && p->rfd != p->wfd;
@@ -249,7 +261,7 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
                 hold_screen_feed(p->scr, buf, (size_t)k);
                 hold_screen_discard_output(p->scr); /* its broker answers queries */
                 (void)hold_screen_take_bells(p->scr);
-                if (i / 4 == m->view) m->dirty = true;
+                if (p->visible) m->dirty = true;
             } else if (k == 0 || (errno != EAGAIN && errno != EINTR)) {
                 p->ended = true;
             }
@@ -270,15 +282,15 @@ detach:
     /* Detach: every pane lets go; every process keeps running. Which ones
      * is said once the terminal is the person's again. */
     hold_console_note_detached(NULL);
-    for (int i = 0; i < MUX_MAX_PANES; i++)
-        if (m->slot[i]) {
-            (void)mux_frame(m->slot[i]->wfd, CONSOLE_FRAME_DETACH, NULL, 0);
-            hold_console_note_detached(m->slot[i]->name);
+    for (int i = 0; i < MUX_SLOTS; i++)
+        if (m->base[i]) {
+            (void)mux_frame(m->base[i]->wfd, CONSOLE_FRAME_DETACH, NULL, 0);
+            hold_console_note_detached(m->base[i]->name);
         }
     rc = 0;
 out:
     hold_term_signals_restore(&sig);
-    for (int i = 0; i < MUX_MAX_PANES; i++) mux_pane_free(m->slot[i]);
+    for (int i = 0; i < MUX_SLOTS; i++) mux_pane_free(m->base[i]);
     chat_free(m->chat);
     comp_free(m->comp);
     char mux_path[HOLD_PATH_MAX];

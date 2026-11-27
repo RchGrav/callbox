@@ -69,8 +69,11 @@ purge used by `delete` can stop a target found running on that later check.
 | **broker** | Process that owns the program's terminal or pipes, maintains its screen model and log, and serves attach/control clients. | `src/console/broker.c` |
 | **pane** | Region displaying an attached terminal process. A pane is a view, not the process or its profile. | `src/console/mux.c` |
 | **active pane** | Selected pane receiving forwarded program input. The chat window or a control mode may temporarily own keyboard focus. | `focused`, `key_in`, and `set_focus` in `src/console/mux.c` |
-| **window** | Numbered group of up to four panes. There are nine window positions, selected with keys 1–9. Use **window**, not **tab**, for this object; `MODE_TAB` remains an internal identifier. | `MUX_MAX_WINDOWS`, `place`, and `window_of_key` in `src/console/mux.c` |
-| **pane slot** | Position within the compositor. Letters span windows: A–D in window 1, E–H in window 2, through Z. Later slots have no letter. | `slot_letter` in `src/console/mux.c` |
+| **window** | Numbered group of up to four panes, in the 3×3 grid, selected with keys 1–9. Use **window**, not **tab**, for this object; `MODE_TAB` remains an internal identifier. | `MUX_MAX_WINDOWS` in `src/console/mux.h` |
+| **place** | A spot for a pane in the base: window number and letter, `1A`–`9E` (A top left, B right, C bottom left, D bottom right, E bottom across). Which places are filled is the window's shape. | `mux_position_label`, `mux_shape_rect` in `src/console/mux_shape.c` |
+| **base layout** | Where panes really are; only attach, split, swap, move and a pane leaving change it. | `base` in `src/console/mux.h`, `src/console/mux_shape.c` |
+| **view** | The base as shown: sorted by name, spread or packed. Never written back to the base. | `mux_view_compute` in `src/console/mux_shape.c` |
+| **grid** | The nine windows as a 3×3 grid (reading order); the screen moves over it in half-window steps. | `src/console/mux_layout.c` |
 | **name bar** | Line above a pane (Info): its letter and state, its name in a box (click to rename), and what it runs with its CPU and memory. | `draw_name_bar` in `src/console/mux.c` |
 | **bar** | Row along the bottom of the compositor's screen: process counters, the person's chat name, Info, windows, toggles, the machine's load. Ctrl-Space f hides it. | `draw_bar` in `src/console/mux.c` |
 | **launcher** | Window listing running terminals, consoles that scroll, and ended processes, to attach, view, or start again. | `draw_procs` and `launch_pick` in `src/console/mux.c` |

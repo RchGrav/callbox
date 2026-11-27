@@ -40,6 +40,8 @@ int hold_proc_cmdline(pid_t pid, char *out, size_t n, size_t *len);
 /* The foreground process group of the terminal pid has as its controlling
  * terminal (what the person's keys reach): a shell's job, say. */
 int hold_proc_foreground_group(pid_t pid, pid_t *pgid_out);
+/* A process's working directory, for a new terminal opened beside it. */
+int hold_proc_cwd(pid_t pid, char *out, size_t n);
 /* cb(child, ctx) for pid's direct children; nonzero cb stops the walk. */
 int hold_proc_for_each_child(pid_t pid, int (*cb)(pid_t child, void *ctx), void *ctx);
 /* The whole machine's CPU time so far, busy and in all (any unit, the same

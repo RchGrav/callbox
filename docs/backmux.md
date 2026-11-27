@@ -15,8 +15,9 @@ the keyboard left on the shell. Reattaching to a shell brings that back.
 Why: the shell is the one launch meant for a person rather than a script,
 and the bar is how the mouse reaches everything the keys do.
 
-This reference describes the controls in `src/console/attach.c` and
-`src/console/mux.c`. The terminal reference is `backmux help panes`.
+This reference describes the controls in `src/console/attach.c` and the
+compositor, `src/console/mux*.c` (`mux.h` says which file does what). The
+terminal reference is `backmux help panes`.
 
 ## Command prefix
 
@@ -29,22 +30,25 @@ sending either byte to the program.
 | --- | --- | --- |
 | Detach pane | Ctrl-Space q | Detach the active pane and leave its process running. Detaching the last pane returns to the invoking terminal. |
 | Open or hide chat | Ctrl-Space c | Open chat, focus it if visible, or hide it when it already has keyboard focus. Esc also hides it. |
-| Open a process | Ctrl-Space o | Open the process launcher: running terminals, consoles that scroll, ended processes. |
+| New terminal | Ctrl-Space Enter | Start your shell in the active pane's directory, as the next pane (see Placement). |
+| Split right / down | Ctrl-Space \| / Ctrl-Space - | Start your shell beside or under the active pane, halving it; the window takes the shape that names it. |
+| Open a process | Ctrl-Space l | Open the process launcher: running terminals, consoles that scroll, ended processes. |
+| Next / previous pane | Ctrl-Space o / O | Every pane in order, A to E, window 1 to 9, round again; the view follows. tmux's key. |
 | Command help | Ctrl-Space ? | Display the prefix-command reference. |
 | Pane Navigation | Ctrl-Space p | Enter pane navigation mode. |
 | Window Navigation | Ctrl-Space t | Enter window navigation mode. |
 | Pane Resizing | Ctrl-Space r | Enter pane resizing mode. |
 | Pane Placement | Ctrl-Space m | Enter pane placement mode. |
-| Swap panes | Ctrl-Space s | Select two pane letters, or a pane letter and destination window number. |
+| Swap places | Ctrl-Space s | Two places: `2C`, or `C` for the active pane's window. A free place reshapes its window. Works in every view. |
 | Maximize pane | Ctrl-Space z | Toggle the active pane between its window layout and full-window display. |
 | Bottom bar | Ctrl-Space f | Hide or show the bar along the bottom. |
 | Info | Ctrl-Space i | Hide or show every pane's name bar and stats. |
 | Rename process | Ctrl-Space n | Prompt for the active pane's process name; renaming also saves its profile. |
 | Save profile | Ctrl-Space ; | Prompt for a name and save the active pane's process record. |
 | Pane lock | Ctrl-Space \\ | Toggle whether Alt-arrow keys are forwarded to the active program. Prefix commands remain available. |
-| Spread panes | Ctrl-Space w | Distribute panes across the available windows. |
-| Sort panes | Ctrl-Space a | Sort panes by process name within the occupied slots. |
-| Pack panes | Ctrl-Space d | Fill windows from the first, with up to four panes per window. |
+| Sort (view) | Ctrl-Space a | Show panes by name, in the base's places. Again: the base's order. |
+| Spread (view) | Ctrl-Space w | Show panes over every window, as evenly as they go. Again: the base. |
+| Pack (view) | Ctrl-Space d | Show panes four to a window from the first. Again: the base. |
 
 `--detach-keys` changes the detach sequence. A two-key sequence also supplies
 the compositor's prefix and detach key. Other compositor command keys retain
@@ -62,23 +66,29 @@ input until it exits, so repeated navigation or resizing needs no prefix.
 | Pane Navigation | a | Open the launcher on its list of running terminal processes. |
 | Pane Navigation | g | Open the pane list and select a pane by process name. |
 | Pane Navigation | z | Toggle the active pane's maximized view. |
-| Window Navigation | 1–9 | Select a nonempty window and exit the mode. |
-| Window Navigation | Left/Right or h/l | Select the previous or next nonempty window. |
+| Window Navigation | 1–9 | Go to that window (if it has panes) and exit the mode. |
+| Window Navigation | Arrow keys or h/j/k/l | Go to the window that way on the 3×3 grid (Left/Right: the previous or next with panes). |
 | Pane Resizing | Arrow keys or h/j/k/l | Grow the active pane toward an adjacent split boundary. |
 | Pane Resizing | Shift-arrow keys or H/J/K/L | Shrink the active pane from that split boundary. |
 | Pane Resizing | = | Reset the current window's split proportions to equal divisions. |
-| Pane Placement | Arrow keys or h/j/k/l | Swap the active pane with its neighbor in that direction. |
-| Pane Placement | 1–9 | Move the active pane to that window and exit the mode if space is available. |
+| Pane Placement | Arrow keys or h/j/k/l | Swap the active pane with its neighbor in that direction (base view only). |
+| Pane Placement | 1–9 | Move the active pane to that window and exit the mode if space is available (base view only). |
 
-Outside these modes, **Alt-arrow keys** focus an adjacent pane when one
-exists and the active pane is unlocked. Otherwise the key sequence is
-forwarded to the active program. The terminal must encode an Alt-arrow
-sequence recognized by Backmux; ordinary Escape-b/Escape-f word movement
-sequences are not pane navigation.
+Resizing works on one window; between windows the lines sit halfway. Moving
+works in the base view only: a view is computed from the base, so a pane
+moved there would have nowhere to stay; the mode says to turn the view off.
+
+Outside these modes, **Alt-arrow keys** focus the adjacent pane, and past
+the screen's edge slide the view half a window that way across the grid of
+windows (past empty halves), focusing the pane that came in nearest to where
+you were. At the grid's edge, or when the active pane is locked, the keys go
+to the program. The terminal must encode an Alt-arrow sequence recognized by
+Backmux; ordinary Escape-b/Escape-f word movement sequences are not pane
+navigation.
 
 ## Add and select panes
 
-Press **Ctrl-Space o** (or **Ctrl-Space p a**, or click a counter on the
+Press **Ctrl-Space l** (or **Ctrl-Space p a**, or click a counter on the
 bar) to open the process launcher. Tab or Left/Right steps through its three
 lists, Up/Down selects, Enter acts, Esc cancels:
 
@@ -95,31 +105,80 @@ the bar's three counters say how many of each there are.
 Clicking a pane focuses it. Ctrl-Space p g opens a list of the panes already
 attached; Up/Down and Enter select one, and Esc cancels.
 
-Each window holds up to four panes. Placement is fixed:
+## Placement: the base, places, shapes and the grid
 
-| Pane count | Layout |
+**The base layout is where panes really are.** Every attach, new terminal,
+split, swap and move changes it, and nothing else does. What the screen
+shows is the base passed through the view (Sort, Spread, Pack). Why one
+truth and views over it: turning a view off is always the base again,
+exactly as it was, so sorting or spreading can never lose an arrangement.
+
+**Places.** A window has five places: A top left, B right, C bottom left,
+D bottom right, E the bottom across. A place is written with its window's
+number: `1A` to `9E`. Which places are filled is the window's shape - the
+letters name it, nothing else is stored:
+
+| Shape | Screen |
 | --- | --- |
-| 1 | One pane fills the window. |
-| 2 | Left and right columns. |
-| 3 | The left column splits into upper and lower panes; the right remains full height. |
-| 4 | Both columns split into upper and lower panes. |
+| A | One pane fills the window. |
+| AB | Left and right. |
+| AE | Top and bottom. |
+| ABC | A over C on the left, B the whole right. |
+| ABD | A the whole left, B over D on the right. |
+| ACD | A across the top, C and D below. |
+| ABE | A and B on top, E across the bottom. |
+| ABCD | Four quarters. |
 
-New panes join the current window if it has room, then the first window
-with space. There are nine windows, numbered 1–9. Pane letters identify
-slots across windows: A–D in window 1, E–H in window 2, continuing through Z.
-Slots after Z have no letter; window numbers still select their destinations.
+Why letters for shapes: a place is then a name for a spot that a person, a
+script or an agent can say (`backmux swap reviewer,2E`) and mean the same
+thing, and one function draws every window. A window holds at most four
+panes.
 
-The interactive swap command uses these letters. The CLI command
-`backmux swap NAME1,NAME2` uses process names or ID prefixes of at least
-four characters. Both processes must already have panes in the selected
-terminal. Run the command inside a pane when several terminals have active
-compositors; see `backmux help swap`.
+**Where a new pane goes.** An attach (the launcher, Ctrl-Space Enter) goes
+into the base where the view says: with Spread on, the window with the
+fewest panes (the lowest number on a tie); otherwise the active pane's
+window if it has room, else the first with room. The window grows into its
+next shape (A, AB, ABC, ABCD; AE grows to ABE). A split halves the active
+pane: from A alone, right gives AB and down gives AE; E split right becomes
+C and D (ACD); B tall split down gives ABCD. A split with no room says so.
+The new pane is always the active one, and the view goes to it.
+
+**Swap.** Two places: panes there trade them; a free place reshapes its
+window around the pane sent there, keeping the others where they can and
+filling the rest in reading order (A, B, C, D, E). From ABC, sending B to E
+makes A|C over B; sending C to E makes A|B over C. A pane leaving lets the
+rest keep their places when that is a shape, else close up into the nearest
+one. `backmux swap` takes places, names or ids (see below).
+
+**The views.** Sort shows panes by name in the base's places; Spread shows
+them over all nine windows; Pack four to a window from the first (Sort and
+Spread or Pack combine). Each is a toggle on its key and on the bar, and
+none writes to the base.
+
+**The grid.** The nine windows form a 3×3 grid, read in order (1 2 3 / 4 5
+6 / 7 8 9), and the screen is a two-quadrant-square view onto it that moves
+in half-window steps: on one window, between two side by side, between two
+stacked, or where four meet. Why half steps: the neighbor across a window's
+edge is never more than half a screen away, and moving keeps what was beside
+you in view. Between windows a pane is fitted to what is in view: side by
+side only tall panes keep their height, stacked only wide ones keep their
+width, where four meet every pane is one quadrant; each goes back to its
+size when the view lines up with one window again. Between windows the lines
+sit halfway.
+
+**One way to name a pane.** `backmux swap` (and the compositor's own
+requests) take a place, a process name, or a process id, by the shortest
+prefix that is unique. An exact name or id wins; anything that could mean
+two things is refused, naming both. Ids start with a letter, so a word
+starting with a digit is never an id. Places only mean something on a
+particular terminal: run the command inside a pane when several terminals
+have compositors; see `backmux help swap`.
 
 ## Name bars and prompts
 
 With Info on (Ctrl-Space i, or Info on the bar), each pane has a name bar on
-the line above it: its letter and state (LOCKED, ZOOM, the active mode) at
-the left, its name in a box in the middle, and at the right what it runs -
+the line above it: its place in the base (`1A` - the same in every view)
+and state (LOCKED, ZOOM, the active mode) at the left, its name in a box in the middle, and at the right what it runs -
 the agent harness, or the program - with its CPU and memory (its terminal's
 foreground job: a harness started from a shell is what is busy, not the
 shell). The bar sits on the split line where there is one, so it costs a row
@@ -152,7 +211,9 @@ the keys do. From the left:
 | Your chat name | Chat: highlighted while open, red with a count while messages wait | Open or put away chat |
 | Info | Highlighted while name bars are on | Name bars on or off |
 | Mode, notices | The prefix waiting, a mode, the last notice | Mode: the keys |
-| Window numbers | Windows with panes; the current one highlighted | Go to that window |
+| Minimap | Two braille cells: a dot for each window of the 3×3 grid in view | |
+| Window numbers | Windows with panes; those in view highlighted (1, 2 or 4) | Go to that window |
+| Sort, Spread, Pack | The view; highlighted while on | Toggle it |
 | Zoom, Lock | Highlighted while on, for the active pane | Toggle |
 | `?` | | The keys |
 | CPU, MEM, time | The machine's load and memory | |

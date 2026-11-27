@@ -11,5 +11,4 @@
 783 src/console/attach.c
 760 src/screen/screen.c
 756 src/screen/render.c
-613 src/platform/process.c
 550 src/runtime/settings.c

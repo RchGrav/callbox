@@ -616,8 +616,9 @@ static int attach_once(const char *sock_path) {
     bool mux_keys = interactive && !g_line_mode && !g_composited && g_mux_store && g_detach_key_count == 2 &&
                     term->owned;
     if (mux_keys) {
-        /* These commands enter the compositor from a single-process attach. */
-        static const unsigned char cmds[] = {'c', '?', 'n', ';', 'p'};
+        /* Enter the compositor from one process: chat, keys, rename, save,
+         * pane mode, launcher, new terminal (Enter), split (| -). */
+        static const unsigned char cmds[] = {'c', '?', 'n', ';', 'p', 'l', '\r', '|', '-'};
         hold_term_detach_set_commands(&detach, cmds, sizeof(cmds));
     }
     enum hold_client_end end = HOLD_CLIENT_OUTPUT_ENDED;
@@ -723,10 +724,9 @@ static int attach_once(const char *sock_path) {
     return rc;
 }
 
-/* backmux shell: the terminal raw, on a cleared alternate screen, and the
- * compositor from the start with chat up - no plain attach first. Why a
- * cleared screen: the shell is the person's own screen from here, with the
- * bar along its bottom; their lines from before come back when they leave. */
+/* backmux shell: raw, on a cleared alternate screen (the person's own from
+ * here, with the bar; their lines come back on leaving), the compositor from
+ * the start with chat up - no plain attach first. */
 static bool own_terminal_for_resident(void) {
     struct hold_console_term *term = &g_console_term;
     if (term->owned) return true;

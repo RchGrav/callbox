@@ -12,5 +12,5 @@ account's login shell if available, then /bin/sh.
 A shell opens on a cleared screen of its own (your lines come back when you
 leave), with the bar along the bottom, its name bar, and chat open with the
 keyboard on the shell. Esc hides chat; Ctrl-Space c brings it back;
-Ctrl-Space o attaches another process as a pane. Reattaching to a shell
+Ctrl-Space l attaches another process as a pane. Reattaching to a shell
 brings all of it back. See backmux help panes for interactive controls.

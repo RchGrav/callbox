@@ -1,10 +1,13 @@
 backmux help panes - terminal controls, panes, windows, and chat
 
-A pane displays one attached terminal process. A numbered window holds up to
-four panes, with the first split arranged left/right. There are nine windows.
-Pane controls require an interactive terminal and a two-key detach sequence.
-From a single-process attach, press Ctrl-Space o to open the process
-launcher and attach another terminal process. The controls below apply
+A pane displays one attached terminal process. A window holds up to four
+panes, in places A (top left), B (right), C (bottom left), D (bottom right)
+and E (the bottom across); which places are filled is the window's shape.
+The nine windows form a 3x3 grid (1 2 3 / 4 5 6 / 7 8 9), and the screen
+moves over it in half-window steps. Pane controls require an interactive
+terminal and a two-key detach sequence. From a single-process attach, press
+Ctrl-Space Enter for a new terminal or Ctrl-Space l to attach another
+process. The controls below apply
 while the pane interface is active. backmux shell starts with it: a cleared
 screen, chat open, the bar along the bottom.
 
@@ -16,7 +19,12 @@ program. Unrecognized prefix commands are discarded. A custom two-key
 configured keys.
 
   Ctrl-Space ?     show keyboard shortcuts
-  Ctrl-Space o     open the process launcher
+  Ctrl-Space Enter a new terminal (your shell, in the active pane's
+                   directory) at the next place
+  Ctrl-Space |     split the active pane: a new terminal on its right
+  Ctrl-Space -     split the active pane: a new terminal under it
+  Ctrl-Space l     open the process launcher
+  Ctrl-Space o O   the next / previous pane, across every window
   Ctrl-Space p     enter Pane Navigation mode
   Ctrl-Space t     enter Window Navigation mode
   Ctrl-Space r     enter Pane Resizing mode
@@ -26,7 +34,9 @@ In a mode, press ? for contextual help. Esc or Enter exits the mode.
 Esc closes contextual help first; press Esc again to exit the mode.
 
 PANE NAVIGATION
-  Alt-arrows       focus an adjacent pane, unless the active pane is locked
+  Alt-arrows       focus the adjacent pane; past the screen's edge, slide
+                   half a window that way across the grid (unless the
+                   active pane is locked, or the grid ends there)
   Click a pane     focus that pane
 
 In Pane Navigation mode:
@@ -36,7 +46,7 @@ In Pane Navigation mode:
   z                toggle the active pane's full-screen view
 
 THE LAUNCHER
-Ctrl-Space o, or a counter on the bar. Tab or Left/Right steps through its
+Ctrl-Space l, or a counter on the bar. Tab or Left/Right steps through its
 lists, Up/Down selects, Enter acts, Esc cancels:
   Terminals        running terminal processes: attach one as a pane
   Consoles         pipe-input processes and servers: open one in a viewer
@@ -47,8 +57,8 @@ lists, Up/Down selects, Enter acts, Esc cancels:
 
 WINDOW NAVIGATION
 In Window Navigation mode:
-  1-9              select an occupied window and exit the mode
-  Left/Right, h l  select the previous or next occupied window
+  1-9              go to that window and exit the mode
+  arrows, h j k l  the window that way on the 3x3 grid
 
 PANE RESIZING
 In Pane Resizing mode:
@@ -59,27 +69,34 @@ In Pane Resizing mode:
 Only shared dividers can move. Resizing changes the attached programs'
 terminal dimensions. Full-screen view does not resize dividers.
 
-PANE PLACEMENT AND LAYOUT
-In Pane Placement mode:
-  arrows, h j k l   swap with an adjacent pane
-  1-9              move the active pane to that window and exit the mode
+PLACES, SHAPES AND VIEWS
+Where panes really are is the base layout; what the screen shows is the base
+through a view. Places are written 1A to 9E; the shapes are A, AB, AE, ABC
+(B tall), ABD (A tall), ACD (A across the top), ABE (E across the bottom)
+and ABCD. A new pane grows its window into the next shape; a split halves
+the active pane (A down: AE; E right: ACD).
 
-Additional prefix commands:
-  Ctrl-Space s     select panes to swap by their displayed letters; select
-                   a letter then 1-9 to move that pane to a window
-  Ctrl-Space w     distribute panes across windows
-  Ctrl-Space a     sort panes by process name in existing occupied positions
-  Ctrl-Space d     pack panes into windows, up to four per window
+  Ctrl-Space s     swap: two places (2C, or C in the active pane's window);
+                   a free place reshapes its window around the pane sent
+  Ctrl-Space a     view: by name, in the base's places (again: off)
+  Ctrl-Space w     view: spread over all nine windows (again: off)
+  Ctrl-Space d     view: packed four to a window (again: off)
   Ctrl-Space z     toggle the active pane's full-screen view
   Ctrl-Space f     hide or show the bar along the bottom
   Ctrl-Space i     hide or show the name bars (Info)
 
-Moving a pane to another window leaves the current window selected when it
-still contains panes. Layout changes preserve the running processes.
-For scripted swaps by process name or ID, see backmux help swap.
+Views never change the base: turning one off shows the base as it was.
+Swapping works in any view; Pane Placement mode moves panes in the base
+view only:
+  arrows, h j k l   swap with an adjacent pane
+  1-9              move the active pane to that window and exit the mode
+
+Moving a pane to another window leaves the view where it is. Layout changes
+preserve the running processes. For scripted swaps by place, name or ID,
+see backmux help swap.
 
 NAME BARS AND THE BAR
-With Info on, each pane's name bar shows its letter and state at the left,
+With Info on, each pane's name bar shows its place (1A) and state at the left,
 its name boxed in the middle, and what it runs with its CPU and memory at
 the right. Click the name box (or Ctrl-Space n) to type a new name over it:
 Enter renames, Esc or a click elsewhere keeps the name.
@@ -87,7 +104,8 @@ Enter renames, Esc or a click elsewhere keeps the name.
 The bar along the bottom, from the left: running terminals (green),
 consoles that scroll (blue), ended processes (red) - click one for its list
 in the launcher - then your chat name (opens or hides chat; red while
-messages wait), Info, the windows (click one to go there), Zoom, Lock, ?,
+messages wait), Info, a minimap of the 3x3 grid, the windows (those in view
+highlighted; click one to go there), Sort, Spread and Pack, Zoom, Lock, ?,
 and the machine's CPU and memory. Toggles look different on and off. On a
 narrow terminal items shorten, then the least useful go.
 

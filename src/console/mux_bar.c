@@ -81,21 +81,50 @@ void mux_draw_bar(struct mux *m) {
         snprintf(b->full, sizeof(b->full), "%s", m->notice);
         snprintf(b->brief, sizeof(b->brief), "%.30s", m->notice);
     }
-    int last_used = -1;
+    /* the windows in view: one, two side by side or stacked, or four */
+    bool in_view[MUX_MAX_WINDOWS] = {false};
+    for (int q = 0; q < 4; q++) in_view[((m->vy + q / 2) / 2) * 3 + (m->vx + q % 2) / 2] = true;
+    /* where the view is on the 3x3 grid: a dot for each window in view, in
+     * two braille cells (columns 1-2, then 3) */
+    unsigned dots[2] = {0, 0};
+    static const unsigned bit[2][3] = {{0x01, 0x02, 0x04}, {0x08, 0x10, 0x20}};
     for (int w = 0; w < MUX_MAX_WINDOWS; w++)
-        if (mux_win_count(m, w) > 0) last_used = w;
-    for (int w = 0; w <= last_used && n < MUX_BAR_ITEMS - 8; w++) {
-        if (mux_win_count(m, w) == 0 && w != m->view) continue;
-        b = ITEM(1, w == m->view ? 8 : 5, w == m->view ? &ST_WIN_CUR : &ST_WIN, BA_WINDOW, w);
+        if (in_view[w]) dots[(w % 3) / 2] |= bit[(w % 3) % 2][w / 3];
+    b = ITEM(1, 7, &ST_WIN, BA_NONE, 0);
+    char *o = b->full;
+    for (int k = 0; k < 2; k++) {
+        uint32_t cp = 0x2800 + dots[k];
+        o += hold_utf8_encode(cp, o, 4);
+    }
+    *o = '\0';
+    for (int w = 0; w < MUX_MAX_WINDOWS && n < MUX_BAR_ITEMS - 10; w++) {
+        if (mux_window_count(m->shown, w) == 0 && !in_view[w]) continue;
+        b = ITEM(1, in_view[w] ? 8 : 5, in_view[w] ? &ST_WIN_CUR : &ST_WIN, BA_WINDOW, w);
         snprintf(b->full, sizeof(b->full), " %d ", mux_window_key(w));
     }
+    /* the view: sorted by name, spread or packed (each on until clicked off) */
+    b = ITEM(1, 4, m->sort ? &ST_BTN_ON : &ST_BTN_OFF, BA_SORT, 0);
+    snprintf(b->full, sizeof(b->full), " Sort ");
+    snprintf(b->brief, sizeof(b->brief), " S ");
+    b = ITEM(1, 4, m->arr == ARR_SPREAD ? &ST_BTN_ON : &ST_BTN_OFF, BA_ARR, 'w');
+    snprintf(b->full, sizeof(b->full), " Spread ");
+    snprintf(b->brief, sizeof(b->brief), " W ");
+    b = ITEM(1, 4, m->arr == ARR_PACK ? &ST_BTN_ON : &ST_BTN_OFF, BA_ARR, 'd');
+    snprintf(b->full, sizeof(b->full), " Pack ");
+    snprintf(b->brief, sizeof(b->brief), " P ");
     /* right: the toggles that act on the focused pane, help, the machine */
-    if (mux_win_count(m, m->view) > 1 || m->full) {
+    int on_screen = 0; /* panes in view, each once */
+    for (int c = 0; c < 4; c++) {
+        bool seen = false;
+        for (int d = 0; d < c; d++) seen = seen || m->cell[d] == m->cell[c];
+        on_screen += m->cell[c] && !seen;
+    }
+    if (on_screen > 1 || m->full) {
         b = ITEM(2, 4, m->full ? &ST_BTN_ON : &ST_BTN_OFF, BA_ZOOM, 0);
         snprintf(b->full, sizeof(b->full), " Zoom ");
         snprintf(b->brief, sizeof(b->brief), " Z ");
     }
-    b = ITEM(2, 3, mux_pane_locked(mux_focused(m)) ? &ST_BTN_ON : &ST_BTN_OFF, BA_LOCK, 0);
+    b = ITEM(2, 3, mux_pane_locked(m->active) ? &ST_BTN_ON : &ST_BTN_OFF, BA_LOCK, 0);
     snprintf(b->full, sizeof(b->full), " Lock ");
     snprintf(b->brief, sizeof(b->brief), " L ");
     b = ITEM(2, 6, &ST_BTN_OFF, BA_HELP, 0);
@@ -170,7 +199,12 @@ void mux_bar_click(struct mux *m, enum bar_act act, int arg) {
         return;
     case BA_INFO: (void)mux_command(m, 'i'); return;
     case BA_WINDOW:
-        if (mux_win_count(m, arg) > 0) mux_set_focus(m, arg * 4);
+        if (mux_window_count(m->shown, arg) > 0) mux_align(m, arg);
+        if (m->cell[0] && !(m->active && m->active->visible)) mux_set_focus(m, m->cell[0]);
+        return;
+    case BA_SORT: (void)mux_command(m, 'a'); return;
+    case BA_ARR: /* Spread or Pack: on, or off (the base again) */
+        (void)mux_command(m, (unsigned char)arg);
         return;
     case BA_ZOOM: (void)mux_command(m, 'z'); return;
     case BA_LOCK: (void)mux_command(m, '\\'); return;

@@ -5970,7 +5970,7 @@ test_detach_says_so_and_split_is_clean() {
   pick_pane dterm mark-dside || return 1
   "$HOLD_BIN" wait dterm --match 'DSIDE-UP' --timeout 5000 >/dev/null || return 1
   if "$HOLD_BIN" peek dterm | grep -q 'PERSON-LINE'; then echo "stale text over the panes" >&2; "$HOLD_BIN" peek dterm >&2; return 1; fi
-  out_has '^─ A ─.*┤ dinl ├.*┬─ B ─.*┤ dside ├' "$HOLD_BIN" peek dterm || { echo "the name bars are not A dinl, B dside" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
+  out_has '^─ 1A ─.*┤ dinl ├.*┬─ 1B ─.*┤ dside ├' "$HOLD_BIN" peek dterm || { echo "the name bars are not A dinl, B dside" >&2; "$HOLD_BIN" peek dterm >&2; return 1; }
   # a click on the right pane focuses it; the prefix then q detaches that
   # pane (dside) only; dinl is plain attach again, and the next one leaves
   wait_mouse dterm || return 1
@@ -6069,21 +6069,31 @@ test_panes_attach_beside_and_hand_back() {
 }
 
 # Four panes to a window: A left, B right, C under A, D under B; the fifth
-# opens window 2. The prefix then s swaps by the letters in the name bars: two
-# letters swap, a letter past a window's panes sends the first to that window, a
-# number sends it there; backmux swap takes names or ids only. Window mode goes
-# to a window by number; move mode sends the active pane to one (the view
-# stays); z fills the screen with the active pane; pane mode's g jumps to a
-# pane by name.
+# opens window 2. The prefix then s swaps by place (a letter alone is the
+# active pane's window, a number and a letter any window): two places with
+# panes trade them; a free place reshapes its window (B leaving ABCD makes
+# ACD). backmux swap takes names, ids or places. Window mode goes to a window
+# by number; move mode sends the active pane to one (the view stays); z fills
+# the screen with the active pane; pane mode's g jumps to a pane by name.
 mux_slots() {
   local f
   for f in "$HOME"/.local/state/backmux/chat/mux.*; do
-    case "${f##*/}" in mux.*.*) ;; mux.*) grep -v '^view' "$f" | awk '{print $1":"$3}' | tr '\n' ' ' ;; esac
+    [ -f "$f" ] || continue
+    case "${f##*/}" in mux.*.*) ;; mux.*) grep -v '^view\|^shown' "$f" | awk '{print $1":"$3}' | tr '\n' ' ' ;; esac
+  done
+}
+# where the view shows each pane (sort, spread and pack move panes on screen only)
+mux_shown() {
+  local f
+  for f in "$HOME"/.local/state/backmux/chat/mux.*; do
+    [ -f "$f" ] || continue
+    case "${f##*/}" in mux.*.*) ;; mux.*) grep '^shown' "$f" | awk '{print $2":"$3}' | tr '\n' ' ' ;; esac
   done
 }
 mux_view() {
   local f
   for f in "$HOME"/.local/state/backmux/chat/mux.*; do
+    [ -f "$f" ] || continue
     case "${f##*/}" in mux.*.*) ;; mux.*) sed -n 's/^view //p' "$f" ;; esac
   done
 }
@@ -6096,7 +6106,7 @@ test_panes_windows_and_swap() {
   for i in 2 3 4 5; do pick_pane term "mark-w$i" || return 1; done
   for i in $(seq 1 30); do [ "$(mux_view)" = 1 ] && break; sleep 0.1; done
   [ "$(mux_view)" = 1 ] || { echo "the fifth pane did not open window 2" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  [ "$(mux_slots)" = "1:w1 2:w2 3:w3 4:w4 5:w5 " ] || { echo "slots: $(mux_slots)" >&2; return 1; }
+  [ "$(mux_slots)" = "1A:w1 1B:w2 1C:w3 1D:w4 2A:w5 " ] || { echo "slots: $(mux_slots)" >&2; return 1; }
   # back to window 1, where the four sit A B / C D
   "$HOLD_BIN" send term -k C-Space -k t -k 1 || return 1
   for i in $(seq 1 30); do [ "$(mux_view)" = 0 ] && break; sleep 0.1; done
@@ -6108,24 +6118,24 @@ test_panes_windows_and_swap() {
   [ "$(screen_pos term W4-UP | cut -d' ' -f1)" = "$c2" ] || { echo "D is not under B" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   # swap A and C by their letters
   "$HOLD_BIN" send term -k C-Space -k s || return 1
-  "$HOLD_BIN" wait term --regex ' A .*┤ w1 ├' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
-  out_has ' C .*┤ w3 ├' "$HOLD_BIN" peek term || return 1
+  "$HOLD_BIN" wait term --regex ' 1A .*┤ w1 ├' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  out_has ' 1C .*┤ w3 ├' "$HOLD_BIN" peek term || return 1
   "$HOLD_BIN" send term --text a || return 1
   "$HOLD_BIN" send term --text c || return 1
-  for i in $(seq 1 30); do [ "$(mux_slots)" = "1:w3 2:w2 3:w1 4:w4 5:w5 " ] && break; sleep 0.1; done
-  [ "$(mux_slots)" = "1:w3 2:w2 3:w1 4:w4 5:w5 " ] || { echo "swap a c: $(mux_slots)" >&2; return 1; }
-  # backmux swap: names (or ids) only
+  for i in $(seq 1 30); do [ "$(mux_slots)" = "1A:w3 1B:w2 1C:w1 1D:w4 2A:w5 " ] && break; sleep 0.1; done
+  [ "$(mux_slots)" = "1A:w3 1B:w2 1C:w1 1D:w4 2A:w5 " ] || { echo "swap a c: $(mux_slots)" >&2; return 1; }
+  # backmux swap: names, ids or places
   "$HOLD_BIN" swap w3,w1 2>/dev/null || return 1
-  [ "$(mux_slots)" = "1:w1 2:w2 3:w3 4:w4 5:w5 " ] || { echo "swap w3,w1: $(mux_slots)" >&2; return 1; }
-  "$HOLD_BIN" swap w1 w5 2>/dev/null || return 1
-  [ "$(mux_slots)" = "1:w5 2:w2 3:w3 4:w4 5:w1 " ] || { echo "swap w1 w5: $(mux_slots)" >&2; return 1; }
+  [ "$(mux_slots)" = "1A:w1 1B:w2 1C:w3 1D:w4 2A:w5 " ] || { echo "swap w3,w1: $(mux_slots)" >&2; return 1; }
+  "$HOLD_BIN" swap w1 2A 2>/dev/null || return 1
+  [ "$(mux_slots)" = "1A:w5 1B:w2 1C:w3 1D:w4 2A:w1 " ] || { echo "swap w1 2A: $(mux_slots)" >&2; return 1; }
   rc=0; "$HOLD_BIN" swap A,C 2>"$TEST_ROOT/swap.err" || rc=$?
-  [ "$rc" -eq 1 ] && grep -q 'not a pane' "$TEST_ROOT/swap.err" || { echo "swap took letters (rc=$rc)" >&2; cat "$TEST_ROOT/swap.err" >&2; return 1; }
-  # a letter past the panes of a window: F is window 2's second place, so B goes
-  # to window 2; the view stays
-  "$HOLD_BIN" send term -k C-Space -k s --text b --text f || return 1
-  for i in $(seq 1 30); do [ "$(mux_slots)" = "1:w5 2:w3 3:w4 5:w1 6:w2 " ] && break; sleep 0.1; done
-  [ "$(mux_slots)" = "1:w5 2:w3 3:w4 5:w1 6:w2 " ] || { echo "swap b f: $(mux_slots)" >&2; return 1; }
+  [ "$rc" -eq 1 ] && grep -q 'not a pane' "$TEST_ROOT/swap.err" || { echo "swap took a bare letter (rc=$rc)" >&2; cat "$TEST_ROOT/swap.err" >&2; return 1; }
+  # to a free place: B goes to 2B; window 1 keeps A, C, D (ACD: A across the
+  # top) and window 2 becomes AB; the view stays
+  "$HOLD_BIN" send term -k C-Space -k s --text b --text 2 --text b || return 1
+  for i in $(seq 1 30); do [ "$(mux_slots)" = "1A:w5 1C:w3 1D:w4 2A:w1 2B:w2 " ] && break; sleep 0.1; done
+  [ "$(mux_slots)" = "1A:w5 1C:w3 1D:w4 2A:w1 2B:w2 " ] || { echo "swap b 2b: $(mux_slots)" >&2; return 1; }
   [ "$(mux_view)" = 0 ] || { echo "the view followed the pane sent away" >&2; return 1; }
   # window mode: an empty window says so; a window with panes is gone to
   "$HOLD_BIN" send term -k C-Space -k t -k 7 || return 1
@@ -6135,8 +6145,8 @@ test_panes_windows_and_swap() {
   [ "$(mux_view)" = 1 ] || { echo "window mode 2 did not go to window 2" >&2; return 1; }
   # move mode: the active pane to window 3; the view stays on window 2
   "$HOLD_BIN" send term -k C-Space -k m -k 3 || return 1
-  for i in $(seq 1 20); do mux_slots | grep -q ' 9:' && break; sleep 0.1; done
-  mux_slots | grep -Eq '(^| )9:w[0-9]' || { echo "the move did not reach window 3: $(mux_slots)" >&2; return 1; }
+  for i in $(seq 1 20); do mux_slots | grep -q '3A:' && break; sleep 0.1; done
+  mux_slots | grep -Eq '(^| )3A:w[0-9]' || { echo "the move did not reach window 3: $(mux_slots)" >&2; return 1; }
   [ "$(mux_view)" = 1 ] || { echo "the view followed the moved pane" >&2; return 1; }
   # pane mode g: the panes by name; Enter on the first goes to its window
   "$HOLD_BIN" send term -k C-Space -k p -k g || return 1
@@ -6171,9 +6181,9 @@ test_footers_lock_rearrange_and_names() {
   start_term term zed 120 30 || return 1
   pick_pane term mark-yak || return 1
   pick_pane term mark-xray || return 1
-  "$HOLD_BIN" wait term --regex ' C .*┤ xray ├' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
-  out_has '^─ A ─.*┤ zed ├' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
-  out_has '┬─ B ─.*┤ yak ├' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" wait term --regex ' 1C .*┤ xray ├' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  out_has '^─ 1A ─.*┤ zed ├' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
+  out_has '┬─ 1B ─.*┤ yak ├' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" send term -k C-Space -k i || return 1
   wait_gone term '┤ zed ├' || { echo "i did not hide the name bars" >&2; return 1; }
   "$HOLD_BIN" send term -k C-Space -k i || return 1
@@ -6183,20 +6193,27 @@ test_footers_lock_rearrange_and_names() {
   wait_gone term ' Info ' || { echo "f did not hide the bar" >&2; return 1; }
   "$HOLD_BIN" send term -k C-Space -k f || return 1
   "$HOLD_BIN" wait term --match ' Info ' --timeout 5000 >/dev/null || { echo "f did not bring the bar back" >&2; return 1; }
-  # a: name order, same places; w: one to a window; d: four to a window
+  # views, toggled on and off, never touch the base: a sorts by name in the
+  # same places, w spreads one to a window, d packs four to a window
   "$HOLD_BIN" send term -k C-Space -k a || return 1
-  for i in $(seq 1 30); do [ "$(mux_slots)" = "1:xray 2:yak 3:zed " ] && break; sleep 0.1; done
-  [ "$(mux_slots)" = "1:xray 2:yak 3:zed " ] || { echo "a: $(mux_slots)" >&2; return 1; }
+  for i in $(seq 1 30); do [ "$(mux_shown)" = "1A:xray 1B:yak 1C:zed " ] && break; sleep 0.1; done
+  [ "$(mux_shown)" = "1A:xray 1B:yak 1C:zed " ] || { echo "a: $(mux_shown)" >&2; return 1; }
+  [ "$(mux_slots)" = "1A:zed 1B:yak 1C:xray " ] || { echo "sorting moved the base: $(mux_slots)" >&2; return 1; }
   "$HOLD_BIN" send term -k C-Space -k w || return 1
-  for i in $(seq 1 30); do [ "$(mux_slots)" = "1:xray 5:yak 9:zed " ] && break; sleep 0.1; done
-  [ "$(mux_slots)" = "1:xray 5:yak 9:zed " ] || { echo "w: $(mux_slots)" >&2; return 1; }
-  "$HOLD_BIN" send term -k C-Space -k d || return 1
-  for i in $(seq 1 30); do [ "$(mux_slots)" = "1:xray 2:yak 3:zed " ] && break; sleep 0.1; done
-  [ "$(mux_slots)" = "1:xray 2:yak 3:zed " ] || { echo "d: $(mux_slots)" >&2; return 1; }
+  for i in $(seq 1 30); do [ "$(mux_shown)" = "1A:xray 2A:yak 3A:zed " ] && break; sleep 0.1; done
+  [ "$(mux_shown)" = "1A:xray 2A:yak 3A:zed " ] || { echo "w: $(mux_shown)" >&2; return 1; }
+  "$HOLD_BIN" send term -k C-Space -k a || return 1
+  for i in $(seq 1 30); do [ "$(mux_shown)" = "1A:zed 2A:yak 3A:xray " ] && break; sleep 0.1; done
+  [ "$(mux_shown)" = "1A:zed 2A:yak 3A:xray " ] || { echo "sort off, still spread: $(mux_shown)" >&2; return 1; }
+  "$HOLD_BIN" send term -k C-Space -k a -k C-Space -k d || return 1
+  for i in $(seq 1 30); do [ "$(mux_shown)" = "1A:xray 1B:yak 1C:zed " ] && break; sleep 0.1; done
+  [ "$(mux_shown)" = "1A:xray 1B:yak 1C:zed " ] || { echo "d: $(mux_shown)" >&2; return 1; }
+  [ "$(mux_slots)" = "1A:zed 1B:yak 1C:xray " ] || { echo "the views moved the base: $(mux_slots)" >&2; return 1; }
   # the active pane is xray (the last attached, followed through each
   # rearrangement): lock it
   "$HOLD_BIN" send term -k C-Space --text '\' || return 1
-  "$HOLD_BIN" wait term --regex '^─ A ─ LOCKED .*┤ xray ├' --timeout 5000 >/dev/null || { echo "no LOCKED in the name bar" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  # (its chip says where it is in the base, 1C, wherever the view shows it)
+  "$HOLD_BIN" wait term --regex '^─ 1C ─ LOCKED .*┤ xray ├' --timeout 5000 >/dev/null || { echo "no LOCKED in the name bar" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" send term -k M-Right || return 1
   "$HOLD_BIN" send term to-xray --enter || return 1
   "$HOLD_BIN" wait xray --match 'to-xray' --timeout 5000 >/dev/null || { echo "locked, Alt-Right still moved the keys" >&2; "$HOLD_BIN" peek xray >&2; return 1; }
@@ -6215,7 +6232,7 @@ test_footers_lock_rearrange_and_names() {
   "$HOLD_BIN" send term -k C-Space -k n -k Backspace --text m -k Enter || return 1
   for i in $(seq 1 30); do out_has 'Up .* yam$' "$HOLD_BIN" list && break; sleep 0.1; done
   out_has 'Up .* yam$' "$HOLD_BIN" list || { echo "n did not rename yak to yam" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" wait term --regex '┬─ B ─.*┤ yam ├' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" wait term --regex '┬─ 1B ─.*┤ yam ├' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
   # a click in the name box types a new name over it; a click elsewhere keeps it
   read -r c r < <(screen_pos term '┤ yam ├') || return 1
   "$HOLD_BIN" send term --mouse "click,$((c + 3)),$r" || return 1
@@ -6238,14 +6255,6 @@ test_footers_lock_rearrange_and_names() {
   out_has '"saved": true' "$HOLD_BIN" inspect zed || { echo "; Enter did not save zed" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" send term -k C-Space -k q || return 1
   "$HOLD_BIN" end zed yam xray term >/dev/null 2>&1 || true
-}
-
-# A stand-in for an agent harness: a script under the name given (codex is
-# one backmux knows), that prints each line it is sent.
-fake_harness() {
-  mkdir -p "$TEST_ROOT/bin" || return 1
-  printf '#!/bin/sh\nstty -echo\necho %s-UP\nwhile IFS= read -r l; do echo "typed:$l"; done\n' "$1" >"$TEST_ROOT/bin/$1" || return 1
-  chmod 755 "$TEST_ROOT/bin/$1"
 }
 
 # Chat belongs to the person, not to any process: the prefix then c over whatever is
@@ -6287,149 +6296,6 @@ test_chat_is_the_persons() {
   "$HOLD_BIN" send term2 -k C-Space -k c || return 1
   wait_gone term2 'chat ->' || return 1
   "$HOLD_BIN" end rcv other >/dev/null 2>&1 || true
-}
-
-# backmux shell is the person's own screen: it starts on a cleared screen
-# (the alternate one: their lines come back when they leave), with chat up
-# but the keyboard on the shell, the shell's name bar, and the bar along the
-# bottom - counters, the person's name, Info. The prefix then f hides the
-# bar; Esc puts chat away (keyboard only); the prefix then c and the name on
-# the bar bring it back; the prefix then ? shows the keys in a framed box.
-test_shell_is_the_persons_screen() {
-  local c r
-  "$HOLD_BIN" detach --size 100 28 --name sterm -- /bin/sh >/dev/null || return 1
-  "$HOLD_BIN" send sterm 'echo BEFORE-LINE' -k Enter || return 1
-  "$HOLD_BIN" wait sterm --regex '^BEFORE-LINE$' --timeout 5000 >/dev/null || return 1
-  "$HOLD_BIN" send sterm "\"$HOLD_REAL_BIN\" shell --name sh1 /bin/sh" -k Enter || return 1
-  wait_call sh1 || return 1
-  "$HOLD_BIN" wait sterm --match 'chat ->' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek sterm >&2; return 1; }
-  if "$HOLD_BIN" peek sterm | grep -q 'BEFORE-LINE'; then echo "the shell did not start on a clear screen" >&2; "$HOLD_BIN" peek sterm >&2; return 1; fi
-  out_has '"alt_screen": true' "$HOLD_BIN" peek sterm --json || { echo "the shell is not on the alternate screen" >&2; return 1; }
-  out_has '^─ A ─.*┤ sh1 ├' "$HOLD_BIN" peek sterm || { echo "no name bar" >&2; "$HOLD_BIN" peek sterm >&2; return 1; }
-  out_has '^ \[[0-9]*\] \[[0-9]*\] \[[0-9]*\] .* Info ' "$HOLD_BIN" peek sterm || { echo "no bar" >&2; "$HOLD_BIN" peek sterm >&2; return 1; }
-  # the keyboard is the shell's
-  "$HOLD_BIN" send sterm 'echo TYPED-IN-SHELL' -k Enter || return 1
-  "$HOLD_BIN" wait sterm --match 'TYPED-IN-SHELL' --timeout 5000 >/dev/null || { echo "keys did not reach the shell" >&2; "$HOLD_BIN" peek sterm >&2; return 1; }
-  # Esc puts chat away once it has the keyboard; the name on the bar brings it back
-  put_chat_away sterm || return 1
-  read -r c r < <(screen_pos sterm "$(chat_name_on_bar sterm)") || { echo "no name on the bar" >&2; return 1; }
-  "$HOLD_BIN" send sterm --mouse "click,$((c + 1)),$r" || return 1
-  "$HOLD_BIN" wait sterm --match 'chat ->' --timeout 5000 >/dev/null || { echo "the name on the bar did not open chat" >&2; "$HOLD_BIN" peek sterm >&2; return 1; }
-  "$HOLD_BIN" send sterm --mouse "click,$((c + 1)),$r" || return 1
-  wait_gone sterm 'chat ->' || { echo "the name on the bar did not put chat away" >&2; return 1; }
-  # the bar hides and comes back
-  "$HOLD_BIN" send sterm -k C-Space -k f || return 1
-  wait_gone sterm ' Info ' || { echo "f did not hide the bar" >&2; return 1; }
-  "$HOLD_BIN" send sterm -k C-Space -k f || return 1
-  "$HOLD_BIN" wait sterm --match ' Info ' --timeout 5000 >/dev/null || return 1
-  # the keys, framed
-  "$HOLD_BIN" send sterm -k C-Space --text '?' || return 1
-  "$HOLD_BIN" wait sterm --match 'Keys after Ctrl-Space' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek sterm >&2; return 1; }
-  out_has '╭' "$HOLD_BIN" peek sterm || { echo "the keys are not framed" >&2; "$HOLD_BIN" peek sterm >&2; return 1; }
-  "$HOLD_BIN" send sterm -k Escape || return 1
-  wait_gone sterm 'Keys after' || return 1
-  # leaving gives the person's screen back
-  "$HOLD_BIN" send sterm -k C-Space -k q || return 1
-  "$HOLD_BIN" wait sterm --regex '^BEFORE-LINE$' --timeout 5000 >/dev/null || { echo "the person's screen did not come back" >&2; "$HOLD_BIN" peek sterm >&2; return 1; }
-  "$HOLD_BIN" end sh1 sterm >/dev/null 2>&1 || true
-}
-
-# The person's chat name, as the bar shows it (its first button after the counters).
-chat_name_on_bar() {
-  "$HOLD_BIN" peek "$1" | tail -1 | sed -n 's/^ \[[0-9]*\] \[[0-9]*\] \[[0-9]*\]  \([a-z0-9_-]*\) .*/\1/p'
-}
-
-# Chat lists only agent harnesses: one backmux knows by name, and one the
-# person named with --agent - remembered in the config, so it is an agent
-# from then on. A plain program is not listed. With Assist ticked, the
-# message asks the agent to look at the app on screen with backmux peek and
-# to answer with backmux msg.
-test_chat_agents_only_and_assist() {
-  local me
-  fake_harness gemini || return 1
-  fake_harness mybot || return 1
-  "$HOLD_BIN" detach --name g1 -- "$TEST_ROOT/bin/gemini" >/dev/null || return 1
-  "$HOLD_BIN" --agent -dt --name b1 -- "$TEST_ROOT/bin/mybot" >"$TEST_ROOT/agent.out" 2>"$TEST_ROOT/agent.err" || return 1
-  grep -q 'mybot is an agent from now on' "$TEST_ROOT/agent.err" || { cat "$TEST_ROOT/agent.err" >&2; return 1; }
-  out_has '^mybot$' "$HOLD_BIN" config get agents || { echo "--agent did not remember mybot" >&2; return 1; }
-  "$HOLD_BIN" detach --name plainapp -- sh -c 'echo PLAIN-UP; exec cat' >/dev/null || return 1
-  start_term term plainapp 110 30 || return 1
-  "$HOLD_BIN" send term -k C-Space -k c || return 1
-  "$HOLD_BIN" wait term --match 'Select recipient' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" wait term --regex 'b1 +mybot' --timeout 5000 >/dev/null || { echo "the --agent harness is not listed" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  out_has 'g1  gemini' "$HOLD_BIN" peek term || { echo "a known harness is not listed" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  if "$HOLD_BIN" peek term | grep -q 'plainapp\|  term '; then echo "a program that is no agent is listed" >&2; "$HOLD_BIN" peek term >&2; return 1; fi
-  me=$("$HOLD_BIN" peek term | grep -o '[a-z0-9_-]* chat -> ' | head -1 | cut -d' ' -f1)
-  "$HOLD_BIN" send term --text g1 -k Enter || return 1
-  "$HOLD_BIN" wait term --match 'chat -> g1 · gemini' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
-  # Assist: Ctrl-S ticks the box; the text goes first, then the request
-  "$HOLD_BIN" send term -k C-s || return 1
-  "$HOLD_BIN" wait term --match '[x] Assist' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" send term 'the menu is wrong' --enter || return 1
-  "$HOLD_BIN" wait g1 --regex "typed:\\[msg from $me; reply: backmux msg $me \"\\.\\.\\.\"\\] the menu is wrong +The user is seeking assistance" --timeout 5000 >/dev/null ||
-    { echo "the Assist request did not arrive" >&2; "$HOLD_BIN" peek g1 >&2; return 1; }
-  out_has 'backmux peek plainapp --image /tmp/backmux-plainapp.png --cursor-ring' "$HOLD_BIN" logs g1 || { echo "Assist did not name the app on screen" >&2; "$HOLD_BIN" logs g1 >&2; return 1; }
-  out_has "backmux msg $me \"Your response\"" "$HOLD_BIN" logs g1 || { echo "Assist did not say how to answer" >&2; return 1; }
-  out_has '\[Assist request included\]' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
-  if "$HOLD_BIN" peek term | grep -q '\[x\] Assist'; then echo "the box stayed ticked" >&2; return 1; fi
-  # an agent that ends leaves chat: its conversation closes to the list, and
-  # it is not listed (nor once purged)
-  "$HOLD_BIN" end g1 >/dev/null 2>&1 || return 1
-  "$HOLD_BIN" wait term --match 'Select recipient' --timeout 8000 >/dev/null || { echo "the ended agent's conversation stayed open" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  wait_gone term 'g1  gemini' || { echo "an ended agent is still listed" >&2; return 1; }
-  out_has 'b1  mybot' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" purge g1 >/dev/null 2>&1 || return 1
-  sleep 1.2
-  if "$HOLD_BIN" peek term | grep -q 'g1'; then echo "a purged agent shows in chat" >&2; "$HOLD_BIN" peek term >&2; return 1; fi
-  "$HOLD_BIN" send term -k Escape || return 1
-  wait_gone term 'chat ->' || return 1
-  "$HOLD_BIN" end b1 plainapp term >/dev/null 2>&1 || true
-}
-
-# The bar's counters open the launcher on their list: green the running
-# terminals (attach one as a pane), blue the consoles that scroll (a server's
-# log opens in a viewer pane named for it, which leaves no record when
-# closed), red the ended processes (one is started again, as a pane).
-test_bar_counters_launch() {
-  local c r line
-  "$HOLD_BIN" detach --name base -- sh -c 'echo BASE-UP; exec cat' >/dev/null || return 1
-  "$HOLD_BIN" server -w --name srv -- sh -c 'i=0; while :; do i=$((i+1)); echo "SRV-$i"; sleep 1; done' >/dev/null || return 1
-  "$HOLD_BIN" -dt --name gone1 -- sh -c 'echo GONE1-RAN; exec cat' mark-gone1 >/dev/null || return 1
-  "$HOLD_BIN" end gone1 >/dev/null 2>&1 || return 1
-  start_term term base 120 30 || return 1
-  # a split puts the bar up
-  "$HOLD_BIN" detach --name side -- sh -c 'echo SIDE-UP; exec cat' mark-side >/dev/null || return 1
-  pick_pane term mark-side || return 1
-  "$HOLD_BIN" wait term --match ' Info ' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
-  line=$("$HOLD_BIN" peek term | tail -1)
-  # blue: the second counter
-  c=$(printf '%s\n' "$line" | python3 -c 'import sys; l=sys.stdin.read(); i=l.index("]"); print(l.index("[", i))')
-  "$HOLD_BIN" send term --mouse "click,$((c + 1)),29" || return 1
-  "$HOLD_BIN" wait term --regex 'Consoles [0-9]' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" wait term --regex 'srv .* log' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" send term -k Enter || return 1
-  "$HOLD_BIN" wait term --match '┤ srv-log ├' --timeout 8000 >/dev/null || { echo "the log did not open in a pane" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" wait term --regex 'SRV-[0-9]' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
-  # red: the third counter - the ended process starts again, as a pane
-  line=$("$HOLD_BIN" peek term | tail -1)
-  c=$(printf '%s\n' "$line" | python3 -c 'import sys; l=sys.stdin.read(); i=l.index("]"); j=l.index("]", i + 1); print(l.index("[", j))')
-  "$HOLD_BIN" send term --mouse "click,$((c + 1)),29" || return 1
-  "$HOLD_BIN" wait term --regex 'Ended [0-9]' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek term >&2; return 1; }
-  for r in $(seq 1 10); do "$HOLD_BIN" peek term | grep -q 'Arguments .*mark-gone1' && break; "$HOLD_BIN" send term -k Down; sleep 0.1; done
-  "$HOLD_BIN" send term -k Enter || return 1
-  "$HOLD_BIN" wait term --match '┤ gone1 ├' --timeout 8000 >/dev/null || { echo "the ended process did not come back as a pane" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  out_has 'Up .* gone1$' "$HOLD_BIN" list || { echo "gone1 is not running again" >&2; return 1; }
-  # Tab steps through the lists from the keyboard
-  "$HOLD_BIN" send term -k C-Space -k o || return 1
-  "$HOLD_BIN" wait term --regex 'Terminals [0-9]' --timeout 5000 >/dev/null || return 1
-  "$HOLD_BIN" send term -k Tab || return 1
-  "$HOLD_BIN" wait term --regex 'srv .* log' --timeout 5000 >/dev/null || { echo "Tab did not go to the next list" >&2; "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" send term -k Escape || return 1
-  # the viewer leaves no record once it is closed
-  "$HOLD_BIN" end srv-log >/dev/null 2>&1 || true
-  for r in $(seq 1 30); do out_has ' srv-log$' "$HOLD_BIN" list all -a || break; sleep 0.1; done
-  if out_has ' srv-log$' "$HOLD_BIN" list all -a; then echo "the viewer left a record" >&2; return 1; fi
-  "$HOLD_BIN" end base side srv gone1 term >/dev/null 2>&1 || true
 }
 
 # Chat's x closes it, and its title bar drags it (send --mouse takes 0-based
@@ -7008,6 +6874,11 @@ test_attach_repaints_live_screen() {
   "$HOLD_BIN" end painted >/dev/null 2>&1 || true
 }
 
+
+# the screen tests (grid, splits, shell, chat for agents, the bar)
+# shellcheck source=tests/test_screen.sh
+. "$(dirname "${BASH_SOURCE[0]}")/test_screen.sh"
+
 run_test "--print spans --all and multiple explicit targets" test_print_over_all_and_multiple
 run_test "stop refuses a record with a tampered pgid<=1 (exit 5)" test_signal_refuses_tampered_pgid
 run_test "public-index write failure rolls back the start" test_public_index_write_rollback
@@ -7213,6 +7084,8 @@ run_test "a launch on a terminal is inline: the screen stays, chat is no eraser"
 run_test "panes: A B / C D; swap by letter, past the window to the next; window and move modes; z; backmux swap by name" test_panes_windows_and_swap
 run_test "footers, f, lock and Alt-arrows, w a d rearranging, n rename and ; save" test_footers_lock_rearrange_and_names
 run_test "chat is the person's: messages behind the header, replies come back, it follows them" test_chat_is_the_persons
+run_test "the grid: half-window slides, o and O, a new terminal at the next place" test_grid_new_terminals_and_splits
+run_test "splits: the active pane halved, the window takes the shape named (AE, ACD)" test_splits_make_the_shape_named
 run_test "backmux shell: a cleared screen of its own, chat up, the bar, f, Esc, the keys framed" test_shell_is_the_persons_screen
 run_test "chat lists running agent harnesses only; --agent remembers one; Assist asks for help with the app" test_chat_agents_only_and_assist
 run_test "the bar's counters open the launcher: attach, open a log, start again" test_bar_counters_launch

@@ -45,31 +45,50 @@ void mux_draw_frame(struct mux *m, int y, int x, int h, int w, const char *title
     }
 }
 
+/* The split lines, from who owns each quarter of the screen: a line runs
+ * between two quarters with different owners (an empty quarter too), never
+ * through a pane that spans both. Each line cell's glyph comes from which
+ * of its neighbors are lines, so every junction draws itself. */
 static void draw_separators(struct mux *m) {
-    int n = mux_win_count(m, m->view);
-    if (n < 2 || m->tcols < 3 || m->arows < 3) return;
-    int left, ltop, rtop;
-    mux_lines_of(m, m->view, m->arows, m->tcols, &left, &ltop, &rtop);
-    struct pane *f = mux_focused(m);
-    for (int r = 0; r < m->arows; r++) {
-        bool near = f && r >= f->row && r < f->row + f->rows;
-        comp_put(m->comp, r, left, 0x2502, near ? &ST_SEP_FOCUS : &ST_SEP); /* │ */
+    int R = m->arows, C = m->tcols, X = m->gx, YL = m->gyl, YR = m->gyr;
+    if (C < 3 || R < 3) return;
+    struct pane *const *cell = m->cell;
+    unsigned char *line = calloc((size_t)R * (size_t)C, 1);
+    if (!line) return;
+#define LN(r, c) line[(size_t)(r) * (size_t)C + (size_t)(c)]
+    for (int r = 0; r < R; r++) {
+        if (r == YL || r == YR) continue; /* where rows meet: decided below */
+        struct pane *lo = r < YL ? cell[0] : cell[2], *ro = r < YR ? cell[1] : cell[3];
+        if (lo != ro) LN(r, X) = 1;
     }
-    if (mux_info_on(m)) comp_put(m->comp, 0, left, 0x252c, &ST_SEP); /* ┬: the line meets the name bars */
-    if (n >= 3) { /* under A */
-        bool near = f && f->col == 0;
-        for (int c = 0; c < left; c++) comp_put(m->comp, ltop, c, 0x2500, near ? &ST_SEP_FOCUS : &ST_SEP); /* ─ */
+    if (cell[0] != cell[2])
+        for (int c = 0; c < X; c++) LN(YL, c) = 1;
+    if (cell[1] != cell[3])
+        for (int c = X + 1; c < C; c++) LN(YR, c) = 1;
+    int jr[2] = {YL, YR};
+    for (int k = 0; k < 2; k++) {
+        int r = jr[k];
+        if ((r > 0 && LN(r - 1, X)) || (r + 1 < R && LN(r + 1, X)) || LN(r, X - 1) || LN(r, X + 1)) LN(r, X) = 1;
     }
-    if (n == 4) { /* under B */
-        bool near = f && f->col > 0;
-        for (int c = left + 1; c < m->tcols; c++) comp_put(m->comp, rtop, c, 0x2500, near ? &ST_SEP_FOCUS : &ST_SEP);
-    }
-    /* where the lines meet: one cross when both columns split at one row */
-    if (n == 4 && ltop == rtop) comp_put(m->comp, ltop, left, 0x253c, &ST_SEP); /* ┼ */
-    else {
-        if (n >= 3) comp_put(m->comp, ltop, left, 0x2524, &ST_SEP); /* ┤ */
-        if (n == 4) comp_put(m->comp, rtop, left, 0x251c, &ST_SEP); /* ├ */
-    }
+    static const uint32_t glyph[16] = {
+        /* u d l r */
+        0x2502, 0x2500, 0x2500, 0x2500, 0x2502, 0x250c, 0x2510, 0x252c,
+        0x2502, 0x2514, 0x2518, 0x2534, 0x2502, 0x251c, 0x2524, 0x253c,
+    };
+    const struct pane *f = m->active;
+    for (int r = 0; r < R; r++)
+        for (int c = 0; c < C; c++) {
+            if (!LN(r, c)) continue;
+            unsigned mask = (r > 0 && LN(r - 1, c) ? 8u : 0) | (r + 1 < R && LN(r + 1, c) ? 4u : 0) |
+                            (c > 0 && LN(r, c - 1) ? 2u : 0) | (c + 1 < C && LN(r, c + 1) ? 1u : 0);
+            bool near = f && f->visible && r >= f->row - 1 && r <= f->row + f->rows && c >= f->col - 1 &&
+                        c <= f->col + f->cols;
+            uint32_t g = glyph[mask];
+            if (r == 0 && mux_info_on(m) && (mask & 4u)) g = 0x252c; /* ┬: the line meets the name bars */
+            comp_put(m->comp, r, c, g, near ? &ST_SEP_FOCUS : &ST_SEP);
+        }
+#undef LN
+    free(line);
 }
 
 /* A key as a person reads it: NUL is Ctrl-Space, a control byte Ctrl-X, a
@@ -82,19 +101,19 @@ void mux_key_label(unsigned char k, char out[16]) {
 
 /* Jump: the panes of this terminal by name, with their window's number. */
 static void draw_jump(struct mux *m) {
-    int rows = 0;
-    for (int i = 0; i < MUX_MAX_PANES; i++) rows += m->slot[i] != NULL;
+    int rows = mux_pane_total(m);
     int w = 52 < m->tcols - 4 ? 52 : m->tcols - 4, h = rows + 4 < m->arows - 2 ? rows + 4 : m->arows - 2;
     if (w < 16 || h < 5) return;
     int x = (m->tcols - w) / 2, y = (m->arows - h) / 2, k = 0;
     mux_draw_frame(m, y, x, h, w, "Go to pane", "Up/Down  Enter  Esc");
-    for (int i = 0; i < MUX_MAX_PANES && k < h - 4; i++) {
-        if (!m->slot[i]) continue;
+    for (int i = 0; i < MUX_SLOTS && k < h - 4; i++) {
+        if (!m->shown[i]) continue;
         const struct comp_style *st = k == m->pick_sel ? &ST_SEL : &ST_BOX;
-        char line[ALIAS_MAX_LEN + 128];
-        const struct pane *p = m->slot[i];
-        snprintf(line, sizeof(line), " %-*s %-10s win %d", w - 22 > 4 ? w - 22 : 4, p->name,
-                 p->agent[0] ? p->agent : p->program, mux_window_key(i / 4));
+        char line[ALIAS_MAX_LEN + 128], at[4];
+        const struct pane *p = m->shown[i];
+        mux_position_label(m, p, at);
+        snprintf(line, sizeof(line), " %-3s %-*s %-10s win %d", at, w - 26 > 4 ? w - 26 : 4, p->name,
+                 p->agent[0] ? p->agent : p->program, mux_window_key(i / MUX_POS));
         comp_fill(m->comp, y + 2 + k, x + 1, w - 2, st);
         mux_put(m, y + 2 + k, x + 1, w - 2, line, st);
         k++;
@@ -113,8 +132,8 @@ void mux_human_bytes(uint64_t b, char *out, size_t n) {
  * middle (click it, or the prefix then n, to type a new one over it), and at
  * the right what it runs and its load. The line is green beside the focused
  * pane, as the split lines are. */
-static void draw_name_bar(struct mux *m, struct pane *p, int slot, struct comp_want *want) {
-    bool focus = p == mux_focused(m);
+static void draw_name_bar(struct mux *m, struct pane *p, struct comp_want *want) {
+    bool focus = p == m->active;
     int row = p->brow, col = p->col, w = p->cols;
     if (row < 0 || row >= m->arows || w < 4) return;
     const struct comp_style *line = focus ? &ST_SEP_FOCUS : &ST_NB_LINE;
@@ -139,13 +158,15 @@ static void draw_name_bar(struct mux *m, struct pane *p, int slot, struct comp_w
         want->cursor_row = row;
         want->cursor_col = bx + 2 + used < bx + bw - 1 ? bx + 2 + used : bx + bw - 2;
     }
-    /* left: the letter, then what is true of it now */
+    /* left: its place in the base ("1A" - the same in every view, the
+     * name swap and every command take), then what is true of it now */
     int lx = col + 1, lend = bx - 1;
-    char letter = mux_slot_letter(slot);
-    if (letter && lx + 3 < lend) {
-        char lt[4] = {' ', letter, ' ', '\0'};
-        bool chosen = m->swapping && m->swap_first == slot;
-        lx += mux_put(m, row, lx, lend - lx, lt, m->swapping ? (chosen ? &ST_SEL : &ST_LETTER) : &ST_NB_LETTER);
+    char at[4], chip[8];
+    mux_position_label(m, p, at);
+    snprintf(chip, sizeof(chip), " %s ", at);
+    if (lx + 4 < lend) {
+        bool chosen = m->swapping && m->swap_first == mux_base_slot(m, p);
+        lx += mux_put(m, row, lx, lend - lx, chip, m->swapping ? (chosen ? &ST_SEL : &ST_LETTER) : &ST_NB_LETTER);
         lx++;
     }
     char flags[4][40];
@@ -207,12 +228,18 @@ void mux_render(struct mux *m) {
     if (!m->dirty) return;
     m->dirty = false;
     comp_begin(m->comp, NULL);
-    struct pane *f = mux_focused(m);
-    int n = mux_win_count(m, m->view);
+    struct pane *f = m->active && m->active->visible ? m->active : NULL;
     bool full = m->full && m->full == f;
+    /* the panes in view, each once */
+    struct pane *vis[4];
+    int n = 0;
+    for (int c = 0; c < 4; c++) {
+        bool seen = false;
+        for (int k = 0; k < n; k++) seen = seen || vis[k] == m->cell[c];
+        if (m->cell[c] && !seen) vis[n++] = m->cell[c];
+    }
     for (int k = 0; k < n; k++) {
-        struct pane *p = m->slot[m->view * 4 + k];
-        if (full && p != m->full) continue;
+        struct pane *p = vis[k];
         struct hold_snapshot snap;
         if (hold_screen_snapshot(p->scr, &snap) == 0) {
             comp_blit(m->comp, &snap, p->row, p->col, p->rows, p->cols);
@@ -220,6 +247,11 @@ void mux_render(struct mux *m) {
         }
     }
     if (!full) draw_separators(m);
+    if (n == 0 && m->arows > 2) { /* nothing in this part of the grid */
+        static const char empty[] = "Nothing here: Ctrl-Space l opens a process, Alt-arrows move";
+        int el = mux_text_cols(empty);
+        mux_put(m, m->arows / 2, el < m->tcols ? (m->tcols - el) / 2 : 0, m->tcols, empty, &ST_NB_STAT);
+    }
     struct comp_want want = {0};
     struct hold_screen_modes modes = {0};
     if (f) hold_screen_modes(f->scr, &modes);
@@ -247,12 +279,10 @@ void mux_render(struct mux *m) {
      * notice with no bar to say it in) */
     bool info = mux_info_on(m);
     for (int k = 0; k < n; k++) {
-        int slot = m->view * 4 + k;
-        struct pane *p = m->slot[slot];
-        if (full && p != m->full) continue;
+        struct pane *p = vis[k];
         bool needed = m->swapping || (m->prompt != PROMPT_NONE && m->prompt_pane == p) ||
                       (p == f && m->now < m->notice_until && !mux_bar_on(m));
-        if (info || needed) draw_name_bar(m, p, slot, &want);
+        if (info || needed) draw_name_bar(m, p, &want);
     }
     /* chat over the panes, then any other floating window over chat: only
      * one is up at a time anyway */

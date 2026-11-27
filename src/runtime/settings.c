@@ -465,7 +465,7 @@ int hold_cmd_swap_action(const struct hold_invocation *inv,
     if (argc == 1) {
         const char *comma = strchr(argv[0], ',');
         if (!comma || comma == argv[0] || !comma[1] || (size_t)(comma - argv[0]) >= sizeof(a)) {
-            fprintf(stderr, "usage: backmux swap TARGET,TARGET | TARGET TARGET   (process names or IDs)\n");
+            fprintf(stderr, "usage: backmux swap TARGET,TARGET | TARGET TARGET   (places like 2C, process names or IDs)\n");
             return HOLD_EXIT_USAGE;
         }
         snprintf(a, sizeof(a), "%.*s", (int)(comma - argv[0]), argv[0]);
@@ -486,7 +486,7 @@ int hold_cmd_swap_action(const struct hold_invocation *inv,
         char tail[8] = "";
         if (sscanf(e->d_name, "mux.%d%7s", &pid, tail) != 1 || pid <= 1) continue;
         if (kill(pid, 0) != 0 && errno == ESRCH) continue;
-        char path[HOLD_PATH_MAX], text[4096] = "";
+        char path[HOLD_PATH_MAX], text[16384] = ""; /* 36 panes, base places and the view */
         if (hold_checked_snprintf(path, sizeof(path), "%s/%s", dir, e->d_name) != 0) continue;
         int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
         if (fd < 0) continue;
