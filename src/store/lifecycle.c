@@ -74,6 +74,11 @@ static int reserve_hashed_id(const struct hold_store *store,
     char reserve[HOLD_PATH_MAX];
     for (unsigned long counter = 0; counter < 1024; counter++) {
         compute_run_hash(m, counter, out_id);
+        /* A letter first (a-f): then a word that starts with a digit is never
+         * an id, so it cannot be mistaken for a window number, a size or a pid,
+         * and a name, an id and a pane can all be written as the shortest
+         * unique prefix. Ids made before this still resolve as ids. */
+        if (isdigit((unsigned char)out_id[0])) continue;
         if (!hold_valid_id(out_id) || run_id_material_exists(store, avoid_public_store, out_id)) continue;
         if (hold_checked_snprintf(reserve, sizeof(reserve), "%s/.%s.reserve", store->record_dir, out_id) != 0) return -1;
         int fd = open(reserve, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
