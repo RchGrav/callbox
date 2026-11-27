@@ -371,6 +371,7 @@ bool mux_resize_toward(struct mux *m, char dir, bool grow) {
         int *row = rows_first || left ? &m->lpct[w] : &m->rpct[w];
         *row = clamp_pct(pct_or_half(*row) + (dir == 'B' ? step : -step));
     }
+    m->layout_dirty = true;
     mux_relayout(m);
     return true;
 }

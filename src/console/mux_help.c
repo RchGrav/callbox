@@ -24,6 +24,7 @@ static const struct help_line keys_prefix[] = {
     {"a", "Sort by name (view, toggle)"},
     {"w", "Spread over windows (view)"},
     {"d", "Pack four to a window (view)"},
+    {"L", "Layouts: load, save, the default"},
     {NULL, "Display"},
     {"f", "Bottom bar on/off"},
     {"i", "Info: name bars on/off"},

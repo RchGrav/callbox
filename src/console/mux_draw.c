@@ -295,6 +295,9 @@ void mux_finish_frame(struct mux *m, struct comp_want *want) {
     } else if (m->fl == FL_JUMP) {
         draw_jump(m);
         want->cursor_visible = false;
+    } else if (m->fl == FL_LAYOUTS) {
+        mux_draw_layouts(m);
+        want->cursor_visible = false;
     }
     if (m->help) {
         mux_draw_help(m);

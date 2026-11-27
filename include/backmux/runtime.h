@@ -127,6 +127,7 @@ int hold_person_chat_name(const struct hold_store *store, const char *own, char 
 void hold_prepare_mux(const struct hold_invocation *inv, const struct hold_store *store);
 /* --agent: add the program's name to the person's agent list (the config's "agents"). */
 void hold_remember_agent(const struct hold_invocation *inv, int argc, char **argv);
+int hold_cmd_layout_action(const struct hold_invocation *inv, const struct hold_store *user_store, int argc, char **argv);
 int hold_cmd_swap_action(const struct hold_invocation *inv, const struct hold_store *user_store,
                          const struct hold_store *system_store, int argc, char **argv);
 int hold_cmd_inbox_action(const struct hold_invocation *inv, const struct hold_store *user_store, int argc, char **argv);

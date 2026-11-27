@@ -100,7 +100,8 @@ struct pane {
 /* FL_PROCS: the process launcher - running terminals to attach as panes,
  * consoles that scroll to open in a viewer pane, ended processes to start
  * again. FL_JUMP: the panes by name. */
-enum floater { FL_NONE, FL_PROCS, FL_JUMP };
+enum floater { FL_NONE, FL_PROCS, FL_JUMP, FL_LAYOUTS };
+#define MUX_LAYOUT_MAX 32 /* layouts listed in the panel */
 enum pick_cat { PK_TTY, PK_SCROLL, PK_ENDED, PK_CATS };
 
 /* A mode keeps the keyboard until Esc or Enter, so moving around takes no
@@ -143,6 +144,12 @@ struct mux {
     bool sort;             /* the view: by name (prefix a) */
     enum arrangement arr;  /* the view: base, spread (prefix w), pack (prefix d) */
     bool layout_dirty;     /* the base differs from the layout last loaded or saved */
+    char layout_name[ALIAS_MAX_LEN + 1]; /* the layout last loaded or saved, "" none */
+    /* the Layouts panel (mux_layouts.c) */
+    char lay_names[MUX_LAYOUT_MAX][ALIAS_MAX_LEN + 1];
+    char lay_default[ALIAS_MAX_LEN + 1];
+    int nlay, lay_sel;
+    bool lay_naming; /* typing a name for "save as" (into in) */
     struct pane *active;   /* the pane keys go to */
     struct pane *full;     /* the pane toggled full screen, NULL none */
     /* the viewport on the 3x3 grid, in quadrants (0..4 each): even = on a
@@ -330,6 +337,13 @@ bool mux_resize_toward(struct mux *m, char dir, bool grow);
 /* mux_find.c */
 struct pane *mux_find(const struct mux *m, const char *word, int *slot, const char **why);
 /* mux_slide.c */
+/* mux_layouts.c */
+bool mux_layout_save(struct mux *m, const char *name, const char **why);
+bool mux_layout_load(struct mux *m, const char *name, struct pane *keep, const char **why);
+void mux_layouts_open(struct mux *m);
+void mux_draw_layouts(struct mux *m);
+void mux_layouts_key(struct mux *m, const unsigned char *k, size_t n);
+void mux_serve_requests(struct mux *m);
 void mux_slide_begin(struct mux *m, int nx, int ny);
 bool mux_slide_frame(struct mux *m, struct comp_want *want);
 bool mux_sliding(const struct mux *m);
@@ -340,6 +354,8 @@ void mux_refresh_stats(struct mux *m);
 void mux_draw_procs(struct mux *m);
 void mux_launch_pick(struct mux *m, const struct pick *p);
 void mux_new_terminal(struct mux *m, char split);
+struct pane *mux_open_id(struct mux *m, const char *id, const char *fallback_name);
+bool mux_start_again(struct mux *m, const char *id, const char *name, bool tty, bool pipe, bool shell);
 /* mux_chat.c */
 void mux_write_small(const char *path, const char *text, size_t len);
 size_t mux_read_small(const char *path, char *out, size_t cap);

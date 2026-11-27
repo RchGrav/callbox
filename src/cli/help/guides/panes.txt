@@ -95,6 +95,14 @@ Moving a pane to another window leaves the view where it is. Layout changes
 preserve the running processes. For scripted swaps by place, name or ID,
 see backmux help swap.
 
+LAYOUTS
+  Ctrl-Space L     the Layouts panel: Enter loads, s saves (over the one
+                   loaded), n saves as a new name, d makes it the default
+A layout keeps the base by name; loading one never ends a process (panes
+not in it are let go, ended ones are started again). The bar shows the
+layout's name, with * once panes have moved since. backmux shell opens with
+the default. See backmux help layout.
+
 NAME BARS AND THE BAR
 With Info on, each pane's name bar shows its place (1A) and state at the left,
 its name boxed in the middle, and what it runs with its CPU and memory at

@@ -142,6 +142,14 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
     struct hold_term_signals sig;
     hold_term_signals_install(&sig, true);
     if (mux_command(m, cmd) == 1) goto detach;
+    /* backmux shell opens with the default layout (config layout NAME); its
+     * own shell joins it */
+    char deflt[ALIAS_MAX_LEN + 1];
+    const char *home = hold_console_home();
+    if (m->resident && home && hold_settings_get(home, "layout", deflt, sizeof(deflt)) == 0 && deflt[0]) {
+        const char *why = NULL;
+        if (!mux_layout_load(m, deflt, first, &why)) mux_notice(m, "%s", why);
+    }
     /* backmux shell starts with chat up but the keyboard on the shell: it is
      * the person's shell they came to type in */
     if (m->resident && m->chat && chat_has_keyboard(m->chat)) chat_toggle(m->chat);
@@ -186,36 +194,7 @@ int hold_mux_run(const struct hold_store *store, const char *chat_name, const ch
             *handed_back = true;
             break;
         }
-        /* backmux swap, from anywhere: a request file names two panes */
-        char req_path[HOLD_PATH_MAX], req[256];
-        if (hold_checked_snprintf(req_path, sizeof(req_path) - 8, "%s/chat/mux.%d.swap", store->base, (int)getpid()) == 0 &&
-            mux_read_small(req_path, req, sizeof(req))) {
-            unlink(req_path);
-            char a[96] = "", b[96] = "", why2[200] = "bad request";
-            int ok = -1;
-            /* a place, a name or an id, by its shortest unique prefix
-             * (mux_find.c); the second may be a free place */
-            if (sscanf(req, "%95s %95s", a, b) == 2) {
-                int sa = -1, sb = -1;
-                const char *wa = NULL, *wb = NULL, *wsend = NULL;
-                struct pane *pa = mux_find(m, a, &sa, &wa), *pb = mux_find(m, b, &sb, &wb);
-                (void)pb;
-                if (!pa) snprintf(why2, sizeof(why2), "%s", wa ? wa : "no pane there");
-                else if (sb < 0) snprintf(why2, sizeof(why2), "%s", wb ? wb : "no such place");
-                else if ((wsend = mux_base_send(m, pa, sb)) != NULL) snprintf(why2, sizeof(why2), "%s", wsend);
-                else {
-                    mux_relayout(m);
-                    mux_focus_in_view(m);
-                    ok = 0;
-                }
-            }
-            if (ok != 0) mux_notice(m, "swap: %s", why2);
-            /* the answer, for the backmux swap waiting on it */
-            char res_path[HOLD_PATH_MAX], res[200];
-            int rl = ok == 0 ? snprintf(res, sizeof(res), "ok\n") : snprintf(res, sizeof(res), "error %s\n", why2);
-            if (hold_checked_snprintf(res_path, sizeof(res_path) - 8, "%s/chat/mux.%d.result", store->base, (int)getpid()) == 0)
-                mux_write_small(res_path, res, (size_t)rl);
-        }
+        mux_serve_requests(m); /* backmux swap and backmux layout, from anywhere */
         mux_chat_look(m);
         if (mux_decorated(m) && (mux_bar_on(m) || mux_info_on(m))) mux_refresh_stats(m);
         mux_render(m);

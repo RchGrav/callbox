@@ -17,6 +17,17 @@
 
 #define SLIDE_MS 140
 
+/* How long a slide lasts. A test build (-DHOLD_TESTING) takes it from
+ * HOLD_TEST_SLIDE_MS, so the suite can see a frame between two views on a
+ * busy machine instead of sampling a 140 ms window it may miss. */
+static int slide_ms(void) {
+#ifdef HOLD_TESTING
+    const char *t = getenv("HOLD_TEST_SLIDE_MS");
+    if (t && atoi(t) > 0) return atoi(t);
+#endif
+    return SLIDE_MS;
+}
+
 bool mux_sliding(const struct mux *m) {
     return m->slide_from.cells != NULL;
 }
@@ -57,6 +68,10 @@ static const struct hold_cell *cell_at(const struct hold_snapshot *s, int r, int
  * rest over it. false when there is no slide (or it just ended). */
 bool mux_slide_frame(struct mux *m, struct comp_want *want) {
     if (!mux_sliding(m)) return false;
+    /* what the terminal is told while the screen moves: no cursor, the
+     * mouse still reported (a click mid-slide still lands) */
+    memset(want, 0, sizeof(*want));
+    want->mouse = HOLD_MOUSE_DRAG;
     if (m->slide_pending) { /* the view has moved: the frame it arrives at */
         mux_compose_panes(m, want);
         if (comp_take_frame(m->comp, &m->slide_to) != 0) {
@@ -66,7 +81,7 @@ bool mux_slide_frame(struct mux *m, struct comp_want *want) {
         m->slide_pending = false;
         m->slide_start = m->now;
     }
-    double t = (double)(m->now - m->slide_start) / SLIDE_MS;
+    double t = (double)(m->now - m->slide_start) / slide_ms();
     if (t >= 1.0 || m->slide_from.rows != m->slide_to.rows || m->slide_from.cols != m->slide_to.cols) {
         mux_slide_stop(m);
         return false;

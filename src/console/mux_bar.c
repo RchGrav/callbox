@@ -102,6 +102,15 @@ void mux_draw_bar(struct mux *m) {
         b = ITEM(1, in_view[w] ? 8 : 5, in_view[w] ? &ST_WIN_CUR : &ST_WIN, BA_WINDOW, w);
         snprintf(b->full, sizeof(b->full), " %d ", mux_window_key(w));
     }
+    /* the layout: its name, starred when the base has changed since */
+    b = ITEM(1, 6, m->layout_dirty && m->layout_name[0] ? &ST_BTN_ON : &ST_BTN_OFF, BA_LAYOUT, 0);
+    if (m->layout_name[0]) {
+        snprintf(b->full, sizeof(b->full), " %s%s ", m->layout_name, m->layout_dirty ? "*" : "");
+        snprintf(b->brief, sizeof(b->brief), " %.6s%s ", m->layout_name, m->layout_dirty ? "*" : "");
+    } else {
+        snprintf(b->full, sizeof(b->full), " Layout ");
+        snprintf(b->brief, sizeof(b->brief), " Lay ");
+    }
     /* the view: sorted by name, spread or packed (each on until clicked off) */
     b = ITEM(1, 4, m->sort ? &ST_BTN_ON : &ST_BTN_OFF, BA_SORT, 0);
     snprintf(b->full, sizeof(b->full), " Sort ");
@@ -211,6 +220,9 @@ void mux_bar_click(struct mux *m, enum bar_act act, int arg) {
         return;
     case BA_ZOOM: (void)mux_command(m, 'z'); return;
     case BA_LOCK: (void)mux_command(m, '\\'); return;
+    case BA_LAYOUT:
+        mux_open_floater(m, FL_LAYOUTS);
+        return;
     case BA_SLIDE: /* the slide on or off, kept in the config for next time */
         g_slide = !g_slide;
         if (hold_console_home()) (void)hold_settings_put(hold_console_home(), "slide", g_slide ? "on" : "off");

@@ -259,7 +259,7 @@ void mux_floater_key(struct mux *m, const unsigned char *seq, size_t n) {
     bool down = n == 3 && seq[0] == 0x1b && (seq[1] == '[' || seq[1] == 'O') && seq[2] == 'B';
     bool enter = n == 1 && (seq[0] == '\r' || seq[0] == '\n');
     m->dirty = true;
-    if (esc) {
+    if (esc && !(m->fl == FL_LAYOUTS && m->lay_naming)) {
         m->fl = FL_NONE;
         return;
     }
@@ -280,6 +280,9 @@ void mux_floater_key(struct mux *m, const unsigned char *seq, size_t n) {
             m->fl = FL_NONE;
             mux_launch_pick(m, &p);
         }
+        return;
+    case FL_LAYOUTS:
+        mux_layouts_key(m, seq, n);
         return;
     case FL_JUMP: {
         int rows = mux_pane_total(m);
@@ -308,6 +311,7 @@ void mux_open_floater(struct mux *m, enum floater f) {
     if (f == FL_PROCS && m->assumed) mux_go_alt(m);
     m->pick_sel = 0;
     if (f == FL_PROCS) mux_load_picks(m);
+    if (f == FL_LAYOUTS) mux_layouts_open(m);
     m->fl = f;
     m->dirty = true;
 }
@@ -374,6 +378,9 @@ int mux_command(struct mux *m, unsigned char key) {
     case 'o': /* the next pane, in order across every window (tmux's key) */
     case 'O':
         mux_cycle(m, key == 'o' ? 1 : -1);
+        return 0;
+    case 'L': /* layouts: switch, save, save as, the default */
+        mux_open_floater(m, FL_LAYOUTS);
         return 0;
     case 'l': /* the launcher */
         m->pick_cat = PK_TTY;

@@ -185,13 +185,14 @@ void mux_draw_procs(struct mux *m) {
     }
 }
 
-/* A process as a pane, by its record's console. */
-static bool open_pane_id(struct mux *m, const char *id, const char *fallback_name, char split) {
+/* A process as a pane, by its record's console - not placed yet. NULL
+ * (and a notice saying why) when it has no record or no console. */
+struct pane *mux_open_id(struct mux *m, const char *id, const char *fallback_name) {
     struct hold_run_record r;
     char path[HOLD_PATH_MAX];
     if (hold_load_record_by_id(m->store->record_dir, id, &r, path, sizeof(path)) != 0) {
         mux_notice(m, "%s has no record", fallback_name);
-        return false;
+        return NULL;
     }
     char name[ALIAS_MAX_LEN + 1], sock[HOLD_PATH_MAX];
     snprintf(name, sizeof(name), "%s", r.has_name && r.name[0] ? r.name : fallback_name);
@@ -199,14 +200,36 @@ static bool open_pane_id(struct mux *m, const char *id, const char *fallback_nam
     hold_free_run_record(&r);
     if (!sock[0]) {
         mux_notice(m, "%s has no console", name);
-        return false;
+        return NULL;
     }
     const char *why = NULL;
     struct pane *np = mux_pane_open(id, name, sock, m->arows, m->tcols, &why);
-    if (!np) {
-        mux_notice(m, "cannot attach %s: %s", name, why ? why : "console unavailable");
+    if (!np) mux_notice(m, "cannot attach %s: %s", name, why ? why : "console unavailable");
+    return np;
+}
+
+/* An ended process started again in the background, as it first ran (on a
+ * PTY, on pipes, or plain). A shell comes back only attached (backmux NAME):
+ * false, saying so. */
+bool mux_start_again(struct mux *m, const char *id, const char *name, bool tty, bool pipe, bool shell) {
+    char err[200], out[ID_STR_LEN + 8];
+    if (shell) {
+        mux_notice(m, "a shell comes back attached: backmux %s", name);
         return false;
     }
+    char *args[] = {tty ? "-dt" : pipe ? "-di" : "-d", (char *)id, NULL};
+    if (mux_run_self(args, err, sizeof(err), out, sizeof(out)) != 0) {
+        mux_notice(m, "cannot start %s: %s", name, err[0] ? err : "backmux failed");
+        return false;
+    }
+    return true;
+}
+
+/* A process as a pane, placed: beside the active pane (split), or where the
+ * view puts the next one. */
+static bool open_pane_id(struct mux *m, const char *id, const char *fallback_name, char split) {
+    struct pane *np = mux_open_id(m, id, fallback_name);
+    if (!np) return false;
     if (split) {
         /* the split was checked before the terminal started; the pane is
          * placed beside the active one, and made active */
@@ -271,15 +294,7 @@ void mux_launch_pick(struct mux *m, const struct pick *p) {
         (void)open_pane_id(m, id, p->name, 0);
         return;
     }
-    if (p->shell) {
-        mux_notice(m, "a shell comes back attached: backmux %s", p->name);
-        return;
-    }
-    char *args[] = {p->tty ? "-dt" : p->pipe ? "-di" : "-d", (char *)p->id, NULL};
-    if (mux_run_self(args, err, sizeof(err), id, sizeof(id)) != 0) {
-        mux_notice(m, "cannot start %s: %s", p->name, err[0] ? err : "backmux failed");
-        return;
-    }
+    if (!mux_start_again(m, p->id, p->name, p->tty, p->pipe, p->shell)) return;
     if (p->tty) (void)open_pane_id(m, p->id, p->name, 0);
     else mux_notice(m, "started %s", p->name);
 }

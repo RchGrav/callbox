@@ -33,6 +33,7 @@ sending either byte to the program.
 | New terminal | Ctrl-Space Enter | Start your shell in the active pane's directory, as the next pane (see Placement). |
 | Split right / down | Ctrl-Space \| / Ctrl-Space - | Start your shell beside or under the active pane, halving it; the window takes the shape that names it. |
 | Open a process | Ctrl-Space l | Open the process launcher: running terminals, consoles that scroll, ended processes. |
+| Layouts | Ctrl-Space L | The Layouts panel: load, save, save as, set the default. |
 | Next / previous pane | Ctrl-Space o / O | Every pane in order, A to E, window 1 to 9, round again; the view follows. tmux's key. |
 | Command help | Ctrl-Space ? | Display the prefix-command reference. |
 | Pane Navigation | Ctrl-Space p | Enter pane navigation mode. |
@@ -175,6 +176,21 @@ keys move at full speed. It is drawn from the panes' screens as they are (the
 programs are not asked anything); over a slow link, turn it off with
 `backmux config set slide off` or Slide on the bar.
 
+**Layouts.** A layout keeps the base by name, in
+`~/.config/backmux/layouts/NAME`: plain text a person can read and edit -
+the view's place, each window's split lines, and each pane's place with its
+process id (the name beside it is for reading; a rename does not break it).
+Why ids, not commands: each process's record already says how it was
+started (program, mode, user, store), so a layout only says where things
+go. Saving with a view on saves what is on screen (it becomes the base).
+Loading never ends anything: panes not in the layout are let go and run on,
+panes already here move, running members are attached (taken from another
+terminal, as attach does), ended ones are started again from their records.
+Ctrl-Space L opens the Layouts panel; the bar shows the layout's name, with
+`*` once the base has changed since it was saved or loaded. `backmux layout
+default NAME` (or d in the panel) is what `backmux shell` opens with; its
+own shell joins it. See `backmux help layout`.
+
 **One way to name a pane.** `backmux swap` (and the compositor's own
 requests) take a place, a process name, or a process id, by the shortest
 prefix that is unique. An exact name or id wins; anything that could mean
@@ -222,6 +238,7 @@ the keys do. From the left:
 | Mode, notices | The prefix waiting, a mode, the last notice | Mode: the keys |
 | Minimap | Two braille cells: a dot for each window of the 3×3 grid in view | |
 | Window numbers | Windows with panes; those in view highlighted (1, 2 or 4) | Go to that window |
+| Layout | The layout loaded (`*`: changed since) | The Layouts panel |
 | Sort, Spread, Pack | The view; highlighted while on | Toggle it |
 | Slide | Whether the view slides when it moves | Toggle it (kept in the config) |
 | Zoom, Lock | Highlighted while on, for the active pane | Toggle |

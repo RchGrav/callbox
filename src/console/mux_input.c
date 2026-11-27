@@ -38,7 +38,7 @@ void mux_handle_mouse(struct mux *m, int b, int x, int y, bool release) {
         if (!motion && !release && !wheel && sp) mux_swap_choose(m, mux_base_slot(m, sp));
         return;
     }
-    if (m->fl == FL_JUMP) {
+    if (m->fl == FL_JUMP || m->fl == FL_LAYOUTS) {
         /* a click anywhere puts the list away */
         if (!motion && !release) {
             m->fl = FL_NONE;

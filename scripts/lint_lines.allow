@@ -5,7 +5,7 @@
 1915 src/console/broker.c
 1298 src/runtime/start.c
 1288 src/runtime/screen_cmds.c
-1028 src/cli/main.c
+854 src/cli/main.c
 859 src/runtime/list.c
 787 src/runtime/signal.c
 783 src/console/attach.c

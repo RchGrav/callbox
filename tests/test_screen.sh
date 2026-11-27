@@ -225,14 +225,14 @@ test_bar_counters_launch() {
 }
 
 # The slide: with slide on, the view moving to the next window passes
-# through frames between the two (the split line part of the way across),
-# then settles where it goes; a key mid-slide ends it at once. Sampled, so
-# a few tries: under load a frame between can be missed.
+# through frames between the two (X1 part of the way across), then settles
+# where it goes. The test build's slide is slowed so a frame between is seen.
 test_slide_shows_frames_between() {
   local i try seen=0 col
   "$HOLD_BIN" config set slide on >/dev/null || return 1
+  export HOLD_TEST_SLIDE_MS=1200 # long enough to be seen on a busy machine (test builds only)
   "$HOLD_BIN" detach --name l1 -- sh -c 'echo L1-UP; exec cat' >/dev/null || return 1
-  start_term term l1 100 20 || return 1
+  start_term term l1 100 20 || { "$HOLD_BIN" logs term 2>&1 | tail -c 600 | cat -v >&2; return 1; }
   "$HOLD_BIN" detach --name x1 -- sh -c 'echo X1-UP; exec cat' mark-x1 >/dev/null || return 1
   pick_pane term mark-x1 || return 1
   "$HOLD_BIN" swap x1 2A >/dev/null 2>&1 || return 1
@@ -254,4 +254,49 @@ test_slide_shows_frames_between() {
   [ "$(mux_viewport)" = "2 0" ] || { echo "the slide did not settle on window 2: $(mux_viewport)" >&2; return 1; }
   "$HOLD_BIN" wait term --regex '^X1-UP' --timeout 3000 >/dev/null || { echo "X1 is not at the left once settled" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   "$HOLD_BIN" end l1 x1 term >/dev/null 2>&1 || true
+}
+
+# Layouts: save keeps the base by name; after panes move, load puts them
+# back. Loading never ends anything: a pane not in the layout is let go and
+# runs on, and an ended member is started again. The bar shows the layout
+# with * once panes moved. backmux shell opens with the default layout, its
+# own shell joining it.
+test_layouts_save_load_default() {
+  local i f
+  for i in 1 2 3; do "$HOLD_BIN" detach --name "y$i" -- sh -c "echo Y$i-UP; exec cat" "mark-y$i" >/dev/null || return 1; done
+  start_term term y1 120 30 || return 1
+  pick_pane term mark-y2 || return 1
+  pick_pane term mark-y3 || return 1
+  "$HOLD_BIN" layout save work 2>/dev/null || return 1
+  f="$HOME/.config/backmux/layouts/work"
+  grep -Eq '^pane 1A [0-9a-f]{64} y1$' "$f" || { echo "the layout does not hold y1 at 1A" >&2; cat "$f" >&2; return 1; }
+  out_has '^work' "$HOLD_BIN" layout list || return 1
+  "$HOLD_BIN" wait term --match ' work ' --timeout 5000 >/dev/null || { echo "the bar does not name the layout" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  "$HOLD_BIN" swap y1 y3 2>/dev/null || return 1
+  "$HOLD_BIN" wait term --match ' work* ' --timeout 5000 >/dev/null || { echo "no * after panes moved" >&2; "$HOLD_BIN" peek term >&2; return 1; }
+  # a pane not in the layout, and a member that ends
+  "$HOLD_BIN" detach --name extra -- sh -c 'echo EXTRA-UP; exec cat' mark-extra >/dev/null || return 1
+  pick_pane term mark-extra || return 1
+  "$HOLD_BIN" end y2 >/dev/null 2>&1 || return 1
+  for i in $(seq 1 30); do mux_slots | grep -q 'y2' || break; sleep 0.1; done
+  "$HOLD_BIN" layout load work 2>/dev/null || { echo "load failed" >&2; return 1; }
+  for i in $(seq 1 50); do [ "$(mux_slots)" = "1A:y1 1B:y2 1C:y3 " ] && break; sleep 0.1; done
+  [ "$(mux_slots)" = "1A:y1 1B:y2 1C:y3 " ] || { echo "load did not put the panes back: $(mux_slots)" >&2; return 1; }
+  out_has 'Up .* extra$' "$HOLD_BIN" list || { echo "the pane not in the layout stopped" >&2; return 1; }
+  out_has 'Up .* y2$' "$HOLD_BIN" list || { echo "the ended member was not started again" >&2; return 1; }
+  # the default, and backmux shell opening with it
+  "$HOLD_BIN" layout default work 2>/dev/null || return 1
+  [ "$("$HOLD_BIN" layout default)" = work ] || return 1
+  "$HOLD_BIN" end term >/dev/null 2>&1 || true
+  for i in $(seq 1 30); do [ -z "$(mux_slots)" ] && break; sleep 0.1; done
+  "$HOLD_BIN" -dt --size 120 30 --name sterm -- "$HOLD_REAL_BIN" shell --name myshell /bin/sh </dev/null >/dev/null || return 1
+  for i in $(seq 1 50); do mux_slots | grep -q 'myshell' && break; sleep 0.1; done
+  mux_slots | grep -Eq '^1A:y1 1B:y2 1C:y3 1D:myshell $' || { echo "the shell did not open with its layout: $(mux_slots)" >&2; "$HOLD_BIN" peek sterm >&2; return 1; }
+  # the panel
+  "$HOLD_BIN" send sterm -k C-Space -k L || return 1
+  "$HOLD_BIN" wait sterm --regex 'work +loaded default' --timeout 5000 >/dev/null || { "$HOLD_BIN" peek sterm >&2; return 1; }
+  "$HOLD_BIN" send sterm -k Escape || return 1
+  "$HOLD_BIN" layout rm work 2>/dev/null || return 1
+  [ ! -e "$f" ] || return 1
+  "$HOLD_BIN" end y1 y2 y3 extra myshell sterm >/dev/null 2>&1 || true
 }
