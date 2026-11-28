@@ -178,6 +178,7 @@ void hold_free_run_record(struct hold_run_record *r) {
     hold_free_argv_alloc(r->recipe.argv, r->recipe.argc);
     hold_free_argv_alloc(r->recipe.env, r->recipe.envc);
     hold_free_argv_alloc(r->observed_argv, r->observed_argc);
+    hold_free_term_state(&r->term);
     r->recipe.argv = NULL;
     r->recipe.env = NULL;
     r->observed_argv = NULL;

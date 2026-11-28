@@ -63,6 +63,18 @@ void hold_record_init_running(struct hold_run_record *r,
                               int64_t created_unix_ns);
 int hold_load_record(const char *path, struct hold_run_record *r);
 void hold_free_run_record(struct hold_run_record *r);
+/* Terminal state (src/store/term_state.c). */
+bool hold_record_is_hosting_shell(const struct hold_run_record *r);
+/* Look at the live terminal of r (running, on a PTY) and fill *t: 0 when
+ * observed, -1 when the process cannot be read, which says nothing about
+ * whether it is idle or has ended. */
+int hold_observe_terminal(const struct hold_run_record *r, struct hold_term_state *t);
+void hold_free_term_state(struct hold_term_state *t);
+/* Observe a running terminal process and, when what it is doing changed,
+ * keep the observation in its record (only a record this user owns). The
+ * rewrite re-reads the record under the store lock. 0, or -1 when the
+ * record could not be written. */
+int hold_refresh_terminal(const char *record_dir, const char *id);
 int hold_load_public_index(const char *path, struct hold_public_index *pi);
 int hold_load_public_index_by_id(const struct hold_store *store, const char *id, struct hold_public_index *pi);
 int hold_load_record_by_id(const char *dir, const char *id, struct hold_run_record *r, char *path, size_t n);

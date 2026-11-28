@@ -4,8 +4,10 @@ Keep a record (a profile)
 
 Mark a process record as a saved profile. Ordinary purge and purge all
 preserve it. recall can restart an ended process from its recorded settings.
+Saving a terminal also keeps what it is doing now: its shell's directory and
+the program running in it (see info).
 
-Use delete to remove an ended saved profile, or purge TARGET --force to stop
-and remove it. Saving a profile does not save a pane layout or program memory.
+Use delete to remove an ended saved profile, or end it first if it runs.
+Saving a profile does not save a pane layout or program memory.
 [agent]
 An agent's tasks don't need this command; backmux help lists them.

@@ -33,6 +33,20 @@ struct hold_recipe {
     bool has_restart_delay;
 };
 
+/* What a terminal process was doing when last observed (store/term_state.c):
+ * the launch says how it started; this says where the person left it, so a
+ * saved terminal can be rebuilt that way. */
+struct hold_term_state {
+    int64_t observed_unix_ns;
+    bool hosting_shell;            /* its program is a shell hosting the person's commands */
+    char cwd[HOLD_PATH_MAX];       /* that program's current directory */
+    char foreground[16];           /* a hosting shell's: idle, workload, pipeline, unavailable */
+    pid_t workload_pid;            /* workload, pipeline: the foreground group's leader */
+    char workload_cwd[HOLD_PATH_MAX];
+    int workload_argc;
+    char **workload_argv;
+};
+
 struct hold_run_record {
     int version;
     char id[ID_STR_LEN];
@@ -88,6 +102,8 @@ struct hold_run_record {
     char observed_cwd[HOLD_PATH_MAX];
     int observed_argc;
     char **observed_argv;
+    bool has_term;
+    struct hold_term_state term;
 };
 
 enum run_state { STATE_RUNNING, STATE_EXITED, STATE_STALE, STATE_FAILED, STATE_UNKNOWN };

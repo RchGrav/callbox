@@ -96,6 +96,23 @@ int hold_load_record(const char *path, struct hold_run_record *r) {
         r->has_observed |= hold_json_get_str(obj, "cwd", r->observed_cwd, sizeof(r->observed_cwd)) == 0;
         r->has_observed |= hold_json_get_argv_alloc(obj, &r->observed_argv, &r->observed_argc) == 0;
     }
+    if (hold_json_find_key(j, "terminal", &obj) == 0 && obj && *obj == '{') {
+        struct hold_term_state *t = &r->term;
+        r->has_term = hold_json_get_str(obj, "cwd", t->cwd, sizeof(t->cwd)) == 0;
+        (void)hold_json_get_i64(obj, "observed_unix_ns", &t->observed_unix_ns);
+        (void)hold_json_get_bool(obj, "hosting_shell", &t->hosting_shell);
+        (void)hold_json_get_str(obj, "foreground", t->foreground, sizeof(t->foreground));
+        const char *w = NULL;
+        if (hold_json_find_key(obj, "workload", &w) == 0 && w && *w == '{') {
+            int64_t pid = 0;
+            if (hold_json_get_i64(w, "pid", &pid) == 0) t->workload_pid = (pid_t)pid;
+            (void)hold_json_get_str(w, "cwd", t->workload_cwd, sizeof(t->workload_cwd));
+            if (hold_json_get_argv_alloc(w, &t->workload_argv, &t->workload_argc) != 0) {
+                t->workload_argv = NULL;
+                t->workload_argc = 0;
+            }
+        }
+    }
     if (hold_json_get_argv_alloc(j, &r->recipe.argv, &r->recipe.argc) != 0) {
         r->recipe.argv = NULL;
         r->recipe.argc = 0;

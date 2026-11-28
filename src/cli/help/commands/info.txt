@@ -4,7 +4,9 @@ Show a process's details
 
 Show a running or ended process's identity, launch kind, state, recorded exit
 information, command, arguments, working directory, message format, saved
-status, timestamps, and available log and console paths.
+status, timestamps, and available log and console paths. For a terminal:
+its shell, the shell's current directory, and the program running in it
+(the foreground workload), as observed now or, once it has ended, last.
 
 Environment variable names are shown without their values. To inspect the
 stored record as JSON, including recorded environment values, use inspect.

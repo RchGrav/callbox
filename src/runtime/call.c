@@ -310,6 +310,9 @@ static int protect_record_action(const struct hold_invocation *inv,
         free(targets);
         return hold_report_requires_root(target.id);
     }
+    /* Saving keeps the terminal as it is now, not only as it was launched.
+     * Before the lock below: the refresh takes it itself (never nested). */
+    (void)hold_refresh_terminal(target.store.record_dir, target.id);
     /* The store lock serializes this read-modify-write with the exit stamp
      * (hold_mark_run_finished), which otherwise could rewrite the record
      * from a copy read before this save and drop the saved flag or name. */

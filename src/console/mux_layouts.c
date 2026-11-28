@@ -56,6 +56,10 @@ bool mux_layout_save(struct mux *m, const char *name, const char **why) {
     for (int w = 0; w < MUX_MAX_WINDOWS && k < sizeof(buf); w++)
         if (m->colpct[w] || m->lpct[w] || m->rpct[w])
             k += (size_t)snprintf(buf + k, sizeof(buf) - k, "lines %d %d %d %d\n", w + 1, m->colpct[w], m->lpct[w], m->rpct[w]);
+    /* Each member's record keeps what its terminal is doing now, so the
+     * layout rebuilds the terminals as they are, not as they were launched. */
+    for (int i = 0; i < MUX_SLOTS; i++)
+        if (m->base[i] && m->base[i]->id[0]) (void)hold_refresh_terminal(m->store->record_dir, m->base[i]->id);
     for (int i = 0; i < MUX_SLOTS && k < sizeof(buf); i++)
         if (m->base[i] && m->base[i]->id[0])
             k += (size_t)snprintf(buf + k, sizeof(buf) - k, "pane %d%c %s %s\n", i / MUX_POS + 1, "ABCDE"[i % MUX_POS],

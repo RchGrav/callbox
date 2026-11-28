@@ -96,6 +96,34 @@ launch commands use the attach-client compositor and do not enable that mode.
 
 The recorded `argv` supplies the executable and arguments used by recall ([Launcher](launcher.md)). `argv[0]` is the program's absolute path as named, with symlinks not resolved, because a venv's python or a multi-process binary finds its environment through that name. Later arguments that name existing paths are made absolute. `observed.argv` keeps the argv as typed, and `observed.exe` the resolved real executable.
 
+### Terminal state
+
+A terminal process's record also carries `terminal`: what the terminal was
+doing when last observed. Why: the launch says how a terminal started, but
+the person then changes directory and runs programs in it, so a saved
+terminal rebuilt from its launch alone is not the one they saved (a bash
+launched in `~` that is running claude in `~/callbox` is "bash in `~`" by its
+launch). The launch fields stay as they were, as history.
+
+| Field | Meaning |
+|---|---|
+| `observed_unix_ns` | When this was observed |
+| `hosting_shell` | The program is a shell hosting the person's commands: a known shell started with no `-c` and no script, or `backmux shell` |
+| `cwd` | The program's current directory (the shell's, or a directly launched program's) |
+| `foreground` | A hosting shell's foreground: `idle`, `workload`, `pipeline` (one argv cannot rebuild it), or `unavailable` (could not be read: not evidence of idle) |
+| `workload` | `pid`, exact `argv` and `cwd` of the foreground job's leader, or, for a pipeline whose leader has gone, of a member still running |
+
+It is observed from the live process tree (Linux `/proc`, macOS libproc),
+never a checkpoint of process memory, and only from a process whose boot ID
+and start time still match its record, so a reused PID is never read. It is
+refreshed when a terminal is listed, inspected (`info`) or saved (`save`,
+layout save); there is no daemon to poll. The record is rewritten only when
+what the terminal does has changed, because every rewrite is an fsync and
+`list` looks at every running terminal; the rewrite re-reads the record under
+the store lock, so an exit stamp or a save written meanwhile is kept. Only
+the store's owner rewrites it. An ended terminal keeps its last observation.
+Services and pipe processes have no terminal, so no `terminal`.
+
 ### Exit stamp
 
 `hold_mark_run_finished` records an ended process. It sets `state` to `exited`, `exit_code` (128 + the signal number when a signal ended it), `term_signal`, and `ended_at`, then rewrites the public entry with no ports. It runs under the store lock:
@@ -213,7 +241,7 @@ Purge deletes only paths it derives from the store layout and the process ID, ne
 ## Implementation map
 
 `struct hold_store`, `struct hold_run_record`, `struct hold_public_index` (include/backmux/types.h); `hold_init_user_store_from_home`, `hold_ensure_user_store_for_current_user`, `hold_ensure_invoking_user_store`, `hold_init_system_store`, `hold_ensure_system_store` (src/store/layout.c); `hold_reserve_run_id`, `hold_mark_run_finished` (src/store/lifecycle.c); `hold_record_fields`, `hold_write_record_atomic` (src/store/record.c); `hold_load_record` (src/store/record_read.c); `hold_write_public_index_atomic`, `hold_load_public_index` (src/store/public_index.c); `hold_atomic_write_json`, `hold_store_lock` (src/store/atomic.c); `hold_resolve_record_id` (src/store/resolve.c); `hold_prune_one_run_ex`, `cmd_prune_store_all` (src/runtime/list.c); `hold_cmd_set_action`,
-`hold_cmd_delete_action`, `hold_cmd_purge_all_action` (src/runtime/settings.c); `hold_remove_target`, `hold_cmd_rm_action` (src/runtime/remove.c).
+`hold_cmd_delete_action`, `hold_cmd_purge_all_action` (src/runtime/settings.c); `hold_remove_target`, `hold_cmd_rm_action` (src/runtime/remove.c). `hold_observe_terminal`, `hold_refresh_terminal` (src/store/term_state.c).
 
 ## Continue
 

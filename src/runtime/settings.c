@@ -212,6 +212,28 @@ static const char *call_kind(const struct hold_run_record *r) {
     return "server";
 }
 
+/* The terminal as last observed: its shell, its directory, the shell's
+ * foreground workload - what save keeps and recall rebuilds. */
+static void print_terminal_state(const struct hold_run_record *r, enum run_state st) {
+    if (!r->has_term) return;
+    const struct hold_term_state *t = &r->term;
+    if (t->hosting_shell) printf("shell:     %s\n", r->recipe.argc > 0 && r->recipe.argv ? r->recipe.argv[0] : "?");
+    printf("directory: %s\n", t->cwd);
+    if (t->hosting_shell) {
+        if (t->workload_argc > 0) {
+            char line[HOLD_PATH_MAX];
+            if (hold_format_argv_human(line, sizeof(line), t->workload_argc, t->workload_argv) != 0) line[0] = '\0';
+            printf("workload:  %s%s\n", line, !strcmp(t->foreground, "pipeline") ? " (part of a pipeline)" : "");
+            printf("           pid %d, in %s\n", (int)t->workload_pid, t->workload_cwd);
+        } else {
+            printf("workload:  %s\n", !strcmp(t->foreground, "idle") ? "none (the shell is idle)" : "unavailable");
+        }
+    }
+    char when[64];
+    hold_format_rfc3339_utc_from_ns(t->observed_unix_ns, when, sizeof(when));
+    printf("observed:  %s%s\n", when, st == STATE_RUNNING ? "" : " (the last observation before it ended)");
+}
+
 int hold_cmd_info_action(const struct hold_invocation *inv,
                          const struct hold_store *user_store,
                          const struct hold_store *system_store,
@@ -220,6 +242,7 @@ int hold_cmd_info_action(const struct hold_invocation *inv,
     bool hit = false, ok = false;
     int rc = hold_resolve_single(inv, user_store, system_store, "inspect", "info", token, &target, &hit);
     if (!hit) return rc;
+    (void)hold_refresh_terminal(target.store.record_dir, target.id); /* info shows it as it is now */
     struct hold_run_record r;
     char path[HOLD_PATH_MAX];
     rc = hold_load_target_record(&target, false, &r, path, sizeof(path), &ok);
@@ -243,6 +266,7 @@ int hold_cmd_info_action(const struct hold_invocation *inv,
     if (r.has_started_at) printf("started:   %s\n", r.started_at);
     if (r.has_ended_at && st != STATE_RUNNING) printf("ended:     %s\n", r.ended_at);
     if (st == STATE_RUNNING) printf("pid:       %d\n", (int)r.pid);
+    print_terminal_state(&r, st);
     if (r.recipe.has_size) printf("size:      %dx%d\n", r.recipe.size_cols, r.recipe.size_rows);
     if (r.recipe.has_restart_policy) printf("restart:   %s\n", r.recipe.restart_policy);
     /* Omit environment values from this summary; inspect shows the record. */

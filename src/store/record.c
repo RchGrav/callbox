@@ -153,6 +153,27 @@ static int emit_record_json(FILE *f, void *vctx) {
         hold_json_escape(f, r->observed_cwd);
         fprintf(f, "\" }");
     }
+    if (r->has_term) {
+        const struct hold_term_state *t = &r->term;
+        hold_emit_kv(f, &first, "terminal");
+        fprintf(f, "{ \"observed_unix_ns\": %" PRId64 ", \"hosting_shell\": %s, \"cwd\": \"",
+                t->observed_unix_ns, t->hosting_shell ? "true" : "false");
+        hold_json_escape(f, t->cwd);
+        fputc('"', f);
+        if (t->hosting_shell) {
+            fprintf(f, ", \"foreground\": \"");
+            hold_json_escape(f, t->foreground);
+            fputc('"', f);
+            if (t->workload_argc > 0) {
+                fprintf(f, ", \"workload\": { \"pid\": %ld, \"argv\": ", (long)t->workload_pid);
+                hold_write_json_argv(f, t->workload_argc, t->workload_argv);
+                fprintf(f, ", \"cwd\": \"");
+                hold_json_escape(f, t->workload_cwd);
+                fprintf(f, "\" }");
+            }
+        }
+        fprintf(f, " }");
+    }
     if (r->recipe.envc > 0 && r->recipe.env) {
         hold_emit_kv(f, &first, "env");
         hold_write_json_argv(f, r->recipe.envc, r->recipe.env);

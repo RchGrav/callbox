@@ -139,7 +139,23 @@ struct private_walk {
     const char *name_filter, *boot_id;
     bool running_only, system_scope;
     struct list_rows *rows;
+    char (*live_tty)[ID_STR_LEN]; /* running terminals, refreshed after the walk */
+    int n_live_tty, cap_live_tty;
 };
+
+/* Note a running terminal for the refresh after the walk: refreshing rewrites
+ * its record, and a directory changed while it is being read may list an
+ * entry twice or skip one. */
+static void note_live_tty(struct private_walk *w, const struct hold_run_record *r) {
+    if (w->n_live_tty == w->cap_live_tty) {
+        int cap = w->cap_live_tty ? w->cap_live_tty * 2 : 8;
+        void *a = realloc(w->live_tty, (size_t)cap * sizeof(*w->live_tty));
+        if (!a) return;
+        w->live_tty = a;
+        w->cap_live_tty = cap;
+    }
+    snprintf(w->live_tty[w->n_live_tty++], ID_STR_LEN, "%s", r->id);
+}
 
 static int collect_private_cb(const char *id, const char *path, struct hold_run_record *r, void *vctx) {
     (void)path;
@@ -176,14 +192,19 @@ static int collect_private_cb(const char *id, const char *path, struct hold_run_
         snprintf(row.status + used, sizeof(row.status) - used, " (saved)");
     }
     if (st == STATE_RUNNING) hold_observe_run_ports_column(r, row.ports, sizeof(row.ports));
+    if (st == STATE_RUNNING && r->recipe.mode_tty) note_live_tty(w, r);
     return append_list_row(w->rows, &row) != 0 ? -1 : 0;
 }
 
 static int collect_list_private(const struct hold_store *store, const char *name_filter,
                                 bool running_only, bool system_scope, struct list_rows *rows) {
     char boot[128];
-    struct private_walk w = { name_filter, hold_boot_id_or_null(boot), running_only, system_scope, rows };
-    return hold_for_each_record(store->record_dir, collect_private_cb, &w);
+    struct private_walk w = { name_filter, hold_boot_id_or_null(boot), running_only, system_scope, rows, NULL, 0, 0 };
+    int rc = hold_for_each_record(store->record_dir, collect_private_cb, &w);
+    /* list is one of the looks that keeps each terminal's state current */
+    for (int i = 0; i < w.n_live_tty; i++) (void)hold_refresh_terminal(store->record_dir, w.live_tty[i]);
+    free(w.live_tty);
+    return rc;
 }
 
 /* The redacted global projection every user may see: the public index only,
