@@ -14,9 +14,12 @@ Change settings on a running or ended process.
   args -- ARG...     replace arguments with the shell's argument list,
                      preserving quoted spaces; unset args clears them
   name=<name>          rename and save the profile immediately; cannot be unset
+  source=<file>        shell code a terminal's shell sources when recall
+                     rebuilds it (exports, a virtualenv); not --env-file
 
-working, program, and args affect the next launch through recall. They do
-not change the running program. The Backmux process ID remains unchanged.
+working, program, args, and source affect the next launch through recall.
+They do not change the running program. The Backmux process ID remains
+unchanged. Setting working also replaces the directory last observed.
 
 Examples:
   backmux set worker working=/srv/project

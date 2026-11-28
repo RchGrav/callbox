@@ -128,3 +128,35 @@ test_save_fails_when_terminal_state_cannot_be_written() {
   grep -q '"saved": true' "$path" && ts_is "$path" / idle "" || { echo "the save after did not keep it" >&2; return 1; }
   "$HOLD_BIN" end tssave >/dev/null 2>&1 || true
 }
+
+# recall rebuilds a terminal as it was left: the shell in its directory, its
+# environment source sourced, the workload with its exact argv (spaces, an
+# empty argument) in its own directory, and the shell still there after the
+# workload ends. A pipeline is not guessed at: recall says so.
+test_recall_rebuilds_the_terminal() {
+  command -v bash >/dev/null 2>&1 || skip "no bash"
+  local path a="$TEST_ROOT/tr A" b="$TEST_ROOT/tr B" c="$TEST_ROOT/tr C" script='echo "$TS_FOO" > out; sleep 300'
+  mkdir -p "$a" "$b" "$c"
+  a=$(cd "$a" && pwd -P) b=$(cd "$b" && pwd -P) c=$(cd "$c" && pwd -P)
+  printf 'export TS_FOO=from-source\n' >"$TEST_ROOT/tr env.sh"
+  path=$(ts_start tsr "$a") || return 1
+  "$HOLD_BIN" set tsr source="$TEST_ROOT/tr env.sh" 2>/dev/null || return 1
+  "$HOLD_BIN" send tsr "cd '$b' && (cd '$c' && exec sh -c '$script' 'a b' '')" --enter >/dev/null || return 1
+  ts_until "$path" "$b" workload "$c" sh -c "$script" 'a b' '' || return 1
+  "$HOLD_BIN" end tsr >/dev/null 2>&1 || true
+  : >"$c/out"
+  "$HOLD_BIN" recall tsr >/dev/null 2>&1 || return 1
+  ts_until "$path" "$b" workload "$c" sh -c "$script" 'a b' '' || return 1
+  local i
+  for i in $(seq 1 30); do [ -s "$c/out" ] && break; sleep 0.1; done
+  [ "$(cat "$c/out")" = from-source ] || { echo "the environment source was not sourced: '$(cat "$c/out")'" >&2; return 1; }
+  "$HOLD_BIN" send tsr -k C-c >/dev/null || return 1
+  ts_until "$path" "$b" idle "" || { echo "the shell did not stay after the workload" >&2; return 1; }
+  "$HOLD_BIN" send tsr 'sleep 302 | sleep 303' --enter >/dev/null || return 1
+  ts_until "$path" "$b" pipeline "$b" sleep 302 || return 1
+  "$HOLD_BIN" end tsr >/dev/null 2>&1 || true
+  "$HOLD_BIN" recall tsr >/dev/null 2>"$TEST_ROOT/tsr.err" || return 1
+  grep -q 'the pipeline it ran was not started again' "$TEST_ROOT/tsr.err" || { cat "$TEST_ROOT/tsr.err" >&2; return 1; }
+  ts_until "$path" "$b" idle "" || return 1
+  "$HOLD_BIN" end tsr >/dev/null 2>&1 || true
+}

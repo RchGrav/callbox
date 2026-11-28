@@ -27,6 +27,8 @@ struct hold_recipe {
     bool has_working;
     bool has_size;   /* placed with --size: redial replays it */
     int size_cols, size_rows;
+    char env_source[HOLD_PATH_MAX]; /* shell code sourced when recall rebuilds a hosting shell (set NAME source=FILE) */
+    bool has_env_source;
     char restart_policy[64];
     int restart_delay_seconds;
     bool has_restart_policy;

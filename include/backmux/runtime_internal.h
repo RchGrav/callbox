@@ -79,6 +79,17 @@ bool hold_auto_removed_exit(const struct hold_store *store, const char *token, i
 bool hold_record_matches_alias_intent(const char *command, const struct hold_run_record *r, enum run_state st);
 int hold_report_not_found(const char *token);
 int hold_report_requires_root(const char *token);
+/* How recall rebuilds a terminal from its observed state (src/runtime/restore.c):
+ * dir, where to start it ("" = as launched); input, what the broker types into
+ * a rebuilt shell at its prompt (NULL = nothing); note, what could not be
+ * rebuilt, for stderr. -1 on allocation failure. */
+struct hold_restore {
+    char dir[HOLD_PATH_MAX];
+    char *input;
+    char note[HOLD_PATH_MAX + 160]; /* room for a directory's path */
+};
+int hold_restore_plan(const struct hold_run_record *r, struct hold_restore *p);
+void hold_restore_free(struct hold_restore *p);
 /* Remove one named process (delete's removal, src/runtime/remove.c): saved
  * or not; one found running is ended first. Reports "Removed NAME." */
 int hold_remove_target(const struct hold_invocation *inv, const struct hold_store *user_store,

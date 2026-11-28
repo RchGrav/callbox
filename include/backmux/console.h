@@ -35,6 +35,9 @@ struct hold_console_options {
     bool program; /* program, rather than shell, in broker-chat hints */
     /* Broker-chat keys: prefix, detach, and chat toggle. */
     unsigned char lead_key, detach_key, chat_key;
+    /* Typed into the program once it runs (NULL: nothing): how recall
+     * rebuilds a shell's workload inside the shell. */
+    const char *initial_input;
 };
 /* The detach sequence (--detach-keys, otherwise Ctrl-Space q): copies up to
  * cap bytes and returns the full sequence length. */

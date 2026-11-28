@@ -185,6 +185,22 @@ with no `--` and no `--name`. The word matches by ID prefix or by name, in your 
 
 Recall reuses the stored executable, arguments, environment overrides,
 working directory, launch mode, terminal size, restart policy, and name.
+
+A terminal is rebuilt from its last observed state (`terminal` in the
+record, [Store](store.md)), because a saved terminal is the person's work,
+not its launch line: it starts in the directory last observed, and a hosting
+shell gets typed at its prompt its environment source (`set NAME
+source=FILE`, sourced with `.`, or `source` in fish) and the workload it was
+running, with its exact argv (single-quoted for the shell), through `sh -c
+'cd "$1" && shift && exec "$@"'` when the workload's directory differs, so
+the shell's own directory stays put. The broker types it once the shell's
+line editor takes the terminal out of canonical mode, or after 1.5 s for a
+shell that never does: input typed ahead in canonical mode is cut at the line
+discipline's limit. Each typed line starts with a space, which bash, zsh and
+fish keep out of the history. Not rebuilt, and said on stderr: a pipeline,
+an argument holding a control character, and anything for csh. A program
+launched directly is relaunched as launched, in its observed directory. The
+last observation stays in the record until the new run is observed.
 It retains the Backmux process ID and appends to the same log. Explicit
 mode flags on the bare target shorthand can override the stored launch
 mode. A recalled `shell` still requires an interactive terminal.

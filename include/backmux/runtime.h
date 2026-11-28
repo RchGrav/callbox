@@ -36,6 +36,13 @@ struct hold_start_options {
     const char *existing_run_name;
     int64_t existing_created_unix_ns;
     const char *existing_created_at;
+    /* recall rebuilding a terminal (runtime/restore.c): what to type into the
+     * shell once it runs, and the terminal state the last run left, kept in
+     * the record until this run is observed (so it is not lost if this run
+     * ends unobserved) */
+    const char *initial_input;
+    const struct hold_term_state *existing_term;
+    const char *env_source; /* the environment source setting, carried over a relaunch */
 };
 int hold_perform_start_options(const struct hold_invocation *inv,
                                  const struct hold_store *store,

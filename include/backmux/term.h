@@ -35,6 +35,10 @@ int hold_term_pipe_spawn(const struct hold_term_spawn *spec,
  * (acceptable: backmux is single-threaded at every spawn site). Returns 0 with
  * fds[0]=read, fds[1]=write, or -1 with errno set and nothing left open. */
 int hold_cloexec_pipe(int fds[2]);
+/* Where the person's cursor is (1-based), asked of their terminal on stdin
+ * and stdout (DSR 6): 0 when it does not answer within a moment. Keys typed
+ * meanwhile are dropped with the answer - it takes a few milliseconds. */
+void hold_term_ask_cursor(unsigned short *row, unsigned short *col);
 
 /* One drain step of a PTY master: reads once into buf[n], appends the bytes
  * to the process's log, and returns them for caller fan-out (screen, client).

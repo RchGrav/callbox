@@ -19,40 +19,6 @@ static volatile sig_atomic_t g_restart_stop = 0;
  * lock - only under the fallback. The record says the same (liveness_lock). */
 static bool g_liveness_lock = false;
 
-/* Where the person's cursor is (1-based), asked of their terminal (DSR 6):
- * 0 when it does not answer within a moment. Keys typed meanwhile are
- * dropped with the answer - it takes a few milliseconds. */
-static void ask_cursor(unsigned short *row, unsigned short *col) {
-    *row = *col = 0;
-    struct hold_term_saved saved;
-    memset(&saved, 0, sizeof(saved));
-    if (hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_RAW, &saved) != 0 || !saved.saved) return;
-    if (hold_write_all(STDOUT_FILENO, "\033[6n", 4) == 0) {
-        char buf[64];
-        size_t n = 0;
-        int64_t waited = 0;
-        while (n < sizeof(buf) - 1 && waited < 300) {
-            struct pollfd p = {.fd = STDIN_FILENO, .events = POLLIN};
-            if (poll(&p, 1, 50) <= 0) {
-                waited += 50;
-                continue;
-            }
-            ssize_t k = read(STDIN_FILENO, buf + n, sizeof(buf) - 1 - n);
-            if (k <= 0) break;
-            n += (size_t)k;
-            buf[n] = '\0';
-            if (memchr(buf, 'R', n)) break;
-        }
-        buf[n] = '\0';
-        const char *esc = strstr(buf, "\033[");
-        unsigned r = 0, c = 0;
-        if (esc && sscanf(esc + 2, "%u;%uR", &r, &c) == 2 && r > 0 && c > 0 && r < 10000 && c < 10000) {
-            *row = (unsigned short)r;
-            *col = (unsigned short)c;
-        }
-    }
-    hold_term_input_restore(&saved);
-}
 /* Plain -d under the fallback: no supervisor, so the program's own output
  * descriptors carry the lock (lock held = it runs; gone proves nothing). */
 static bool g_output_lock = false;
@@ -659,7 +625,8 @@ int hold_perform_start_options(const struct hold_invocation *inv,
      * else the invoking terminal, when it reports a usable size; else 80x24.
      * The broker runs with /dev/null stdio and cannot ask a terminal, so the
      * launcher samples it here, while the real one is still on its stdio. */
-    struct hold_console_options console_options = {.chat = opts->chat, .pipe = pipe_mode, .program = !opts->shell};
+    struct hold_console_options console_options = {.chat = opts->chat, .pipe = pipe_mode, .program = !opts->shell,
+                                                   .initial_input = opts->initial_input};
     if (opts->chat) {
         /* Broker-composited chat requires a two-key detach sequence. */
         unsigned char keys[8];
@@ -709,7 +676,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         /* backmux shell is not inline: it starts on a cleared screen of its
          * own, with the bar (attach.c). */
         if (tail && !pipe_mode && !opts->shell && isatty(STDIN_FILENO) && isatty(STDOUT_FILENO)) {
-            ask_cursor(&console_options.start_row, &console_options.start_col);
+            hold_term_ask_cursor(&console_options.start_row, &console_options.start_col);
             if (console_options.start_row > console_options.rows) console_options.start_row = console_options.rows;
         }
     }
@@ -1058,6 +1025,8 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     r.log_start = run_log_start;
     r.recipe.mode_chat = opts->chat || opts->user_mode;
     r.recipe.mode_shell = opts->shell;
+    if (opts->env_source && hold_checked_snprintf(r.recipe.env_source, sizeof(r.recipe.env_source), "%s", opts->env_source) == 0)
+        r.recipe.has_env_source = true;
     /* Record the launch working directory for recall, unless the profile's
      * working setting was explicitly unset. */
     if (!opts->no_working && observed_cwd[0] &&
@@ -1098,6 +1067,7 @@ int hold_perform_start_options(const struct hold_invocation *inv,
         snprintf(r.cmdline, sizeof(r.cmdline), "?");
     }
     r.has_observed = true;
+    if (opts->existing_term) r.term = *opts->existing_term, r.has_term = true; /* borrowed: never freed here */
     char real_exe[HOLD_PATH_MAX];
     if (hold_resolve_binary_path(resolved_exec_path, real_exe, sizeof(real_exe)) != 0)
         snprintf(real_exe, sizeof(real_exe), "%s", resolved_exec_path);

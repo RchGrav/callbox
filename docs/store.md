@@ -127,7 +127,9 @@ the store lock, so an exit stamp or a save written meanwhile is kept. Only
 the store's owner rewrites it. An ended terminal keeps its last observation.
 A save, or a layout save, whose terminal state could not be written fails
 and says so: a reported save is a written one.
-Services and pipe processes have no terminal, so no `terminal`.
+Services and pipe processes have no terminal, so no `terminal`. `recall`
+rebuilds a terminal from it ([Launcher](launcher.md)). `env_source`, the
+`source` setting, names shell code a rebuilt shell sources.
 
 ### Exit stamp
 

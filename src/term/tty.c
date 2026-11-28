@@ -119,3 +119,38 @@ int hold_term_size(struct winsize *ws) {
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, ws) == 0 && ws->ws_row > 0 && ws->ws_col > 0) return 0;
     return -1;
 }
+
+/* Where the person's cursor is (1-based), asked of their terminal (DSR 6):
+ * 0 when it does not answer within a moment. Keys typed meanwhile are
+ * dropped with the answer - it takes a few milliseconds. */
+void hold_term_ask_cursor(unsigned short *row, unsigned short *col) {
+    *row = *col = 0;
+    struct hold_term_saved saved;
+    memset(&saved, 0, sizeof(saved));
+    if (hold_term_input_enter(STDIN_FILENO, HOLD_TERM_INPUT_RAW, &saved) != 0 || !saved.saved) return;
+    if (hold_write_all(STDOUT_FILENO, "\033[6n", 4) == 0) {
+        char buf[64];
+        size_t n = 0;
+        int64_t waited = 0;
+        while (n < sizeof(buf) - 1 && waited < 300) {
+            struct pollfd p = {.fd = STDIN_FILENO, .events = POLLIN};
+            if (poll(&p, 1, 50) <= 0) {
+                waited += 50;
+                continue;
+            }
+            ssize_t k = read(STDIN_FILENO, buf + n, sizeof(buf) - 1 - n);
+            if (k <= 0) break;
+            n += (size_t)k;
+            buf[n] = '\0';
+            if (memchr(buf, 'R', n)) break;
+        }
+        buf[n] = '\0';
+        const char *esc = strstr(buf, "\033[");
+        unsigned r = 0, c = 0;
+        if (esc && sscanf(esc + 2, "%u;%uR", &r, &c) == 2 && r > 0 && c > 0 && r < 10000 && c < 10000) {
+            *row = (unsigned short)r;
+            *col = (unsigned short)c;
+        }
+    }
+    hold_term_input_restore(&saved);
+}

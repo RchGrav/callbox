@@ -28,6 +28,7 @@
 
 #define BROKER_MAX_CONTROL 64
 #define BROKER_WRITE_TIMEOUT_MS 5000
+#define BROKER_INITIAL_INPUT_MS 1500 /* a shell that never leaves canonical mode gets recall's input by then */
 /* A connection silent this long is a read-only raw attach (e.g. socat -u). */
 #define BROKER_SNIFF_MS 250
 /* A control request that has sent nothing for this long is a stalled
@@ -126,6 +127,8 @@ struct broker {
     bool replayed;      /* a program on pipes: its first client has had the replay */
     int64_t frame_ms;   /* when its attach client was last sent a frame */
     struct control_client *ctl; /* the control slots (BROKER_MAX_CONTROL of them) */
+    const char *initial_input;  /* recall's input for a rebuilt shell, until typed */
+    int64_t initial_due_ms;     /* typed by then even if the terminal stays canonical */
 };
 
 static void broker_cleanup_and_exit(struct broker *b, int exit_code) {
@@ -637,48 +640,15 @@ static void control_replyf(struct control_client *c, const char *fmt, ...) {
     control_reply(c, msg, NULL, 0);
 }
 
-static int hex_value(int ch) {
-    if (ch >= '0' && ch <= '9') return ch - '0';
-    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
-    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
-    return -1;
-}
-
-/* Decode hex in place; returns the decoded length or -1. */
-static ssize_t hex_decode(char *s) {
-    size_t n = strlen(s);
-    if (n % 2) return -1;
-    for (size_t i = 0; i < n; i += 2) {
-        int hi = hex_value((unsigned char)s[i]), lo = hex_value((unsigned char)s[i + 1]);
-        if (hi < 0 || lo < 0) return -1;
-        s[i / 2] = (char)(hi << 4 | lo);
-    }
-    s[n / 2] = '\0';
-    return (ssize_t)(n / 2);
-}
-
-/* "key=value" lookup in a space-separated argument line. */
-static const char *kv_get(const char *line, const char *key) {
-    size_t kl = strlen(key);
-    for (const char *tok = line; tok && *tok;) {
-        const char *sp = strchr(tok, ' ');
-        if (!strncmp(tok, key, kl) && tok[kl] == '=') {
-            return tok + kl + 1;
-        }
-        tok = sp ? sp + 1 : NULL;
-    }
-    return NULL;
-}
-
 /* "nested keys=<hex>": an attach client running in this process's terminal (it
  * must be in our program's session) is attached to some other process. The
  * connection is kept, unanswered, until that client goes. */
 static void handle_nested(struct broker *b, struct control_client *c, const char *args) {
-    const char *v = kv_get(args, "keys");
+    const char *v = hold_console_kv_get(args, "keys");
     size_t n = 0;
-    for (; v && n < sizeof(c->nest_keys) && hex_value((unsigned char)v[2 * n]) >= 0 &&
-           hex_value((unsigned char)v[2 * n + 1]) >= 0; n++)
-        c->nest_keys[n] = (unsigned char)(hex_value((unsigned char)v[2 * n]) << 4 | hex_value((unsigned char)v[2 * n + 1]));
+    for (; v && n < sizeof(c->nest_keys) && hold_console_hex_value((unsigned char)v[2 * n]) >= 0 &&
+           hold_console_hex_value((unsigned char)v[2 * n + 1]) >= 0; n++)
+        c->nest_keys[n] = (unsigned char)(hold_console_hex_value((unsigned char)v[2 * n]) << 4 | hold_console_hex_value((unsigned char)v[2 * n + 1]));
     pid_t ours = b->target > 0 ? getsid(b->target) : -1;
     if (n == 0 || c->peer_pid <= 0 || ours <= 0 || getsid(c->peer_pid) != ours) {
         drop_control(c);
@@ -748,7 +718,7 @@ static void handle_send(struct broker *b, struct control_client *c, char *ops) {
         char *arg = strchr(line, ' ');
         if (arg) *arg++ = '\0';
         if (!strcmp(line, "text") || !strcmp(line, "paste")) {
-            ssize_t n = arg ? hex_decode(arg) : -1;
+            ssize_t n = arg ? hold_console_hex_decode(arg) : -1;
             if (n < 0) {
                 control_replyf(c, "error malformed %s\n", line);
                 return;
@@ -794,7 +764,7 @@ static void handle_send(struct broker *b, struct control_client *c, char *ops) {
 }
 
 static void handle_resize(struct broker *b, struct control_client *c, const char *args) {
-    const char *r = kv_get(args, "rows"), *k = kv_get(args, "cols");
+    const char *r = hold_console_kv_get(args, "rows"), *k = hold_console_kv_get(args, "cols");
     int rows = r ? atoi(r) : 0, cols = k ? atoi(k) : 0;
     if (b->target_done) {
         control_replyf(c, "error the process has ended\n");
@@ -812,7 +782,7 @@ static void handle_resize(struct broker *b, struct control_client *c, const char
  * program's pid (another PID namespace) - backmux end/kill ask us, and we signal
  * the program's process group, which we can always see. */
 static void handle_signal(struct broker *b, struct control_client *c, const char *args) {
-    const char *v = kv_get(args, "sig");
+    const char *v = hold_console_kv_get(args, "sig");
     int sig = v ? atoi(v) : 0;
     if (sig != SIGTERM && sig != SIGKILL && sig != SIGINT && sig != SIGHUP) {
         control_replyf(c, "error unsupported signal\n");
@@ -856,21 +826,21 @@ static void handle_wait(struct control_client *c, const char *args) {
     memset(w, 0, sizeof(*w));
     w->start_ms = now_ms();
     const char *v;
-    if ((v = kv_get(args, "idle"))) w->idle_ms = (uint32_t)strtoul(v, NULL, 10);
-    if ((v = kv_get(args, "timeout"))) {
+    if ((v = hold_console_kv_get(args, "idle"))) w->idle_ms = (uint32_t)strtoul(v, NULL, 10);
+    if ((v = hold_console_kv_get(args, "timeout"))) {
         long t = strtol(v, NULL, 10);
         if (t > 0) w->deadline_ms = w->start_ms + t;
     }
-    if ((v = kv_get(args, "since"))) {
+    if ((v = hold_console_kv_get(args, "since"))) {
         w->has_since = true;
         w->since = strtoull(v, NULL, 10);
     }
-    if ((v = kv_get(args, "exit"))) w->want_exit = *v == '1';
-    if ((v = kv_get(args, "regex"))) w->match_regex = *v == '1';
-    if ((v = kv_get(args, "match"))) {
+    if ((v = hold_console_kv_get(args, "exit"))) w->want_exit = *v == '1';
+    if ((v = hold_console_kv_get(args, "regex"))) w->match_regex = *v == '1';
+    if ((v = hold_console_kv_get(args, "match"))) {
         size_t vl = strcspn(v, " \n");
         w->match = strndup(v, vl);
-        if (!w->match || hex_decode(w->match) < 0) {
+        if (!w->match || hold_console_hex_decode(w->match) < 0) {
             control_replyf(c, "error malformed match\n");
             return;
         }
@@ -1006,14 +976,14 @@ static void handle_msg(struct broker *b, struct control_client *c, const char *a
     }
     char *nl = strchr(body, '\n');
     if (nl) *nl = '\0';
-    ssize_t blen = hex_decode(body);
+    ssize_t blen = hold_console_hex_decode(body);
     if (blen < 0) {
         control_replyf(c, "error malformed message\n");
         return;
     }
     struct pending_msg *m = &b->msgs[slot];
     memset(m, 0, sizeof(*m));
-    const char *v = kv_get(args, "from");
+    const char *v = hold_console_kv_get(args, "from");
     if (v) {
         size_t vl = strcspn(v, " ");
         if (vl > 0 && vl < sizeof(m->claim)) {
@@ -1022,7 +992,7 @@ static void handle_msg(struct broker *b, struct control_client *c, const char *a
             /* Only an id or a process name counts as a claim: anything else
              * (spaces, newlines, control bytes) would end up in the .msgs
              * log and the typed header, where it could forge a line. */
-            ssize_t cl = hex_decode(m->claim);
+            ssize_t cl = hold_console_hex_decode(m->claim);
             m->has_claim = cl > 0 && (size_t)cl == strlen(m->claim) &&
                            (hold_valid_id_prefix(m->claim) || hold_valid_alias(m->claim));
             if (!m->has_claim) m->claim[0] = '\0';
@@ -1031,7 +1001,7 @@ static void handle_msg(struct broker *b, struct control_client *c, const char *a
     /* op=1: the sender runs outside any process and its replies go to an inbox
      * under this name (runtime/inbox.c). Only a process name's shape is taken:
      * the header shows it and a reply addresses it. */
-    m->operator = m->has_claim && (v = kv_get(args, "op")) && *v == '1' && hold_valid_alias(m->claim);
+    m->operator = m->has_claim && (v = hold_console_kv_get(args, "op")) && *v == '1' && hold_valid_alias(m->claim);
     m->text = malloc((size_t)blen + 1);
     if (!m->text) {
         control_replyf(c, "error out of memory\n");
@@ -1041,7 +1011,7 @@ static void handle_msg(struct broker *b, struct control_client *c, const char *a
     m->len = hold_strip_controls(m->text, (size_t)blen);
     m->text[m->len] = '\0';
     m->used = true;
-    m->submit = !((v = kv_get(args, "submit")) && *v == '0');
+    m->submit = !((v = hold_console_kv_get(args, "submit")) && *v == '0');
     m->start_ms = now;
     m->waiter = c;
     m->waiter_gen = c->gen;
@@ -1277,6 +1247,21 @@ static void read_control(struct broker *b, struct control_client *c) {
     }
 }
 
+/* Recall's initial input (a rebuilt shell's environment source and workload)
+ * is typed once the shell is at its prompt: when its line editor takes the
+ * terminal out of canonical mode (bash, zsh, fish), or after a moment for a
+ * shell that reads lines in canonical mode (dash, sh). Why wait: input typed
+ * ahead in canonical mode is cut at the line discipline's limit (4095 bytes
+ * on Linux), so a long workload would arrive cut. */
+static void deliver_initial_input(struct broker *b, int64_t now) {
+    if (!b->initial_input) return;
+    struct termios t;
+    bool raw = b->ep.pty && tcgetattr(b->ep.in_fd, &t) == 0 && !(t.c_lflag & ICANON);
+    if (!raw && now < b->initial_due_ms) return;
+    (void)program_write(b, b->initial_input, strlen(b->initial_input));
+    b->initial_input = NULL;
+}
+
 /* ---- the last full-screen frame -------------------------------------------- */
 
 /* Full-screen programs (vim, less, htop) draw on the alternate screen and
@@ -1510,6 +1495,7 @@ static void broker_serve(struct broker *b) {
         int64_t timeout = 1000;
         int64_t msg_due = msgs_due_in(b);
         if (msg_due < timeout) timeout = msg_due;
+        if (b->initial_input && timeout > 50) timeout = 50; /* watch for the prompt */
         for (int i = 0; i < BROKER_MAX_CONTROL; i++) {
             ctl_idx[i] = -1;
             if (ctl[i].fd < 0) continue;
@@ -1708,6 +1694,7 @@ static void broker_serve(struct broker *b) {
 
         now = now_ms();
         pump_msgs(b, now);
+        deliver_initial_input(b, now);
         for (int i = 0; i < BROKER_MAX_CONTROL; i++) {
             if (ctl[i].fd >= 0 && ctl[i].phase == CTL_WAITING) check_wait(b, &ctl[i], now);
             else if (ctl[i].fd >= 0 && ctl[i].phase == CTL_READING && now - ctl[i].active_ms >= BROKER_READ_MS)
@@ -1900,6 +1887,10 @@ void hold_run_console_broker(int parent_pipe,
     }
     close(parent_pipe);
     b.parent_pipe = -1;
+    if (options && options->initial_input && options->initial_input[0]) {
+        b.initial_input = options->initial_input;
+        b.initial_due_ms = now_ms() + BROKER_INITIAL_INPUT_MS;
+    }
 
     /* Forward a TERM aimed at the broker to the held group (no SA_RESTART so
      * the serve loop's poll/waitpid see EINTR). The handler is async-signal-

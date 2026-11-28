@@ -7117,6 +7117,7 @@ run_test "a terminal's record follows its shell: directory, workload, pipeline, 
 run_test "a terminal's workload argv is kept whole: spaces, empty, 20000 characters" test_terminal_workload_argv_is_exact
 run_test "a terminal's program is read live: exec in place; background children" test_terminal_live_program_and_children
 run_test "save fails, and says so, when the terminal's state cannot be written" test_save_fails_when_terminal_state_cannot_be_written
+run_test "recall rebuilds a terminal: its directory, environment source, exact workload" test_recall_rebuilds_the_terminal
 run_test "screen verbs refuse processes without a TTY" test_screen_verbs_need_a_tty
 run_test "send --mouse to a program without mouse reporting exits 9" test_send_mouse_off_is_reported
 run_test "processes see BACKMUX_ID, BACKMUX_NAME, BACKMUX_PARENT" test_call_identity_environment

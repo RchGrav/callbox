@@ -168,12 +168,23 @@ static int restart_existing_run(const struct hold_invocation *inv,
         rc = 5;
         goto out;
     }
-    /* Recall uses the recorded working directory unless that setting was unset. */
-    if (old.recipe.has_working && chdir(old.recipe.working) != 0) {
+    /* A terminal comes back as it was last observed (runtime/restore.c): in
+     * that directory, and a shell with its environment source and workload
+     * typed at its prompt. Otherwise recall uses the recorded working
+     * directory unless that setting was unset. */
+    struct hold_restore plan;
+    if (hold_restore_plan(&old, &plan) != 0) {
+        rc = 1;
+        goto out;
+    }
+    if (plan.note[0]) hold_sig_note(inv, "backmux: %s: %s\n", old.has_name ? old.name : id, plan.note);
+    if (plan.dir[0] && chdir(plan.dir) != 0) plan.dir[0] = '\0';
+    if (!plan.dir[0] && old.recipe.has_working && chdir(old.recipe.working) != 0) {
         fprintf(stderr, "backmux: error: cannot start %s in %s: %s\n"
                         "  backmux set %s working=DIR changes the directory; backmux unset %s working uses the current directory\n",
                 old.has_name ? old.name : id, old.recipe.working, strerror(errno),
                 old.has_name ? old.name : id, old.has_name ? old.name : id);
+        hold_restore_free(&plan);
         rc = 5;
         goto out;
     }
@@ -210,8 +221,12 @@ static int restart_existing_run(const struct hold_invocation *inv,
         .existing_run_name = old.has_name ? old.name : NULL,
         .existing_created_unix_ns = old.created_unix_ns,
         .existing_created_at = old.has_created_at ? old.created_at : NULL,
+        .initial_input = plan.input,
+        .existing_term = old.has_term ? &old.term : NULL,
+        .env_source = old.recipe.has_env_source ? old.recipe.env_source : NULL,
     };
     rc = hold_perform_start_options(inv, store, &opts);
+    hold_restore_free(&plan);
 out:
     hold_free_argv_alloc(argv, argc);
     free(j);

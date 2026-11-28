@@ -50,6 +50,7 @@ const struct hold_record_field hold_record_fields[] = {
     SH("launch_error", 0, launch_error, has_launch_error),
     SH("console_sock", RF_ABS, console_sock, has_console),
     SH("restart", RF_NONEMPTY, recipe.restart_policy, recipe.has_restart_policy),
+    SH("env_source", RF_ABS, recipe.env_source, recipe.has_env_source), /* the environment source (set NAME source=FILE) */
     FH("restart_delay_seconds", RF_INT, 0, recipe.restart_delay_seconds, recipe.has_restart_delay),
     FH("invoked_by_uid", RF_UID, 0, invoked_by_uid, has_invocation),
     FH("invoked_by_gid", RF_GID, 0, invoked_by_gid, has_invocation),

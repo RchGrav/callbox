@@ -17,7 +17,7 @@
 static const char set_usage[] =
     "usage: backmux set <target> <setting>[=<value>]\n"
     "       backmux unset <target> <setting>\n"
-    "settings: working=DIR, program=PROGRAM, args=ARGS (or: args -- ARG...), name=NAME\n";
+    "settings: working=DIR, program=PROGRAM, args=ARGS (or: args -- ARG...), name=NAME, source=FILE\n";
 
 static const char *label_of(const struct hold_run_record *r, char *display, size_t n) {
     if (r->has_name && r->name[0]) return r->name;
@@ -75,7 +75,7 @@ int hold_cmd_set_action(const struct hold_invocation *inv,
         fputs(set_usage, stderr);
         return HOLD_EXIT_USAGE;
     }
-    if (strcmp(key, "working") && strcmp(key, "program") && !is_args && strcmp(key, "name")) {
+    if (strcmp(key, "working") && strcmp(key, "program") && !is_args && strcmp(key, "name") && strcmp(key, "source")) {
         fprintf(stderr, "backmux: error: unknown setting '%s'\n%s", key, set_usage);
         return HOLD_EXIT_USAGE;
     }
@@ -89,7 +89,8 @@ int hold_cmd_set_action(const struct hold_invocation *inv,
                                         : "the process name is required; use backmux set NAME name=...");
         return HOLD_EXIT_USAGE;
     }
-    if (!unset && (!strcmp(key, "working") || !strcmp(key, "program") || !strcmp(key, "name")) && (!value || !*value)) {
+    if (!unset && (!strcmp(key, "working") || !strcmp(key, "program") || !strcmp(key, "name") || !strcmp(key, "source")) &&
+        (!value || !*value)) {
         fprintf(stderr, "backmux: error: %s requires a value: backmux set %s %s=...\n", key, token, key);
         return HOLD_EXIT_USAGE;
     }
@@ -98,6 +99,17 @@ int hold_cmd_set_action(const struct hold_invocation *inv,
 
     char new_working[HOLD_PATH_MAX] = "";
     char new_program[HOLD_PATH_MAX] = "";
+    char new_source[HOLD_PATH_MAX] = "";
+    if (!unset && !strcmp(key, "source")) {
+        char cwd[HOLD_PATH_MAX], abs[HOLD_PATH_MAX];
+        struct stat st;
+        if (!getcwd(cwd, sizeof(cwd)) ||
+            hold_absolute_existing_path_from_cwd(value, cwd, abs, sizeof(abs)) != 0 || !realpath(abs, new_source) ||
+            stat(new_source, &st) != 0 || !S_ISREG(st.st_mode)) {
+            fprintf(stderr, "backmux: error: source: cannot resolve '%s' to an existing file\n", value);
+            return 5;
+        }
+    }
     if (!unset && !strcmp(key, "working")) {
         char cwd[HOLD_PATH_MAX], abs[HOLD_PATH_MAX];
         struct stat st;
@@ -145,6 +157,13 @@ int hold_cmd_set_action(const struct hold_invocation *inv,
     if (!strcmp(key, "working")) {
         r.recipe.has_working = !unset;
         snprintf(r.recipe.working, sizeof(r.recipe.working), "%s", unset ? "" : new_working);
+        /* A directory set now replaces the one last observed: the person's
+         * word is newer. (A later observation of the running terminal is
+         * newer still.) */
+        if (!unset && r.has_term) snprintf(r.term.cwd, sizeof(r.term.cwd), "%s", new_working);
+    } else if (!strcmp(key, "source")) {
+        r.recipe.has_env_source = !unset;
+        snprintf(r.recipe.env_source, sizeof(r.recipe.env_source), "%s", unset ? "" : new_source);
     } else if (!strcmp(key, "program")) {
         free(old_argv[0]);
         if (!(old_argv[0] = strdup(new_program))) {
@@ -271,6 +290,7 @@ int hold_cmd_info_action(const struct hold_invocation *inv,
     if (st == STATE_RUNNING) printf("pid:       %d\n", (int)r.pid);
     print_terminal_state(&r, st);
     if (r.recipe.has_size) printf("size:      %dx%d\n", r.recipe.size_cols, r.recipe.size_rows);
+    if (r.recipe.has_env_source) printf("source:    %s\n", r.recipe.env_source);
     if (r.recipe.has_restart_policy) printf("restart:   %s\n", r.recipe.restart_policy);
     /* Omit environment values from this summary; inspect shows the record. */
     for (int i = 0; i < r.recipe.envc; i++) {

@@ -140,4 +140,11 @@ int hold_console_peer_uid(int fd, uid_t *uid_out);
 int hold_console_peer_pid(int fd, pid_t *pid_out);
 int hold_connect_console_socket(const char *sock_path);
 
+/* Control request text (src/console/request.c): hex payloads decoded in
+ * place (the decoded length, or -1), and "key=value" lookup in a
+ * space-separated argument line. */
+int hold_console_hex_value(int ch); /* one hex digit's value, or -1 */
+ssize_t hold_console_hex_decode(char *s);
+const char *hold_console_kv_get(const char *line, const char *key);
+
 #endif /* HOLD_CONSOLE_INTERNAL_H */
