@@ -108,10 +108,13 @@ launch). The launch fields stay as they were, as history.
 | Field | Meaning |
 |---|---|
 | `observed_unix_ns` | When this was observed |
-| `hosting_shell` | The program is a shell hosting the person's commands: a known shell started with no `-c` and no script, or `backmux shell` |
-| `cwd` | The program's current directory (the shell's, or a directly launched program's) |
-| `foreground` | A hosting shell's foreground: `idle`, `workload`, `pipeline` (one argv cannot rebuild it), or `unavailable` (could not be read: not evidence of idle) |
-| `workload` | `pid`, exact `argv` and `cwd` of the foreground job's leader, or, for a pipeline whose leader has gone, of a member still running |
+| `argv` | The program running now, read whole from the live process: an `exec` in place (`exec zsh`) keeps the pid but not the program, and the launch is only history |
+| `hosting_shell` | That program is a shell hosting the person's commands: a known shell given no `-c` and no script, or the shell `backmux shell` started while it still runs |
+| `children` | Its live child processes, background jobs included |
+| `cwd` | Its current directory (the shell's, or a directly launched program's) |
+| `foreground` | A hosting shell's foreground: `idle`, `workload`, `pipeline` (one argv cannot rebuild it), or `unavailable` (never read) |
+| `foreground_unread` | The latest look could not read the foreground: `foreground` and `workload` are the last ones read. Why: a failed read is not evidence of idle, and must not throw away what restores the terminal. A shell read as idle does clear the workload |
+| `workload` | `pid`, whole `argv` (every argument, empty ones kept) and `cwd` of the foreground job's leader, or, for a pipeline whose leader has gone, of a member still running |
 
 It is observed from the live process tree (Linux `/proc`, macOS libproc),
 never a checkpoint of process memory, and only from a process whose boot ID
@@ -122,6 +125,8 @@ what the terminal does has changed, because every rewrite is an fsync and
 `list` looks at every running terminal; the rewrite re-reads the record under
 the store lock, so an exit stamp or a save written meanwhile is kept. Only
 the store's owner rewrites it. An ended terminal keeps its last observation.
+A save, or a layout save, whose terminal state could not be written fails
+and says so: a reported save is a written one.
 Services and pipe processes have no terminal, so no `terminal`.
 
 ### Exit stamp

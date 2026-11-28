@@ -101,6 +101,13 @@ int hold_load_record(const char *path, struct hold_run_record *r) {
         r->has_term = hold_json_get_str(obj, "cwd", t->cwd, sizeof(t->cwd)) == 0;
         (void)hold_json_get_i64(obj, "observed_unix_ns", &t->observed_unix_ns);
         (void)hold_json_get_bool(obj, "hosting_shell", &t->hosting_shell);
+        (void)hold_json_get_bool(obj, "foreground_unread", &t->foreground_unread);
+        int64_t children = 0;
+        if (hold_json_get_i64(obj, "children", &children) == 0) t->children = (int)children;
+        if (hold_json_get_argv_alloc(obj, &t->argv, &t->argc) != 0) {
+            t->argv = NULL;
+            t->argc = 0;
+        }
         (void)hold_json_get_str(obj, "foreground", t->foreground, sizeof(t->foreground));
         const char *w = NULL;
         if (hold_json_find_key(obj, "workload", &w) == 0 && w && *w == '{') {

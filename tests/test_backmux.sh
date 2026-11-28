@@ -6874,52 +6874,13 @@ test_attach_repaints_live_screen() {
 }
 
 
-# A terminal's record follows what it is doing, not only how it was launched:
-# the shell's directory, the foreground workload with its exact argv and
-# directory, idle once that ends, a pipeline as one, and the last observation
-# once the terminal ends. Paths with spaces, as people's folders have.
-ts_state() {
-  python3 -c 'import json,sys; t=json.load(open(sys.argv[1])).get("terminal") or {}; w=t.get("workload") or {}
-print(t.get("cwd",""), t.get("foreground",""), " ".join(w.get("argv",[])), w.get("cwd",""), sep="|")' "$1"
-}
-ts_until() { # path want: list (which refreshes) until the record says want
-  local i
-  for i in $(seq 1 40); do
-    "$HOLD_BIN" list >/dev/null 2>&1
-    [ "$(ts_state "$1")" = "$2" ] && return 0
-    sleep 0.1
-  done
-  echo "terminal state: $(ts_state "$1") (want $2)" >&2
-  return 1
-}
-test_terminal_state_follows_the_shell() {
-  command -v bash >/dev/null 2>&1 || skip "no bash"
-  local id path a="$TEST_ROOT/ts A" b="$TEST_ROOT/ts B" c="$TEST_ROOT/ts C"
-  mkdir -p "$a" "$b" "$c"
-  # the kernel reports a process's real directory (macOS: /var is /private/var)
-  a=$(cd "$a" && pwd -P) b=$(cd "$b" && pwd -P) c=$(cd "$c" && pwd -P)
-  id=$(cd "$a" && "$HOLD_BIN" -dt --name ts -- bash --norc) || return 1
-  path=$(record_path "$id") || return 1
-  "$HOLD_BIN" wait ts --match '$' --timeout 5000 >/dev/null || return 1
-  ts_until "$path" "$a|idle||" || return 1
-  "$HOLD_BIN" send ts "cd '$b' && (cd '$c' && exec sleep 301)" --enter >/dev/null || return 1
-  ts_until "$path" "$b|workload|sleep 301|$c" || return 1
-  out_has '^workload:  sleep 301$' "$HOLD_BIN" info ts || return 1
-  "$HOLD_BIN" send ts -k C-c >/dev/null || return 1
-  ts_until "$path" "$b|idle||" || return 1
-  "$HOLD_BIN" send ts 'sleep 302 | sleep 303' --enter >/dev/null || return 1
-  ts_until "$path" "$b|pipeline|sleep 302|$b" || return 1
-  out_has 'part of a pipeline' "$HOLD_BIN" info ts || return 1
-  "$HOLD_BIN" end ts >/dev/null 2>&1 || true
-  [ "$(ts_state "$path")" = "$b|pipeline|sleep 302|$b" ] || { echo "the end lost the last observation" >&2; return 1; }
-  out_has 'the last observation before it ended' "$HOLD_BIN" info ts || return 1
-}
-
 # the screen tests (grid, splits, shell, chat for agents, the bar)
 # shellcheck source=tests/test_screen.sh
 . "$(dirname "${BASH_SOURCE[0]}")/test_screen.sh"
 # shellcheck source=tests/test_help.sh
 . "$(dirname "${BASH_SOURCE[0]}")/test_help.sh"
+# shellcheck source=tests/test_terminal.sh
+. "$(dirname "${BASH_SOURCE[0]}")/test_terminal.sh"
 
 run_test "--print spans --all and multiple explicit targets" test_print_over_all_and_multiple
 run_test "stop refuses a record with a tampered pgid<=1 (exit 5)" test_signal_refuses_tampered_pgid
@@ -7153,6 +7114,9 @@ run_test "nested attach: the detach keys let go of the innermost first" test_nes
 run_test "a newer attach takes the process; leaving is quiet; names, not ids" test_attach_messages_say_what_happened
 run_test "peek shows the last screen after exit; delete removes it" test_peek_after_exit_and_purge
 run_test "a terminal's record follows its shell: directory, workload, pipeline, last observation" test_terminal_state_follows_the_shell
+run_test "a terminal's workload argv is kept whole: spaces, empty, 20000 characters" test_terminal_workload_argv_is_exact
+run_test "a terminal's program is read live: exec in place; background children" test_terminal_live_program_and_children
+run_test "save fails, and says so, when the terminal's state cannot be written" test_save_fails_when_terminal_state_cannot_be_written
 run_test "screen verbs refuse processes without a TTY" test_screen_verbs_need_a_tty
 run_test "send --mouse to a program without mouse reporting exits 9" test_send_mouse_off_is_reported
 run_test "processes see BACKMUX_ID, BACKMUX_NAME, BACKMUX_PARENT" test_call_identity_environment

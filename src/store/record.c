@@ -156,14 +156,17 @@ static int emit_record_json(FILE *f, void *vctx) {
     if (r->has_term) {
         const struct hold_term_state *t = &r->term;
         hold_emit_kv(f, &first, "terminal");
-        fprintf(f, "{ \"observed_unix_ns\": %" PRId64 ", \"hosting_shell\": %s, \"cwd\": \"",
-                t->observed_unix_ns, t->hosting_shell ? "true" : "false");
+        fprintf(f, "{ \"observed_unix_ns\": %" PRId64 ", \"argv\": ", t->observed_unix_ns);
+        hold_write_json_argv(f, t->argc, t->argv);
+        fprintf(f, ", \"hosting_shell\": %s, \"children\": %d, \"cwd\": \"", t->hosting_shell ? "true" : "false",
+                t->children);
         hold_json_escape(f, t->cwd);
         fputc('"', f);
         if (t->hosting_shell) {
             fprintf(f, ", \"foreground\": \"");
             hold_json_escape(f, t->foreground);
             fputc('"', f);
+            if (t->foreground_unread) fprintf(f, ", \"foreground_unread\": true");
             if (t->workload_argc > 0) {
                 fprintf(f, ", \"workload\": { \"pid\": %ld, \"argv\": ", (long)t->workload_pid);
                 hold_write_json_argv(f, t->workload_argc, t->workload_argv);

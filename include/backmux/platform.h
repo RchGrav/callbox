@@ -37,6 +37,9 @@ int hold_proc_fd_target(pid_t pid, int fd, char *out, size_t n);
  * any other program; a script's interpreter (node, python) shows in argv[0]
  * and the script in argv[1], which the name alone (comm) never says. */
 int hold_proc_cmdline(pid_t pid, char *out, size_t n, size_t *len);
+/* A process's whole argument vector, allocated (hold_free_argv_alloc), every
+ * argument whole and empty ones kept: what rebuilding a program needs. */
+int hold_proc_argv(pid_t pid, char ***argv_out, int *argc_out);
 /* The foreground process group of the terminal pid has as its controlling
  * terminal (what the person's keys reach): a shell's job, say. */
 int hold_proc_foreground_group(pid_t pid, pid_t *pgid_out);

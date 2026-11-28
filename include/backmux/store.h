@@ -64,7 +64,7 @@ void hold_record_init_running(struct hold_run_record *r,
 int hold_load_record(const char *path, struct hold_run_record *r);
 void hold_free_run_record(struct hold_run_record *r);
 /* Terminal state (src/store/term_state.c). */
-bool hold_record_is_hosting_shell(const struct hold_run_record *r);
+bool hold_argv_is_hosting_shell(int argc, char **argv);
 /* Look at the live terminal of r (running, on a PTY) and fill *t: 0 when
  * observed, -1 when the process cannot be read, which says nothing about
  * whether it is idle or has ended. */

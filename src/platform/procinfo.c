@@ -88,6 +88,99 @@ int hold_proc_cmdline(pid_t pid, char *out, size_t n, size_t *len) {
 #endif
 }
 
+/* A process's whole argument vector, allocated (free with
+ * hold_free_argv_alloc). Why another reader beside hold_proc_cmdline: that
+ * one fills a caller's buffer and cuts what does not fit, and rebuilding a
+ * program needs every argument whole. Empty arguments are kept. */
+static int split_nul_args(const char *buf, size_t len, int want, char ***argv_out, int *argc_out) {
+    int n = 0;
+    for (size_t i = 0; i < len; i++) n += buf[i] == '\0';
+    if (len > 0 && buf[len - 1] != '\0') n++;
+    if (want >= 0 && n > want) n = want;
+    if (n <= 0) return -1;
+    char **argv = calloc((size_t)n + 1, sizeof(char *));
+    if (!argv) return -1;
+    size_t i = 0;
+    for (int k = 0; k < n; k++) {
+        size_t l = i < len ? strnlen(buf + i, len - i) : 0;
+        argv[k] = strndup(i < len ? buf + i : "", l);
+        if (!argv[k]) {
+            hold_free_argv_alloc(argv, k);
+            return -1;
+        }
+        i += l + 1;
+    }
+    *argv_out = argv;
+    *argc_out = n;
+    return 0;
+}
+
+int hold_proc_argv(pid_t pid, char ***argv_out, int *argc_out) {
+    *argv_out = NULL;
+    *argc_out = 0;
+    if (pid <= 0) {
+        errno = EINVAL;
+        return -1;
+    }
+#if defined(__APPLE__)
+    /* KERN_PROCARGS2 reports its whole size: argc, the exec path, padding
+     * NULs, then argv (then the environment, which argc stops short of). */
+    int mib[3] = {CTL_KERN, KERN_PROCARGS2, pid};
+    size_t sz = 0;
+    if (sysctl(mib, 3, NULL, &sz, NULL, 0) != 0 || sz < sizeof(int)) return -1;
+    char *buf = malloc(sz);
+    if (!buf) return -1;
+    if (sysctl(mib, 3, buf, &sz, NULL, 0) != 0 || sz < sizeof(int)) {
+        free(buf);
+        return -1;
+    }
+    int argc = 0;
+    memcpy(&argc, buf, sizeof(argc));
+    size_t i = sizeof(int);
+    while (i < sz && buf[i]) i++;
+    while (i < sz && !buf[i]) i++;
+    int rc = argc > 0 ? split_nul_args(buf + i, sz - i, argc, argv_out, argc_out) : -1;
+    free(buf);
+    return rc;
+#else
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%ld/cmdline", (long)pid);
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    size_t cap = 4096, len = 0;
+    char *buf = malloc(cap);
+    for (;;) {
+        if (!buf) {
+            close(fd);
+            return -1;
+        }
+        if (len == cap) {
+            char *grown = cap < ((size_t)64 << 20) ? realloc(buf, cap * 2) : NULL;
+            if (!grown) { /* past 64 MiB: no command line is that long */
+                free(buf);
+                close(fd);
+                return -1;
+            }
+            buf = grown;
+            cap *= 2;
+        }
+        ssize_t r = read(fd, buf + len, cap - len);
+        if (r < 0 && errno == EINTR) continue;
+        if (r < 0) {
+            free(buf);
+            close(fd);
+            return -1;
+        }
+        if (r == 0) break;
+        len += (size_t)r;
+    }
+    close(fd);
+    int rc = len > 0 ? split_nul_args(buf, len, -1, argv_out, argc_out) : -1; /* none: a kernel thread or zombie */
+    free(buf);
+    return rc;
+#endif
+}
+
 int hold_proc_foreground_group(pid_t pid, pid_t *pgid_out) {
 #if defined(__APPLE__)
     struct kinfo_proc kp;

@@ -217,16 +217,19 @@ static const char *call_kind(const struct hold_run_record *r) {
 static void print_terminal_state(const struct hold_run_record *r, enum run_state st) {
     if (!r->has_term) return;
     const struct hold_term_state *t = &r->term;
-    if (t->hosting_shell) printf("shell:     %s\n", r->recipe.argc > 0 && r->recipe.argv ? r->recipe.argv[0] : "?");
+    char line[HOLD_PATH_MAX];
+    if (t->argc <= 0 || hold_format_argv_human(line, sizeof(line), t->argc, t->argv) != 0) snprintf(line, sizeof(line), "?");
+    printf("%s%s\n", t->hosting_shell ? "shell:     " : "running:   ", line);
     printf("directory: %s\n", t->cwd);
     if (t->hosting_shell) {
         if (t->workload_argc > 0) {
-            char line[HOLD_PATH_MAX];
             if (hold_format_argv_human(line, sizeof(line), t->workload_argc, t->workload_argv) != 0) line[0] = '\0';
-            printf("workload:  %s%s\n", line, !strcmp(t->foreground, "pipeline") ? " (part of a pipeline)" : "");
+            printf("workload:  %s%s%s\n", line, !strcmp(t->foreground, "pipeline") ? " (part of a pipeline)" : "",
+                   t->foreground_unread ? " (as last read; it could not be read now)" : "");
             printf("           pid %d, in %s\n", (int)t->workload_pid, t->workload_cwd);
         } else {
-            printf("workload:  %s\n", !strcmp(t->foreground, "idle") ? "none (the shell is idle)" : "unavailable");
+            printf("workload:  %s%s\n", !strcmp(t->foreground, "idle") ? "none (the shell is idle)" : "unavailable",
+                   t->foreground_unread && !strcmp(t->foreground, "idle") ? " (as last read; it could not be read now)" : "");
         }
     }
     char when[64];

@@ -357,7 +357,7 @@ void mux_new_terminal(struct mux *m, char split);
 struct pane *mux_open_id(struct mux *m, const char *id, const char *fallback_name);
 bool mux_start_again(struct mux *m, const char *id, const char *name, bool tty, bool pipe, bool shell);
 /* mux_chat.c */
-void mux_write_small(const char *path, const char *text, size_t len);
+bool mux_write_small(const char *path, const char *text, size_t len); /* false: not written */
 size_t mux_read_small(const char *path, char *out, size_t cap);
 void mux_on_sent(void *app, const char *label, const char *text, size_t len);
 void mux_chat_look(struct mux *m);

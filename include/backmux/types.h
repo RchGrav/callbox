@@ -38,9 +38,13 @@ struct hold_recipe {
  * saved terminal can be rebuilt that way. */
 struct hold_term_state {
     int64_t observed_unix_ns;
-    bool hosting_shell;            /* its program is a shell hosting the person's commands */
-    char cwd[HOLD_PATH_MAX];       /* that program's current directory */
+    int argc;                      /* the program running now, read from the live process */
+    char **argv;
+    bool hosting_shell;            /* that program is a shell hosting the person's commands */
+    char cwd[HOLD_PATH_MAX];       /* its current directory */
+    int children;                  /* its live child processes, background jobs included */
     char foreground[16];           /* a hosting shell's: idle, workload, pipeline, unavailable */
+    bool foreground_unread;        /* the latest look could not read it: foreground and workload are the last read */
     pid_t workload_pid;            /* workload, pipeline: the foreground group's leader */
     char workload_cwd[HOLD_PATH_MAX];
     int workload_argc;

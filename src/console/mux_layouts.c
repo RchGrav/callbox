@@ -59,7 +59,10 @@ bool mux_layout_save(struct mux *m, const char *name, const char **why) {
     /* Each member's record keeps what its terminal is doing now, so the
      * layout rebuilds the terminals as they are, not as they were launched. */
     for (int i = 0; i < MUX_SLOTS; i++)
-        if (m->base[i] && m->base[i]->id[0]) (void)hold_refresh_terminal(m->store->record_dir, m->base[i]->id);
+        if (m->base[i] && m->base[i]->id[0] && hold_refresh_terminal(m->store->record_dir, m->base[i]->id) != 0) {
+            *why = "a member's terminal state could not be written";
+            return false;
+        }
     for (int i = 0; i < MUX_SLOTS && k < sizeof(buf); i++)
         if (m->base[i] && m->base[i]->id[0])
             k += (size_t)snprintf(buf + k, sizeof(buf) - k, "pane %d%c %s %s\n", i / MUX_POS + 1, "ABCDE"[i % MUX_POS],
@@ -68,7 +71,10 @@ bool mux_layout_save(struct mux *m, const char *name, const char **why) {
         *why = "the layout is too large";
         return false;
     }
-    mux_write_small(path, buf, k);
+    if (!mux_write_small(path, buf, k)) {
+        *why = "cannot write the layout file";
+        return false;
+    }
     snprintf(m->layout_name, sizeof(m->layout_name), "%s", name);
     m->layout_dirty = false;
     mux_relayout(m);

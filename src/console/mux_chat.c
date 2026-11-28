@@ -15,14 +15,18 @@ static int chat_path(const struct mux *m, const char *what, char *out, size_t n)
     return hold_checked_snprintf(out, n, "%s/%s.%s", dir, m->me, what);
 }
 
-void mux_write_small(const char *path, const char *text, size_t len) {
+bool mux_write_small(const char *path, const char *text, size_t len) {
     char tmp[HOLD_PATH_MAX + 16];
-    if (hold_checked_snprintf(tmp, sizeof(tmp), "%s.%d", path, (int)getpid()) != 0) return;
+    if (hold_checked_snprintf(tmp, sizeof(tmp), "%s.%d", path, (int)getpid()) != 0) return false;
     int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
-    if (fd < 0) return;
+    if (fd < 0) return false;
     bool ok = hold_write_all(fd, text, len) == 0;
-    close(fd);
-    if (!ok || rename(tmp, path) != 0) unlink(tmp);
+    if (close(fd) != 0) ok = false;
+    if (!ok || rename(tmp, path) != 0) {
+        unlink(tmp);
+        return false;
+    }
+    return true;
 }
 
 size_t mux_read_small(const char *path, char *out, size_t cap) {

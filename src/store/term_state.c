@@ -4,12 +4,13 @@
  * terminal started. The person then changes directory and runs programs in
  * it, so restoring the launch alone does not restore what they saved: a bash
  * launched in ~ that is running claude in ~/callbox is "bash in ~" by its
- * launch. This observes the live terminal - whether its program is a hosting
- * shell, its current directory, and the shell's foreground workload - and
- * keeps the last observation in the record, beside the launch, which stays
- * as history. It is configuration derived from the live process tree, never
- * a checkpoint of process memory, and it runs when a terminal is listed,
- * inspected or saved: there is no daemon to poll. */
+ * launch. This observes the live terminal - the program running in it now,
+ * whether that is a hosting shell, its current directory, the shell's
+ * foreground workload and how many children it has - and keeps the last
+ * observation in the record, beside the launch, which stays as history. It is
+ * configuration derived from the live process tree, never a checkpoint of
+ * process memory, and it runs when a terminal is listed, inspected or saved:
+ * there is no daemon to poll. */
 #include "backmux/config.h"
 #include "backmux/types.h"
 #include "backmux/core.h"
@@ -33,19 +34,23 @@ static bool option_takes_value(const char *a) {
            !strcmp(a, "--rcfile") || !strcmp(a, "--init-file");
 }
 
-bool hold_record_is_hosting_shell(const struct hold_run_record *r) {
-    if (r->recipe.mode_shell) return true;
-    if (r->recipe.argc < 1 || !r->recipe.argv || !r->recipe.argv[0]) return false;
-    const char *b = strrchr(r->recipe.argv[0], '/');
-    b = b ? b + 1 : r->recipe.argv[0];
-    if (*b == '-') b++; /* a login shell's argv[0], -bash */
+static const char *program_name(const char *argv0) {
+    const char *b = strrchr(argv0, '/');
+    b = b ? b + 1 : argv0;
+    return *b == '-' ? b + 1 : b; /* a login shell's argv[0], -bash */
+}
+
+/* Whether this argv is a shell hosting a person's commands: a known shell
+ * given no command (-c, fish's --command) and no script, which it would run
+ * and exit, being that script's interpreter rather than a host. */
+bool hold_argv_is_hosting_shell(int argc, char **argv) {
+    if (argc < 1 || !argv || !argv[0]) return false;
+    const char *b = program_name(argv[0]);
     bool known = false;
     for (int i = 0; hosting_shells[i]; i++) known = known || !strcmp(b, hosting_shells[i]);
     if (!known) return false;
-    /* A shell given a command (-c, fish's --command) or a script runs that
-     * and exits: it is the script's interpreter, not a host. */
-    for (int i = 1; i < r->recipe.argc; i++) {
-        const char *a = r->recipe.argv[i];
+    for (int i = 1; i < argc; i++) {
+        const char *a = argv[i];
         if (!a || !strcmp(a, "--")) return false;
         if (option_takes_value(a)) {
             i++;
@@ -72,8 +77,6 @@ static bool same_live_process(const struct hold_run_record *r) {
     return !r->proc_starttime_ticks || start == r->proc_starttime_ticks;
 }
 
-static int split_cmdline(const char *buf, size_t len, char ***argv_out, int *argc_out);
-
 /* The live members of the foreground group that the shell started itself.
  * Why the group walk and the parent, not the shell's children list and their
  * ids: both work on macOS too, where a process's group cannot be read on its
@@ -95,62 +98,59 @@ static int count_fg_member(pid_t pid, void *ctx) {
     return 0;
 }
 
-/* A process's argv and directory into t's workload fields. */
+static int count_live_child(pid_t child, void *ctx) {
+    if (hold_leader_present(child)) (*(int *)ctx)++;
+    return 0;
+}
+
+/* A process's argv (whole) and directory into t's workload fields. */
 static int read_workload(pid_t pid, struct hold_term_state *t) {
-    char buf[8192];
-    size_t len = 0;
-    if (hold_proc_cmdline(pid, buf, sizeof(buf), &len) != 0 || len == 0 ||
-        split_cmdline(buf, len, &t->workload_argv, &t->workload_argc) != 0)
-        return -1;
+#ifdef HOLD_TESTING
+    /* The suite cannot make a workload unreadable without another user
+     * (/proc/<pid>/cwd needs ptrace access), so a test build fails it here. */
+    if (getenv("HOLD_TEST_FOREGROUND_UNREADABLE")) return -1;
+#endif
+    if (hold_proc_argv(pid, &t->workload_argv, &t->workload_argc) != 0) return -1;
     if (hold_proc_cwd(pid, t->workload_cwd, sizeof(t->workload_cwd)) != 0) {
-        hold_free_term_state(t);
+        hold_free_argv_alloc(t->workload_argv, t->workload_argc);
+        t->workload_argv = NULL;
+        t->workload_argc = 0;
         return -1;
     }
     t->workload_pid = pid;
     return 0;
 }
 
-/* The kernel's NUL-separated argument vector as an allocated argv. */
-static int split_cmdline(const char *buf, size_t len, char ***argv_out, int *argc_out) {
-    int n = 0;
-    for (size_t i = 0; i < len; i++) n += buf[i] == '\0';
-    if (len > 0 && buf[len - 1] != '\0') n++;
-    if (n == 0) return -1;
-    char **argv = calloc((size_t)n + 1, sizeof(char *));
-    if (!argv) return -1;
-    int k = 0;
-    for (size_t i = 0; i < len && k < n;) {
-        size_t l = strnlen(buf + i, len - i);
-        argv[k] = strndup(buf + i, l);
-        if (!argv[k]) {
-            hold_free_argv_alloc(argv, k);
-            return -1;
-        }
-        k++;
-        i += l + 1;
-    }
-    *argv_out = argv;
-    *argc_out = k;
-    return 0;
-}
-
 void hold_free_term_state(struct hold_term_state *t) {
     if (!t) return;
+    hold_free_argv_alloc(t->argv, t->argc);
     hold_free_argv_alloc(t->workload_argv, t->workload_argc);
-    t->workload_argv = NULL;
-    t->workload_argc = 0;
+    t->argv = t->workload_argv = NULL;
+    t->argc = t->workload_argc = 0;
 }
 
 int hold_observe_terminal(const struct hold_run_record *r, struct hold_term_state *t) {
     memset(t, 0, sizeof(*t));
     if (!r->recipe.mode_tty || !same_live_process(r)) return -1;
-    if (hold_proc_cwd(r->pid, t->cwd, sizeof(t->cwd)) != 0) return -1;
+    /* The program running now, read from the live process: an exec in place
+     * (exec zsh, exec claude) keeps the pid and start time but not the
+     * program, and the launch is only history. */
+    if (hold_proc_argv(r->pid, &t->argv, &t->argc) != 0 || hold_proc_cwd(r->pid, t->cwd, sizeof(t->cwd)) != 0) {
+        hold_free_term_state(t);
+        return -1;
+    }
     t->observed_unix_ns = now_unix_ns();
-    t->hosting_shell = hold_record_is_hosting_shell(r);
-    if (!t->hosting_shell) return 0; /* a program launched directly: its directory is the state */
+    /* backmux shell hosts whatever shell it started (one this list does not
+     * know too), while that shell is still the program running. */
+    t->hosting_shell = hold_argv_is_hosting_shell(t->argc, t->argv) ||
+                       (r->recipe.mode_shell && r->recipe.argc > 0 && r->recipe.argv &&
+                        !strcmp(program_name(t->argv[0]), program_name(r->recipe.argv[0])));
+    (void)hold_proc_for_each_child(r->pid, count_live_child, &t->children);
+    if (!t->hosting_shell) return 0; /* a program launched directly: its argv and directory are the state */
     pid_t fg = 0;
     if (hold_proc_foreground_group(r->pid, &fg) != 0 || fg <= 0) {
         snprintf(t->foreground, sizeof(t->foreground), "unavailable");
+        t->foreground_unread = true;
         return 0;
     }
     if (fg == r->pgid) {
@@ -168,6 +168,7 @@ int hold_observe_terminal(const struct hold_run_record *r, struct hold_term_stat
     if (read_workload(fg, t) != 0) {
         if (!c.first || read_workload(c.first, t) != 0) {
             snprintf(t->foreground, sizeof(t->foreground), "unavailable");
+            t->foreground_unread = true;
             return 0;
         }
         kind = "pipeline";
@@ -185,10 +186,41 @@ static bool same_argv(int ac, char **av, int bc, char **bv) {
 
 /* Whether two observations say the same thing (the time aside). */
 static bool same_state(const struct hold_term_state *a, const struct hold_term_state *b) {
-    return a->hosting_shell == b->hosting_shell && !strcmp(a->cwd, b->cwd) &&
-           !strcmp(a->foreground, b->foreground) && a->workload_pid == b->workload_pid &&
+    return a->hosting_shell == b->hosting_shell && !strcmp(a->cwd, b->cwd) && a->children == b->children &&
+           same_argv(a->argc, a->argv, b->argc, b->argv) && !strcmp(a->foreground, b->foreground) &&
+           a->foreground_unread == b->foreground_unread && a->workload_pid == b->workload_pid &&
            !strcmp(a->workload_cwd, b->workload_cwd) &&
            same_argv(a->workload_argc, a->workload_argv, b->workload_argc, b->workload_argv);
+}
+
+/* A look that could not read the foreground is not a look at an idle shell:
+ * the last foreground that was read (and its workload) stays, marked unread,
+ * so what restores the terminal is never thrown away by a failed read. An
+ * idle shell that was read does clear it. */
+static void keep_last_foreground(struct hold_term_state *now, struct hold_term_state *prev) {
+    if (!now->foreground_unread || !now->hosting_shell || !prev->hosting_shell || !prev->foreground[0] ||
+        !strcmp(prev->foreground, "unavailable"))
+        return;
+    snprintf(now->foreground, sizeof(now->foreground), "%s", prev->foreground);
+    now->workload_pid = prev->workload_pid;
+    snprintf(now->workload_cwd, sizeof(now->workload_cwd), "%s", prev->workload_cwd);
+    now->workload_argc = prev->workload_argc;
+    now->workload_argv = prev->workload_argv; /* moved: prev no longer owns it */
+    prev->workload_argc = 0;
+    prev->workload_argv = NULL;
+}
+
+static int write_record(const char *record_dir, const struct hold_run_record *r) {
+#ifdef HOLD_TESTING
+    /* The suite cannot make the store refuse a write (backmux resets its
+     * directory's mode when it starts), so a test build fails it here. */
+    if (getenv("HOLD_TEST_TERM_WRITE_FAILS")) {
+        errno = EIO;
+        return -1;
+    }
+#endif
+    char out[HOLD_PATH_MAX];
+    return hold_write_record_atomic(record_dir, r, r->recipe.argc, r->recipe.argv, out, sizeof(out));
 }
 
 int hold_refresh_terminal(const char *record_dir, const char *id) {
@@ -204,6 +236,7 @@ int hold_refresh_terminal(const char *record_dir, const char *id) {
     bool observed = hold_observe_terminal(&r, &now) == 0;
     pid_t pid = r.pid;
     uint64_t start = r.proc_starttime_ticks;
+    if (observed && r.has_term) keep_last_foreground(&now, &r.term);
     /* Unchanged since the last observation: no rewrite. Why not refresh the
      * time anyway: every rewrite is an fsync, and list looks at every
      * running terminal each time it runs. */
@@ -227,9 +260,10 @@ int hold_refresh_terminal(const char *record_dir, const char *id) {
             hold_free_term_state(&r.term);
             r.term = now;
             r.has_term = true;
-            char out[HOLD_PATH_MAX];
-            rc = hold_write_record_atomic(record_dir, &r, r.recipe.argc, r.recipe.argv, out, sizeof(out)) == 0 ? 0 : -1;
+            rc = write_record(record_dir, &r) == 0 ? 0 : -1;
+            int err = errno;
             hold_free_run_record(&r); /* frees now's argv with it */
+            errno = err;
         } else {
             hold_free_run_record(&r);
             hold_free_term_state(&now);
