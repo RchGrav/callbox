@@ -1665,6 +1665,51 @@ test_rm_docker_contract() {
   ! out_has ' rmlive$' "$HOLD_BIN" list all || { echo "rm -f left the process" >&2; return 1; }
 }
 
+# rm resolves as docker rm does: an exact ID, an exact name, or an ID prefix
+# that fits one process - never a name prefix or a place. An ambiguous prefix
+# and an empty name are errors with -f too; slashes around a name go.
+test_rm_docker_resolution() {
+  local i c f rc out
+  for i in $(seq 1 20); do "$HOLD_BIN" -dw true >/dev/null 2>&1; done
+  "$HOLD_BIN" -dw --name resolvee -- true >/dev/null 2>&1 || return 1
+  name_ended_soon resolvee || return 1
+  c=$(ls "$HOME/.local/state/backmux/"*.json | xargs -n1 basename | cut -c1 | sort | uniq -d | head -1)
+  [ -n "$c" ] || { skip "no two ids share a first digit"; return; }
+  for f in --name-unused -f; do
+    [ "$f" = -f ] || f=
+    rc=0; "$HOLD_BIN" rm ${f:+"$f"} "$c" >/dev/null 2>"$TEST_ROOT/rmr.err" || rc=$?
+    [ "$rc" -eq 1 ] && grep -qxF "Error: multiple IDs found with provided prefix: $c" "$TEST_ROOT/rmr.err" ||
+      { echo "rm $f $c: rc=$rc" >&2; cat "$TEST_ROOT/rmr.err" >&2; return 1; }
+    rc=0; "$HOLD_BIN" rm ${f:+"$f"} '' >/dev/null 2>"$TEST_ROOT/rmr.err" || rc=$?
+    [ "$rc" -eq 1 ] && grep -qxF 'Error: managed process name cannot be empty' "$TEST_ROOT/rmr.err" ||
+      { echo "rm $f '': rc=$rc" >&2; cat "$TEST_ROOT/rmr.err" >&2; return 1; }
+  done
+  rc=0; "$HOLD_BIN" rm resolv >/dev/null 2>"$TEST_ROOT/rmr.err" || rc=$?
+  [ "$rc" -eq 1 ] && grep -qxF 'Error: No such managed process: resolv' "$TEST_ROOT/rmr.err" ||
+    { echo "rm took a name prefix: rc=$rc" >&2; cat "$TEST_ROOT/rmr.err" >&2; return 1; }
+  out=$("$HOLD_BIN" rm /resolvee/) || return 1
+  [ "$out" = /resolvee/ ] && ! out_has ' resolvee$' "$HOLD_BIN" list all || { echo "rm /resolvee/: $out" >&2; return 1; }
+}
+
+# A record that cannot be unlinked was not removed, whichever command tried:
+# rm prints nothing on stdout and exits 1; delete and purge say so and fail.
+test_failed_record_unlink_is_no_removal() {
+  local rc out
+  "$HOLD_BIN" -dw --name stuck -- true >/dev/null 2>&1 || return 1
+  name_ended_soon stuck || return 1
+  rc=0; out=$(HOLD_TEST_UNLINK_FAILS=1 "$HOLD_BIN" rm stuck 2>"$TEST_ROOT/ul.err") || rc=$?
+  [ "$rc" -eq 1 ] && [ -z "$out" ] && grep -q 'its record could not be removed' "$TEST_ROOT/ul.err" ||
+    { echo "rm: rc=$rc out=$out" >&2; cat "$TEST_ROOT/ul.err" >&2; return 1; }
+  rc=0; HOLD_TEST_UNLINK_FAILS=1 "$HOLD_BIN" delete stuck 2>"$TEST_ROOT/ul.err" || rc=$?
+  [ "$rc" -ne 0 ] && grep -q 'cannot delete stuck: its record could not be removed' "$TEST_ROOT/ul.err" &&
+    ! grep -q '^Removed' "$TEST_ROOT/ul.err" || { echo "delete: rc=$rc" >&2; cat "$TEST_ROOT/ul.err" >&2; return 1; }
+  rc=0; HOLD_TEST_UNLINK_FAILS=1 "$HOLD_BIN" purge 2>"$TEST_ROOT/ul.err" || rc=$?
+  [ "$rc" -ne 0 ] && grep -qx 'Removed 0 ended, unsaved processes.' "$TEST_ROOT/ul.err" &&
+    grep -q 'could not be removed' "$TEST_ROOT/ul.err" || { echo "purge: rc=$rc" >&2; cat "$TEST_ROOT/ul.err" >&2; return 1; }
+  out_has ' stuck$' "$HOLD_BIN" list all || { echo "a refused unlink lost the record" >&2; return 1; }
+  "$HOLD_BIN" delete stuck 2>/dev/null || return 1
+}
+
 test_rename_of_saved_call_keeps_protection() {
   local id newname rc
   id=$("$HOLD_BIN" -d true 2>&1 | extract_id) || return 1
@@ -3369,7 +3414,9 @@ test_ps_table_humanized_status_and_saved() {
   printf '%s\n' "$ps_out" | grep -Eq "^PROCESS ID[[:space:]]+COMMAND[[:space:]]+CREATED[[:space:]]+STATUS[[:space:]]+PORTS[[:space:]]+NAMES$" ||
     { printf '%s\n' "$ps_out" >&2; return 1; }
   # CREATED is humanized: never a raw ISO stamp, always a Docker-style age.
-  printf '%s\n' "$ps_out" | grep -Eq "^$id[[:space:]].*(About a minute|[0-9]+ (seconds?|minutes?|hours?|days?|weeks?|months?)) ago" ||
+  # "Less than a second" too: the age is wall-clock time, and a clock stepped
+  # back during the sleep above (WSL resyncs in jumps) makes it read under 1 s.
+  printf '%s\n' "$ps_out" | grep -Eq "^$id[[:space:]].*(Less than a second|About a minute|[0-9]+ (seconds?|minutes?|hours?|days?|weeks?|months?)) ago" ||
     { printf '%s\n' "$ps_out" >&2; return 1; }
   ! printf '%s\n' "$ps_out" | grep -Eq "^$id[[:space:]].*[0-9]{4}-[0-9]{2}-[0-9]{2}T" || return 1
   # STATUS phrasing: Up ... for the live process, Exited (5) ... ago for the ended one.
@@ -6963,6 +7010,8 @@ run_test "purge takes no process name" test_purge_takes_no_process_name
 run_test "delete removes a saved ended process" test_delete_removes_saved_ended
 run_test "rm -f kills and removes a live saved process" test_rm_force_removes_live_saved
 run_test "rm follows docker rm's contract" test_rm_docker_contract
+run_test "rm resolves as docker rm: exact ID, exact name, unique ID prefix" test_rm_docker_resolution
+run_test "a refused record unlink is no removal: rm, delete, purge" test_failed_record_unlink_is_no_removal
 run_test "rename of a saved process keeps purge protection" test_rename_of_saved_call_keeps_protection
 run_test "rename saves an unsaved process" test_rename_saves_an_unsaved_call
 run_test "redial honors a recorded foreground recipe (and -d overrides)" test_redial_honors_recorded_foreground_mode

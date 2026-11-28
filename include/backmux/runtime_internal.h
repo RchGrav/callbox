@@ -62,10 +62,13 @@ bool hold_wait_target_group_gone(const struct hold_run_record *r, int timeout_ms
 const char *hold_state_str(enum run_state s);
 int hold_prune_one_run(const struct hold_store *store, const char *id, const char *boot, bool allow_stale, bool *removed);
 /* As above; allow_unknown also removes a process this shell cannot judge (one
- * from another PID namespace whose end was never recorded) - only for a
- * targeted purge --force. */
+ * from another PID namespace whose end was never recorded): for delete, rm -f
+ * and purge all. op names the operation in diagnostics ("purge", "delete",
+ * "remove"); NULL prints nothing, for a caller that reports in its own words.
+ * Returns 0 removed, 2 refused (still running, unknown, being redialed), 4 the
+ * record could not be unlinked (errno kept), 5 no such record. */
 int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const char *boot, bool allow_stale,
-                          bool allow_unknown, bool *removed);
+                          bool allow_unknown, const char *op, bool *removed);
 /* --rm: wait (up to timeout_ms) for the process's reaper to stamp its exit,
  * then remove it, so the verb that ended or awaited it returns with the
  * name free. No-op for processes without --rm or already gone. */
@@ -76,13 +79,6 @@ bool hold_auto_removed_exit(const struct hold_store *store, const char *token, i
 bool hold_record_matches_alias_intent(const char *command, const struct hold_run_record *r, enum run_state st);
 int hold_report_not_found(const char *token);
 int hold_report_requires_root(const char *token);
-int hold_resolve_action_token_quiet(const struct hold_invocation *inv,
-                                    const struct hold_store *current_user_store,
-                                    const struct hold_store *system_store,
-                                    const char *command,
-                                    const char *token,
-                                    struct hold_resolved_target **targets_out,
-                                    int *count_out);
 /* Remove one named process (delete's removal, src/runtime/remove.c): saved
  * or not; one found running is ended first. Reports "Removed NAME." */
 int hold_remove_target(const struct hold_invocation *inv, const struct hold_store *user_store,

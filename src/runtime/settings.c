@@ -406,7 +406,7 @@ int hold_cmd_purge_all_action(const struct hold_invocation *inv,
             stopped++;
         }
         bool gone = false;
-        int prc = hold_prune_one_run_ex(store, w.ids[i], w.boot_id, true, true, &gone);
+        int prc = hold_prune_one_run_ex(store, w.ids[i], w.boot_id, true, true, "purge", &gone);
         if (gone) removed++;
         if (prc > rc) rc = prc;
     }

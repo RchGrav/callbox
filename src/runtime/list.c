@@ -582,34 +582,53 @@ void hold_auto_remove_settle(const struct hold_store *store, const char *id, int
     }
 }
 
+/* Unlink a process's record. A test build fails it on request: the suite
+ * cannot make the store refuse an unlink (backmux resets its directory's mode
+ * when it starts), and a refused unlink must never read as a removal. */
+static int unlink_record(const char *path) {
+#ifdef HOLD_TESTING
+    if (getenv("HOLD_TEST_UNLINK_FAILS")) {
+        errno = EACCES;
+        return -1;
+    }
+#endif
+    return unlink(path);
+}
+
 int hold_prune_one_run(const struct hold_store *store, const char *id, const char *boot, bool allow_stale, bool *removed) {
-    return hold_prune_one_run_ex(store, id, boot, allow_stale, false, removed);
+    return hold_prune_one_run_ex(store, id, boot, allow_stale, false, "remove", removed);
 }
 
 int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const char *boot, bool allow_stale,
-                          bool allow_unknown, bool *removed) {
+                          bool allow_unknown, const char *op, bool *removed) {
+    if (removed) *removed = false;
     struct hold_run_record r;
     char path[HOLD_PATH_MAX];
     if (hold_load_record_by_id(store->record_dir, id, &r, path, sizeof(path)) != 0) return 5;
+    /* Diagnostics name the operation that was run (purge, delete, remove):
+     * a refusal worded for purge read wrong under delete. op NULL: the
+     * caller reports (the Docker-style rm speaks Docker's words). */
+    const char *label = r.has_name && r.name[0] ? r.name : id;
     enum run_state st = hold_eval_state(&r, boot ? boot : NULL);
     uint64_t here = hold_current_pid_ns();
+    int rc = 0;
     if (st == STATE_UNKNOWN && !allow_unknown && r.pid_ns != 0 && here != 0 && r.pid_ns != here) {
-        fprintf(stderr,
-                "backmux: error: process %s was started in another PID namespace and this shell cannot tell whether it "
-                "ended (no exit was recorded, and no supervisor answers); purge it from the shell that started it, "
-                "or remove it anyway with --force\n", id);
-        hold_free_run_record(&r);
-        return 2;
+        if (op)
+            fprintf(stderr,
+                    "backmux: error: cannot %s %s: it was started in another PID namespace and this shell cannot tell "
+                    "whether it ended (no exit was recorded, and no supervisor answers); %s it from the shell that "
+                    "started it, or remove its record anyway with backmux delete %s\n", op, label, op, label);
+        rc = 2;
+    } else if (st == STATE_UNKNOWN && !allow_unknown) {
+        if (op) fprintf(stderr, "backmux: error: cannot %s %s: its state is unknown\n", op, label);
+        rc = 2;
+    } else if (st != STATE_EXITED && st != STATE_FAILED && st != STATE_UNKNOWN && !(allow_stale && st == STATE_STALE)) {
+        if (op) fprintf(stderr, "backmux: error: cannot %s %s: it is %s: backmux end %s first\n", op, label, hold_state_str(st), label);
+        rc = 2;
     }
-    if (st == STATE_UNKNOWN && !allow_unknown) {
-        fprintf(stderr, "backmux: error: process %s is %s and cannot be purged\n", id, hold_state_str(st));
+    if (rc != 0) {
         hold_free_run_record(&r);
-        return 2;
-    }
-    if (st != STATE_EXITED && st != STATE_FAILED && st != STATE_UNKNOWN && !(allow_stale && st == STATE_STALE)) {
-        fprintf(stderr, "backmux: error: %s is %s and cannot be purged: backmux end %s first\n", r.has_name && r.name[0] ? r.name : id, hold_state_str(st), r.has_name && r.name[0] ? r.name : id);
-        hold_free_run_record(&r);
-        return 2;
+        return rc;
     }
     /* Under the store lock so a racing exit stamp cannot recreate the
      * record after this unlink (see hold_mark_run_finished). */
@@ -625,12 +644,21 @@ int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const 
     }
     if (running_now || hold_existing_run_claimed(store, id)) {
         hold_store_unlock(lock_fd);
-        fprintf(stderr, "backmux: error: process %s is being redialed and cannot be purged\n", id);
+        if (op) fprintf(stderr, "backmux: error: cannot %s %s: it is being redialed\n", op, label);
         hold_free_run_record(&r);
         return 2;
     }
     if (r.auto_remove && r.has_exit_code) write_exit_note(store, &r);
-    unlink(path);
+    /* The record is what the removal is: if it stays, nothing was removed,
+     * and its log and screens stay with it. */
+    if (unlink_record(path) != 0 && errno != ENOENT) {
+        int err = errno;
+        hold_store_unlock(lock_fd);
+        if (op) fprintf(stderr, "backmux: error: cannot %s %s: its record could not be removed: %s\n", op, label, strerror(err));
+        hold_free_run_record(&r);
+        errno = err;
+        return 4;
+    }
     unlink_call_artifacts(store, &r);
     unlink_public_index(store, id);
     hold_store_unlock(lock_fd);
@@ -639,7 +667,7 @@ int hold_prune_one_run_ex(const struct hold_store *store, const char *id, const 
     return 0;
 }
 
-struct prune_sweep_stats { int removed, kept_live, kept_stale, kept_saved; };
+struct prune_sweep_stats { int removed, kept_live, kept_stale, kept_saved, failed, failed_errno; };
 
 /* A young .<id>.reserve marks a process mid-creation (log and socket exist
  * before the record JSON); the sweep must not eat it. A stale reserve is a
@@ -742,9 +770,14 @@ static int prune_record_cb(const char *id, const char *path, struct hold_run_rec
             w->stats->kept_live++;
             return 0;
         }
-        if (unlink(path) != 0 && errno == ENOENT) {
-            /* Another purge removed it since we looked (under this same
-             * lock): it is that purge's to report, not ours too. */
+        if (unlink_record(path) != 0) {
+            /* ENOENT: another purge removed it since we looked (under this
+             * same lock), and it is that purge's to report. Anything else:
+             * the record stays, so it was not removed. */
+            if (errno != ENOENT) {
+                w->stats->failed++;
+                w->stats->failed_errno = errno;
+            }
             hold_store_unlock(lock_fd);
             return 0;
         }
@@ -787,5 +820,10 @@ int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_s
     int rc = cmd_prune_store_all(store, include_stale, &stats);
     if (rc == 0)
         hold_sig_note(inv, "Removed %d ended, unsaved process%s.\n", stats.removed, stats.removed == 1 ? "" : "es");
+    if (rc == 0 && stats.failed > 0) {
+        fprintf(stderr, "backmux: error: %d ended, unsaved process%s could not be removed: %s\n", stats.failed,
+                stats.failed == 1 ? "" : "es", strerror(stats.failed_errno));
+        rc = 4;
+    }
     return rc;
 }
