@@ -1,0 +1,17 @@
+usage: backmux rm [OPTIONS] TARGET [TARGET...]
+
+Docker-style removal
+
+Remove one or more managed processes: each one's record, log, saved screens
+and message history, freeing its name. Each removed TARGET is printed as
+given. A TARGET that cannot be removed is reported on stderr, the others are
+still removed, and the exit status is 1. A saved process is removed like any
+other.
+
+  -f, --force      remove a running process too, killing it first (SIGKILL);
+                   a TARGET that names no process is skipped silently
+
+Without --force, a running process is refused. To remove every process that
+has ended and is not saved, use backmux purge.
+[agent]
+Tasks: backmux help cleanup

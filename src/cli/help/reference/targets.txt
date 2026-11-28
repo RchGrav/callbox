@@ -23,9 +23,9 @@ matches, a unique name prefix can select a process.
 
 Name lookup considers the command's applicable states: end/kill select
 running processes or Unknown processes with a console, logs selects records
-with logs, inspect selects retained records, and purge selects removable
-records. If several applicable processes match, the resolver lists candidates
-and exits 6. Use a longer prefix or the full name.
+with logs, and inspect, delete and rm select retained records. If several
+applicable processes match, the resolver lists candidates and exits 6. Use a
+longer prefix or the full name.
 
 Inbox targets require complete inbox names. msg, inbox, and monitor accept
 those names; process-ID prefixes and user:/system: scopes apply to process

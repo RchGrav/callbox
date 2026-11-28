@@ -1083,7 +1083,7 @@ test_console_does_not_require_external_attach_tool() {
   record=$(record_path "$id" "$store") || return 1
   sock=$(sed -n 's/.*"console_sock":[[:space:]]*"\([^"]*\)".*/\1/p' "$record" | head -n1)
   [ -n "$sock" ] || { cat "$record" >&2; return 1; }
-  "$HOLD_BIN" prune "$id" >/dev/null || return 1
+  "$HOLD_BIN" delete "$id" 2>/dev/null || return 1
   path_absent_soon "$sock" || {
     ls -la "$store" "$store/console" "$(dirname "$sock")" >&2 || true
     return 1
@@ -1129,7 +1129,7 @@ test_console_round_trip_and_log_tee() {
   sleep 0.2
   logf=$(log_path "$id" "$store") || return 1
   grep -q 'got:ping' "$logf" || { cat "$logf" >&2; return 1; }
-  "$HOLD_BIN" prune "$id" >/dev/null || return 1
+  "$HOLD_BIN" delete "$id" 2>/dev/null || return 1
   path_absent_soon "$sock" || {
     ls -la "$store" "$store/console" "$(dirname "$sock")" >&2 || true
     return 1
@@ -1166,7 +1166,7 @@ test_console_exit_code_is_recorded() {
   grep -q '"exit_code": 7' "$record" || { cat "$record" >&2; return 1; }
   ! grep -q '"ExitCode"' "$record" || { echo "legacy Docker key in native record" >&2; cat "$record" >&2; return 1; }
   "$HOLD_BIN" ps -a | grep -Eq "^$id[[:space:]].*Exited \(7\)" || return 1
-  "$HOLD_BIN" prune "$id" >/dev/null || return 1
+  "$HOLD_BIN" delete "$id" 2>/dev/null || return 1
 }
 
 test_end_console_call_signals_target() {
@@ -1555,7 +1555,7 @@ test_console_can_reattach_after_detach() {
   logf=$(log_path "$id" "$store") || return 1
   grep -q 'seen:first' "$logf" || { cat "$logf" >&2; return 1; }
   grep -q 'seen:done' "$logf" || { cat "$logf" >&2; return 1; }
-  "$HOLD_BIN" prune "$id" >/dev/null || return 1
+  "$HOLD_BIN" delete "$id" 2>/dev/null || return 1
   path_absent_soon "$sock" || {
     ls -la "$store" "$store/console" "$(dirname "$sock")" >&2 || true
     return 1
@@ -1595,66 +1595,74 @@ test_purge_sweep_skips_saved() {
   record_exists "$saved_id" || { echo "purge -a removed a saved process" >&2; return 1; }
 }
 
-test_purge_targeted_refuses_saved_exact_wording() {
-  local id name pfx rc
+test_purge_takes_no_process_name() {
+  local id name rc
   id=$("$HOLD_BIN" -d true 2>&1 | extract_id) || return 1
   [ -n "$id" ] || return 1
   name=$(record_name "$id") || return 1
-  # Let the reaper's exit stamp land before saving, so save is the last writer
-  # and the saved flag cannot be lost to the finish-write.
   record_ended_soon "$id" || return 1
-  "$HOLD_BIN" save "$id" >/dev/null 2>&1 || return 1
-  # Refusal by name: line 1 identifies by name, line 2 echoes the typed token.
-  set +e; "$HOLD_BIN" purge "$name" >"$TEST_ROOT/refuse.out" 2>"$TEST_ROOT/refuse.err"; rc=$?; set -e
-  [ "$rc" -eq 2 ] || { echo "targeted refusal rc=$rc (want 2)" >&2; cat "$TEST_ROOT/refuse.err" >&2; return 1; }
+  # purge is the sweep: a name is refused, pointing to delete, and nothing goes.
+  rc=0; "$HOLD_BIN" purge "$name" >"$TEST_ROOT/refuse.out" 2>"$TEST_ROOT/refuse.err" || rc=$?
+  [ "$rc" -eq 1 ] || { echo "purge NAME rc=$rc (want 1)" >&2; cat "$TEST_ROOT/refuse.err" >&2; return 1; }
   [ ! -s "$TEST_ROOT/refuse.out" ] || { echo "refusal wrote to stdout" >&2; return 1; }
-  printf "backmux: '%s' is saved — purging a saved process requires --force\n  backmux purge %s --force\n" "$name" "$name" >"$TEST_ROOT/refuse.want"
-  diff -u "$TEST_ROOT/refuse.want" "$TEST_ROOT/refuse.err" || { echo "refusal wording mismatch (by name)" >&2; return 1; }
-  # Refusal by id prefix: line 2 echoes exactly the prefix the user typed.
-  pfx=$(printf '%s' "$id" | cut -c1-6)
-  set +e; "$HOLD_BIN" purge "$pfx" 2>"$TEST_ROOT/refuse2.err"; rc=$?; set -e
-  [ "$rc" -eq 2 ] || { echo "prefix refusal rc=$rc (want 2)" >&2; return 1; }
-  printf "backmux: '%s' is saved — purging a saved process requires --force\n  backmux purge %s --force\n" "$name" "$pfx" >"$TEST_ROOT/refuse2.want"
-  diff -u "$TEST_ROOT/refuse2.want" "$TEST_ROOT/refuse2.err" || { echo "refusal wording mismatch (by prefix)" >&2; return 1; }
-  record_exists "$id" || { echo "refused purge still removed the process" >&2; return 1; }
+  grep -qxF "backmux: error: purge takes no process name; to remove one process: backmux delete $name" \
+    "$TEST_ROOT/refuse.err" || { cat "$TEST_ROOT/refuse.err" >&2; return 1; }
+  rc=0; "$HOLD_BIN" purge --force >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] || { echo "purge --force rc=$rc (want 1)" >&2; return 1; }
+  record_exists "$id" || { echo "a refused purge removed the process" >&2; return 1; }
 }
 
-test_purge_force_removes_saved_ended() {
+test_delete_removes_saved_ended() {
   local id name
   id=$("$HOLD_BIN" -d true 2>&1 | extract_id) || return 1
   [ -n "$id" ] || return 1
   name=$(record_name "$id") || return 1
   "$HOLD_BIN" save "$id" >/dev/null 2>&1 || return 1
   record_ended_soon "$id" || return 1
-  # The copy-paste command from the refusal must succeed on an ended saved process.
-  "$HOLD_BIN" purge "$name" --force >/dev/null 2>&1 || { echo "force purge of saved ended process failed" >&2; return 1; }
-  ! record_exists "$id" || { echo "force did not remove the saved process" >&2; return 1; }
+  "$HOLD_BIN" delete "$name" 2>"$TEST_ROOT/del-saved.err" || { cat "$TEST_ROOT/del-saved.err" >&2; return 1; }
+  grep -qxF "Removed $name." "$TEST_ROOT/del-saved.err" || { cat "$TEST_ROOT/del-saved.err" >&2; return 1; }
+  ! record_exists "$id" || { echo "delete did not remove the saved process" >&2; return 1; }
 }
 
-test_purge_force_removes_live_saved() {
-  local id name pgid
+test_rm_force_removes_live_saved() {
+  local id name pgid out tries=0
   id=$("$HOLD_BIN" -d sleep 300 2>&1 | extract_id) || return 1
   [ -n "$id" ] || return 1
   name=$(record_name "$id") || return 1
   pgid=$(record_pgid "$id") || return 1
   "$HOLD_BIN" save "$id" >/dev/null 2>&1 || return 1
-  # --force must end the live process and remove it despite the saved flag.
-  # Retry briefly: under load the TERM->KILL escalation can outlive one
-  # purge invocation by a scheduler beat; a real regression still fails
-  # every attempt for the full window.
-  local tries=0
-  while :; do
-    "$HOLD_BIN" purge "$name" --force >/dev/null 2>&1
-    if ! record_exists "$id" && pgid_terminated "$pgid"; then
-      return 0
-    fi
+  # -f kills the live process (SIGKILL) and removes it despite the saved flag.
+  out=$("$HOLD_BIN" rm -f "$name") || { echo "rm -f of a live saved process failed" >&2; return 1; }
+  [ "$out" = "$name" ] || { echo "rm -f printed '$out', not the name given" >&2; return 1; }
+  ! record_exists "$id" || { echo "rm -f did not remove the live saved process" >&2; return 1; }
+  until pgid_terminated "$pgid"; do
     tries=$((tries + 1))
-    [ "$tries" -lt 20 ] || break
+    [ "$tries" -lt 20 ] || { echo "rm -f left the process group alive" >&2; return 1; }
     sleep 0.1
   done
-  ! record_exists "$id" || { echo "force did not remove the live saved process" >&2; return 1; }
-  pgid_terminated "$pgid" || { echo "force purge left the process group alive" >&2; return 1; }
-  return 1
+}
+
+# rm is Docker's: an operand is required; each removed operand is printed as
+# typed; a failure goes to stderr while the rest are removed (exit 1); -f kills
+# a running process first and skips a name that matches nothing.
+test_rm_docker_contract() {
+  local rc out
+  "$HOLD_BIN" -d --name rma -- true >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" -d --name rmb -- true >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" -d --name rmlive -- sleep 300 >/dev/null 2>&1 || return 1
+  name_ended_soon rma && name_ended_soon rmb || return 1
+  rc=0; "$HOLD_BIN" rm >"$TEST_ROOT/rm.out" 2>"$TEST_ROOT/rm.err" || rc=$?
+  [ "$rc" -eq 1 ] && [ ! -s "$TEST_ROOT/rm.out" ] || { echo "bare rm: rc=$rc" >&2; return 1; }
+  grep -qxF "backmux: 'backmux rm' requires at least 1 argument" "$TEST_ROOT/rm.err" || { cat "$TEST_ROOT/rm.err" >&2; return 1; }
+  out_has ' rma$' "$HOLD_BIN" list all || { echo "a bare rm removed something" >&2; return 1; }
+  rc=0; out=$("$HOLD_BIN" rm rma nosuchname rmb 2>"$TEST_ROOT/rm.err") || rc=$?
+  [ "$rc" -eq 1 ] && [ "$out" = "$(printf 'rma\nrmb')" ] || { echo "rm rma nosuchname rmb: rc=$rc out=$out" >&2; return 1; }
+  grep -qxF 'Error: No such managed process: nosuchname' "$TEST_ROOT/rm.err" || { cat "$TEST_ROOT/rm.err" >&2; return 1; }
+  rc=0; "$HOLD_BIN" rm rmlive >/dev/null 2>"$TEST_ROOT/rm.err" || rc=$?
+  [ "$rc" -eq 1 ] && grep -q 'process is running' "$TEST_ROOT/rm.err" || { echo "rm rmlive: rc=$rc" >&2; cat "$TEST_ROOT/rm.err" >&2; return 1; }
+  out=$("$HOLD_BIN" rm -f rmlive nosuchname) || { echo "rm -f rmlive nosuchname failed" >&2; return 1; }
+  [ "$out" = rmlive ] || { echo "rm -f printed: $out" >&2; return 1; }
+  ! out_has ' rmlive$' "$HOLD_BIN" list all || { echo "rm -f left the process" >&2; return 1; }
 }
 
 test_rename_of_saved_call_keeps_protection() {
@@ -1665,10 +1673,9 @@ test_rename_of_saved_call_keeps_protection() {
   record_ended_soon "$id" || return 1
   "$HOLD_BIN" rename "$id" keptsafe >/dev/null 2>&1 || { echo "rename failed" >&2; return 1; }
   grep -q '"saved": true' "$(record_path "$id")" || { echo "rename cleared the saved flag" >&2; return 1; }
-  set +e; "$HOLD_BIN" purge keptsafe 2>"$TEST_ROOT/rename-refuse.err"; rc=$?; set -e
-  [ "$rc" -eq 2 ] || { echo "renamed saved process not protected: rc=$rc" >&2; return 1; }
-  grep -qF "backmux: 'keptsafe' is saved" "$TEST_ROOT/rename-refuse.err" || { cat "$TEST_ROOT/rename-refuse.err" >&2; return 1; }
-  "$HOLD_BIN" purge keptsafe --force >/dev/null 2>&1 || true
+  "$HOLD_BIN" purge >/dev/null 2>&1 || return 1
+  record_exists "$id" || { echo "purge removed a renamed saved process" >&2; return 1; }
+  "$HOLD_BIN" delete keptsafe >/dev/null 2>&1 || true
 }
 
 test_rename_saves_an_unsaved_call() {
@@ -1680,9 +1687,9 @@ test_rename_saves_an_unsaved_call() {
   "$HOLD_BIN" rename "$id" nowkept 2>"$TEST_ROOT/rename-save.err" || { echo "rename failed" >&2; return 1; }
   grep -qF "(saved)" "$TEST_ROOT/rename-save.err" || { cat "$TEST_ROOT/rename-save.err" >&2; return 1; }
   grep -q '"saved": true' "$(record_path "$id")" || { echo "rename did not save the process" >&2; return 1; }
-  set +e; "$HOLD_BIN" purge nowkept 2>"$TEST_ROOT/rename-save-refuse.err"; rc=$?; set -e
-  [ "$rc" -eq 2 ] || { echo "renamed process not protected: rc=$rc" >&2; return 1; }
-  "$HOLD_BIN" purge nowkept --force >/dev/null 2>&1 || true
+  "$HOLD_BIN" purge >/dev/null 2>&1 || return 1
+  record_exists "$id" || { echo "purge removed a renamed process" >&2; return 1; }
+  "$HOLD_BIN" delete nowkept >/dev/null 2>&1 || true
 }
 
 test_redial_honors_recorded_foreground_mode() {
@@ -1728,7 +1735,8 @@ test_redial_honors_recorded_console_mode() {
   [ "$sm" = "true" ] || { echo "console redial rewrote recipe tty=$sm (want true)" >&2; return 1; }
 }
 
-test_prune_by_id() {
+# delete <id> is the removal of one named process (purge takes no names).
+test_delete_by_id() {
   local out1 out2 id1 id2 store
   out1=$("$HOLD_BIN" -d true 2>&1) || return 1
   out2=$("$HOLD_BIN" -d true 2>&1) || return 1
@@ -1736,7 +1744,8 @@ test_prune_by_id() {
   id2=$(printf '%s\n' "$out2" | extract_id)
   [ -n "$id1" ] && [ -n "$id2" ] || return 1
   store="$HOME/.local/state/backmux"
-  "$HOLD_BIN" prune "$id1" >/dev/null || return 1
+  record_ended_soon "$id1" || return 1
+  "$HOLD_BIN" delete "$id1" 2>/dev/null || return 1
   ! record_exists "$id1" "$store" && ! log_exists "$id1" "$store" || return 1
   record_exists "$id2" "$store" && log_exists "$id2" "$store"
 }
@@ -2695,7 +2704,7 @@ test_concurrent_purges_count_once() {
   for i in 1 2 3 4; do "$HOLD_BIN" purge >"$TEST_ROOT/purge$i.out" 2>&1 & done
   wait
   # each says how many it cleaned up, in one line; together, every one once
-  total=$(cat "$TEST_ROOT"/purge[1-4].out | sed -n 's/^Cleaned up \([0-9]*\) records\{0,1\}.*/\1/p' | awk '{s+=$1} END {print s+0}')
+  total=$(cat "$TEST_ROOT"/purge[1-4].out | sed -n 's/^Removed \([0-9]*\) ended, unsaved process.*/\1/p' | awk '{s+=$1} END {print s+0}')
   [ "$total" -eq 12 ] || { echo "purges reported $total removals of 12" >&2; cat "$TEST_ROOT"/purge[1-4].out >&2; return 1; }
 }
 
@@ -2707,7 +2716,7 @@ test_ambiguous_id_prefix_lists_and_exits_6() {
   for i in $(seq 1 20); do "$HOLD_BIN" -d true >/dev/null; done
   c=$(ls "$HOME/.local/state/backmux/"*.json | xargs -n1 basename | cut -c1 | sort | uniq -d | head -1)
   [ -n "$c" ] || { skip "no two ids share a first digit"; return; }
-  for v in inspect logs end peek wait save purge; do
+  for v in inspect logs end peek wait save delete; do
     rc=0; "$HOLD_BIN" "$v" "$c" >/dev/null 2>"$TEST_ROOT/amb.err" || rc=$?
     [ "$rc" -eq 6 ] || { echo "$v $c: rc=$rc (want 6)" >&2; cat "$TEST_ROOT/amb.err" >&2; return 1; }
     grep -q "more than one process matches '$c'" "$TEST_ROOT/amb.err" || { cat "$TEST_ROOT/amb.err" >&2; return 1; }
@@ -2864,7 +2873,8 @@ test_concurrent_redials_start_once() {
 }
 
 # While a redial is launching a process (it holds the process's claim), purge
-# leaves the process alone; a dead launcher's unheld claim goes with the record.
+# and delete leave the process alone; a dead launcher's unheld claim goes with
+# the record.
 test_purge_stands_back_from_a_redial() {
   local id store rc
   command -v flock >/dev/null 2>&1 || skip "no flock(1) to hold a redial's claim"
@@ -2875,14 +2885,14 @@ test_purge_stands_back_from_a_redial() {
   sleep 0.3
   "$HOLD_BIN" purge >/dev/null 2>&1 || true
   out_has inflight "$HOLD_BIN" list all -a || { echo "a sweep purged a process mid-redial" >&2; return 1; }
-  rc=0; "$HOLD_BIN" purge inflight >/dev/null 2>"$TEST_ROOT/inflight.err" || rc=$?
-  [ "$rc" -eq 2 ] || { echo "targeted purge mid-redial: rc=$rc (want 2)" >&2; cat "$TEST_ROOT/inflight.err" >&2; return 1; }
+  rc=0; "$HOLD_BIN" delete inflight >/dev/null 2>"$TEST_ROOT/inflight.err" || rc=$?
+  [ "$rc" -eq 2 ] || { echo "delete mid-redial: rc=$rc (want 2)" >&2; cat "$TEST_ROOT/inflight.err" >&2; return 1; }
   grep -q 'being redialed' "$TEST_ROOT/inflight.err" || { cat "$TEST_ROOT/inflight.err" >&2; return 1; }
   wait
   # the claim is no longer held: litter, removed with the record
   [ -e "$store/.$id.reserve" ] || : > "$store/.$id.reserve"
-  "$HOLD_BIN" purge inflight >/dev/null || return 1
-  [ ! -e "$store/.$id.reserve" ] || { echo "purge left the dead claim behind" >&2; return 1; }
+  "$HOLD_BIN" delete inflight 2>/dev/null || return 1
+  [ ! -e "$store/.$id.reserve" ] || { echo "delete left the dead claim behind" >&2; return 1; }
 }
 
 # end/stop/kill on a known process that has already ended: nothing to do, which
@@ -3606,7 +3616,7 @@ test_purge_never_follows_stored_paths() {
   # Point the record's log_path at an innocent file; purge must derive its
   # unlink targets from the layout and warn, never follow the stored string.
   sed -i.bak "s|\"log_path\": \"[^\"]*\"|\"log_path\": \"$victim\"|" "$json" && rm -f "$json.bak"
-  "$HOLD_BIN" purge "$id" >/dev/null 2>"$TEST_ROOT/purge-derive.err" || { cat "$TEST_ROOT/purge-derive.err" >&2; return 1; }
+  "$HOLD_BIN" delete "$id" >/dev/null 2>"$TEST_ROOT/purge-derive.err" || { cat "$TEST_ROOT/purge-derive.err" >&2; return 1; }
   [ -f "$victim" ] || { echo "purge followed a stored path and deleted the victim" >&2; return 1; }
   [ ! -f "$log" ] || { echo "purge left the store-resident log behind" >&2; return 1; }
   grep -q 'outside the store; left untouched' "$TEST_ROOT/purge-derive.err" || { cat "$TEST_ROOT/purge-derive.err" >&2; return 1; }
@@ -4364,10 +4374,10 @@ test_list_user_scope_only_personal() {
   as_root "$HOLD_REAL_BIN" stop "system:$gid_call" >/dev/null 2>&1 || true
 }
 
-# G25: identity — rm, prune, and drop are accepted purge aliases; drop removes
-# record + log exactly like prune, targeted and sweeping.
+# G25: identity — prune and drop are purge's other names: the sweep, which
+# takes no process names (removing one is delete, or rm).
 test_drop_alias_matches_prune() {
-  local out1 out2 id1 id2 store
+  local out1 out2 id1 id2 store rc
   out1=$("$HOLD_BIN" -d true 2>&1) || return 1
   out2=$("$HOLD_BIN" -d true 2>&1) || return 1
   id1=$(printf '%s\n' "$out1" | extract_id)
@@ -4378,11 +4388,11 @@ test_drop_alias_matches_prune() {
   record_ended_soon "$id2" || return 1
   "$HOLD_BIN" help drop >"$TEST_ROOT/drop-help.out" || return 1
   grep -q 'usage: backmux purge' "$TEST_ROOT/drop-help.out" || { cat "$TEST_ROOT/drop-help.out" >&2; return 1; }
-  "$HOLD_BIN" drop "$id1" >/dev/null || return 1
-  ! record_exists "$id1" "$store" && ! log_exists "$id1" "$store" || { echo "drop left artifacts of $id1" >&2; return 1; }
-  record_exists "$id2" "$store" && log_exists "$id2" "$store" || { echo "targeted drop touched another process" >&2; return 1; }
+  rc=0; "$HOLD_BIN" drop "$id1" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] && record_exists "$id1" "$store" || { echo "drop took a process name: rc=$rc" >&2; return 1; }
   # A bare drop sweeps ended processes, exactly like a bare purge/prune.
   "$HOLD_BIN" drop >/dev/null 2>&1 || return 1
+  ! record_exists "$id1" "$store" && ! log_exists "$id1" "$store" || { echo "sweeping drop left artifacts of $id1" >&2; return 1; }
   ! record_exists "$id2" "$store" || { echo "sweeping drop kept an ended process" >&2; return 1; }
 }
 
@@ -4408,7 +4418,7 @@ test_global_plain_d_seen_live_by_users() {
   ! "$HOLD_BIN" list all -s | grep -Eq "Up .* globald$" || { echo "a dead global process still listed as running" >&2; return 1; }
   "$HOLD_BIN" list all -s | grep -Eq "Exited .* globald$" || { "$HOLD_BIN" list all -s >&2; return 1; }
   ! "$HOLD_BIN" list all -s -l | grep -q " globald$" || { echo "list --live showed a dead global process" >&2; return 1; }
-  as_root "$HOLD_REAL_BIN" purge -s globald >/dev/null 2>&1 || true
+  as_root "$HOLD_REAL_BIN" delete globald >/dev/null 2>&1 || true
 }
 
 test_orphan_public_entry_swept() {
@@ -5166,7 +5176,7 @@ test_screen_verbs_on_ended_call() {
     set -e
     [ "$rc" -eq 8 ] && grep -q 'has ended' "$TEST_ROOT/gone.err" || { cat "$TEST_ROOT/gone.err" >&2; echo "$v: rc $rc, want 8" >&2; return 1; }
   done
-  "$HOLD_BIN" purge gone >/dev/null 2>&1 || true
+  "$HOLD_BIN" delete gone >/dev/null 2>&1 || true
 }
 
 # A process name may not start with '-' (it could never be targeted).
@@ -5228,7 +5238,7 @@ test_fifo_console_full_capability() {
   [ "$("$HOLD_BIN" peek ff | grep -c '^GOT via-attach-')" = 2 ] || { "$HOLD_BIN" peek ff >&2; return 1; }
   as_user /bin/sh -c 'mkdir "$1" && mkfifo "$1/in" "$1/out"' sh "$ep.abcdef" || return 1
   "$HOLD_BIN" end ff fw >/dev/null 2>&1 || true
-  "$HOLD_BIN" purge ff >/dev/null || return 1
+  "$HOLD_BIN" delete ff 2>/dev/null || return 1
   [ ! -e "$ep.abcdef" ] || { echo "half-made channel left behind" >&2; return 1; }
 }
 
@@ -5314,7 +5324,7 @@ test_inspect_reports_observed_state() {
   grep -q '"state": "exited"' "$TEST_ROOT/killed.json" && grep -q '"recorded_state": "running"' "$TEST_ROOT/killed.json" ||
     { cat "$TEST_ROOT/killed.json" >&2; return 1; }
   python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$TEST_ROOT/killed.json" || return 1
-  "$HOLD_BIN" purge killed >/dev/null 2>&1 || true
+  "$HOLD_BIN" delete killed >/dev/null 2>&1 || true
 }
 
 # Plain -d leaves nothing behind: one fork, setsid, output straight into the
@@ -5367,7 +5377,7 @@ test_plain_d_leaves_nothing_behind_dw_waits() {
   "$HOLD_BIN" end plainwait waited >/dev/null || return 1
   [ "$("$HOLD_BIN" wait waited)" = 143 ] || return 1
   [ "$("$HOLD_BIN" wait plainwait 2>/dev/null)" = -1 ] || return 1
-  "$HOLD_BIN" purge plainwait waited >/dev/null 2>&1 || true
+  "$HOLD_BIN" rm -f plainwait waited >/dev/null 2>&1 || true
 }
 
 # Another PID namespace with its own /proc: the launching shell's PIDs must
@@ -5427,7 +5437,7 @@ test_other_pid_namespace_follows_chain_of_command() {
   in_new_pid_ns /bin/sh -c 'BACKMUX_CONSOLE_TRANSPORT=fifo "$1" -dw --name nsgone -- sleep 300 >/dev/null; sleep 0.5' sh "$HOLD_REAL_BIN" || return 1
   # A plain -d process (no supervisor; at most its own output holds a lock, which
   # a program may close) in a namespace that ends: this shell cannot tell, so
-  # Unknown - sweeps skip it, end explains, only a named purge --force removes it.
+  # Unknown - sweeps skip it, end explains, rm refuses it, delete removes it.
   in_new_pid_ns /bin/sh -c '"$1" -d --name nsunk -- sleep 300 >/dev/null; sleep 0.5' sh "$HOLD_REAL_BIN" || return 1
   sleep 0.3
   "$HOLD_BIN" list all -a | grep -Eq 'Exited \(\?\).* nsgone$' || { "$HOLD_BIN" list all -a >&2; return 1; }
@@ -5439,8 +5449,8 @@ test_other_pid_namespace_follows_chain_of_command() {
   "$HOLD_BIN" list all -a | grep -q ' nsunk$' || { echo "a sweep removed a process it could not judge" >&2; return 1; }
   if "$HOLD_BIN" end nsunk 2>"$TEST_ROOT/nsunk-end.err"; then echo "end claimed an unknown process" >&2; return 1; fi
   grep -q "not running in this environment" "$TEST_ROOT/nsunk-end.err" || { cat "$TEST_ROOT/nsunk-end.err" >&2; return 1; }
-  if "$HOLD_BIN" purge nsunk 2>/dev/null; then echo "purge removed an unknown process without --force" >&2; return 1; fi
-  "$HOLD_BIN" purge nsunk --force >/dev/null || return 1
+  if "$HOLD_BIN" rm nsunk >/dev/null 2>&1; then echo "rm removed an unknown process without -f" >&2; return 1; fi
+  "$HOLD_BIN" delete nsunk 2>/dev/null || return 1
   ! "$HOLD_BIN" list all -a | grep -q ' nsunk$' || return 1
   # (nst and nsd had ended, so the sweep above already removed them)
 }
@@ -5463,7 +5473,7 @@ test_foreign_namespace_unavailable_log_is_unknown() {
     out=$(in_new_pid_ns /bin/sh -c '
       "$1" inspect nslog | grep -q '\''"state": "unknown"'\'' || { "$1" inspect nslog; exit 1; }
       "$1" list -a | grep -Eq "Unknown.* nslog$" || { "$1" list -a; exit 1; }
-      if "$1" purge nslog >/dev/null 2>&1; then echo "purged a process whose state is unknown"; exit 1; fi
+      if "$1" rm nslog >/dev/null 2>&1; then echo "rm removed a process whose state is unknown"; exit 1; fi
       echo ok' sh "$HOLD_REAL_BIN" 2>&1) || rc=$?
     if [ "$problem" = unreadable ]; then
       as_user chmod 600 "$log" || return 1
@@ -5537,7 +5547,7 @@ test_foreign_namespace_unknown_console_can_stop() {
       echo ok' sh "$HOLD_REAL_BIN" "$action" "$expected" 2>&1) || rc=$?
     as_user mv "$log.hidden" "$log" || return 1
     [ "$rc" -eq 0 ] && [ "$(printf '%s\n' "$out" | tail -n 1)" = ok ] || { printf '%s: %s\n' "$action" "$out" >&2; return 1; }
-    "$HOLD_BIN" purge nssignal >/dev/null || return 1
+    "$HOLD_BIN" delete nssignal 2>/dev/null || return 1
   done
 }
 
@@ -6429,14 +6439,14 @@ test_settings_recall_delete_purge_all() {
   # delete rejects this confirmed running process.
   "$HOLD_BIN" server --name live1 -- sleep 60 >/dev/null 2>&1 || return 1
   rc=0; "$HOLD_BIN" delete live1 2>"$TEST_ROOT/del.err" || rc=$?
-  [ "$rc" -eq 1 ] && grep -q 'run backmux end live1 before deleting its profile' "$TEST_ROOT/del.err" || { cat "$TEST_ROOT/del.err" >&2; return 1; }
+  [ "$rc" -eq 1 ] && grep -q 'run backmux end live1 before deleting it$' "$TEST_ROOT/del.err" || { cat "$TEST_ROOT/del.err" >&2; return 1; }
   "$HOLD_BIN" delete job2 2>/dev/null || return 1
   ! out_has ' job2$' "$HOLD_BIN" list all || { echo "delete left the process" >&2; return 1; }
-  # purge all reports selected running processes and removed records.
+  # purge all reports the processes it stopped and the ones it removed.
   "$HOLD_BIN" server --name kept -- sleep 60 >/dev/null 2>&1 || return 1
   "$HOLD_BIN" save kept 2>/dev/null || return 1
   "$HOLD_BIN" purge all </dev/null 2>"$TEST_ROOT/pa.err" || { cat "$TEST_ROOT/pa.err" >&2; return 1; }
-  grep -qx 'Selected 1 running process for purge; removed 1 record.' "$TEST_ROOT/pa.err" || { cat "$TEST_ROOT/pa.err" >&2; return 1; }
+  grep -qx 'Stopped 1 process. Removed 1 unsaved process.' "$TEST_ROOT/pa.err" || { cat "$TEST_ROOT/pa.err" >&2; return 1; }
   ! out_has ' live1$' "$HOLD_BIN" list all || { echo "purge all left live1" >&2; return 1; }
   out_has 'Up .* kept$' "$HOLD_BIN" list || { echo "purge all took a saved process" >&2; return 1; }
   "$HOLD_BIN" end kept >/dev/null 2>&1 || true
@@ -6753,7 +6763,7 @@ PY
   "$HOLD_BIN" end pic >/dev/null 2>&1 || true
 }
 
-# After the process ends, peek shows its last screen; purge removes it.
+# After the process ends, peek shows its last screen; delete removes it.
 test_peek_after_exit_and_purge() {
   "$HOLD_BIN" -dt --name gone -- /bin/sh -c 'echo last words; sleep 0.3' >/dev/null || return 1
   "$HOLD_BIN" wait gone --timeout 5000 >/dev/null || return 1
@@ -6762,7 +6772,7 @@ test_peek_after_exit_and_purge() {
   local id
   id=$("$HOLD_BIN" inspect gone | sed -n 's/^  "id": "\(.*\)",$/\1/p')
   [ -f "$HOME/.local/state/backmux/$id.screen" ] || return 1
-  "$HOLD_BIN" purge gone >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" delete gone >/dev/null 2>&1 || return 1
   [ ! -e "$HOME/.local/state/backmux/$id.screen" ] || return 1
 }
 
@@ -6904,13 +6914,14 @@ run_test "console rejects unrelated peer UID before replay" test_console_rejects
 run_test "console can reattach after detach" test_console_can_reattach_after_detach
 run_test "console socket lives in store dir, not /tmp, for long paths" test_console_socket_lives_in_store_dir
 run_test "console target runs in caller cwd (relative-bind restores cwd)" test_console_target_runs_in_caller_cwd
-run_test "prune <id> removes exactly one run record/output" test_prune_by_id
+run_test "delete <id> removes exactly one process record/output" test_delete_by_id
 run_test "prune -a removes prunable while preserving running" test_prune_all_keeps_running
 run_test "save marks the record and is idempotent" test_save_marks_record_and_is_idempotent
 run_test "sweeping purge skips saved processes" test_purge_sweep_skips_saved
-run_test "targeted purge of a saved process refuses with exact wording" test_purge_targeted_refuses_saved_exact_wording
-run_test "purge --force removes a saved ended process" test_purge_force_removes_saved_ended
-run_test "purge --force removes a live saved process" test_purge_force_removes_live_saved
+run_test "purge takes no process name" test_purge_takes_no_process_name
+run_test "delete removes a saved ended process" test_delete_removes_saved_ended
+run_test "rm -f kills and removes a live saved process" test_rm_force_removes_live_saved
+run_test "rm follows docker rm's contract" test_rm_docker_contract
 run_test "rename of a saved process keeps purge protection" test_rename_of_saved_call_keeps_protection
 run_test "rename saves an unsaved process" test_rename_saves_an_unsaved_call
 run_test "redial honors a recorded foreground recipe (and -d overrides)" test_redial_honors_recorded_foreground_mode
@@ -6999,7 +7010,7 @@ run_test "attach is the primary console spelling" test_attach_verb_matches_conso
 # the test once the flags exist.
 run_test "logs to a non-TTY dumps plain raw bytes automatically" test_logs_non_tty_auto_plain
 run_test "list -u shows only the invoking user's processes, even under sudo" test_list_user_scope_only_personal
-run_test "drop removes a process exactly like prune" test_drop_alias_matches_prune
+run_test "drop and prune are purge: the sweep, no names" test_drop_alias_matches_prune
 run_test "root's plain -d is seen live by other users" test_global_plain_d_seen_live_by_users
 run_test "sudo purge sweeps an orphan public entry" test_orphan_public_entry_swept
 run_test "unless-stopped restarts crashes but stays down after end" test_restart_unless_stopped
@@ -7050,7 +7061,7 @@ run_test "the polite name help shows resolves as a target" test_friendly_names_r
 run_test "a console is free again once its attach client is gone" test_attach_again_after_client_vanishes
 run_test "nested attach: the detach keys let go of the innermost first" test_nested_attach_detaches_innermost_first
 run_test "a newer attach takes the process; leaving is quiet; names, not ids" test_attach_messages_say_what_happened
-run_test "peek shows the last screen after exit; purge removes it" test_peek_after_exit_and_purge
+run_test "peek shows the last screen after exit; delete removes it" test_peek_after_exit_and_purge
 run_test "screen verbs refuse processes without a TTY" test_screen_verbs_need_a_tty
 run_test "send --mouse to a program without mouse reporting exits 9" test_send_mouse_off_is_reported
 run_test "processes see BACKMUX_ID, BACKMUX_NAME, BACKMUX_PARENT" test_call_identity_environment

@@ -46,12 +46,12 @@ FINISH OR HAND OVER
     backmux send editor ':q!' --enter
     backmux wait editor
     backmux peek editor --last-alt
-    backmux purge editor
+    backmux delete editor
 
   wait without a condition waits for exit and prints the program's code.
   --last-alt reads the saved alternate-screen frame after the app returns
   to the primary screen.
-  purge removes the ended process and frees its name.
+  delete removes the ended process and frees its name.
 
   For your app, replace vi and its inputs with your reproduction steps.
   If it already runs in Backmux, use its name. A person can join a running

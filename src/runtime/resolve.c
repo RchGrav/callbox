@@ -431,6 +431,18 @@ static int resolve_action_token(const struct hold_invocation *inv,
     return resolve_word(inv, current_user_store, system_store, command, token, report_missing, targets_out, count_out);
 }
 
+/* As hold_resolve_action_token, but nothing is printed when the token matches
+ * no process (rc 5): rm -f skips such a name silently, as docker rm -f does. */
+int hold_resolve_action_token_quiet(const struct hold_invocation *inv,
+                                    const struct hold_store *current_user_store,
+                                    const struct hold_store *system_store,
+                                    const char *command,
+                                    const char *token,
+                                    struct hold_resolved_target **targets_out,
+                                    int *count_out) {
+    return resolve_action_token(inv, current_user_store, system_store, command, token, false, targets_out, count_out);
+}
+
 int hold_resolve_action_token(const struct hold_invocation *inv,
                                 const struct hold_store *current_user_store,
                                 const struct hold_store *system_store,

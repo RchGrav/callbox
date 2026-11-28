@@ -129,7 +129,7 @@ to the process's end (`-f`).
 - Backmux never elevates on a user's behalf, with one deliberate exception:
   a no-target `backmux purge --system` run by a normal user re-executes
   itself through `sudo` (which does the prompting) at a single commented
-  dispatch site. A targeted purge of a global process is never re-executed: a
+  dispatch site. A delete or rm of a global process is never re-executed: a
   normal user is told it needs root.
 
 ## Non-goals

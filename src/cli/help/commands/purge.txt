@@ -1,28 +1,25 @@
-usage: backmux purge [<target>|all] [-a|--all] [-s|--system] [-u|--user]
-                     [--force]
+usage: backmux purge [all] [-a|--all] [-s|--system] [-u|--user]
 
 Remove ended records
 
-Remove process records and their stored logs, screens, and message history.
-Without a target, remove eligible ended records from the selected store.
-With a target, remove that process's record.
+Remove every process that has ended and is not saved: its record, log,
+saved screens and message history, freeing its name. Saved processes and
+running processes are kept. purge takes no process names: to remove one
+process, use backmux delete <target>.
 
   -a, --all        include stale records (from an earlier boot, or whose
                    process no longer matches); stops nothing and does not
                    change store selection. Not the same as purge all.
   -u, --user       select the invoking user's store (the default)
   -s, --system     select the root-managed store; invoke sudo if needed
-  --force          with a target: remove it even when saved, stopping it
-                   first if it runs; without a target: as -a. A sweep
-                   always keeps saved profiles and running processes.
 
 REMOVE ALL UNSAVED PROCESSES
-purge all stops running, unsaved processes and removes unsaved records in
-the selected store. It reports the number stopped and records removed.
-Saved profiles are preserved.
+purge all ends every running process that is not saved, then removes every
+unsaved process in the selected store. It reports the number stopped and
+removed. Saved processes are kept.
 
---name assigns a name at launch; it does not save the profile. save and
-rename mark profiles as saved. Removing a record releases its name.
-Aliases: rm, prune, drop. end stops a process and keeps its record.
+--name assigns a name at launch; it does not save the process. save and
+rename mark processes as saved. Aliases: prune, drop. end stops a process
+and keeps its record; delete removes one.
 [agent]
 Tasks: backmux help cleanup

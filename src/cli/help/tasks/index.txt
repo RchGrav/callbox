@@ -29,7 +29,7 @@ As an agent running inside backmux, you can:      one page each: help <task>
   job       Run a command, get its code     backmux server -w <cmd>; wait <n>
   delegate  Start another agent, give work  backmux detach --name <n> claude
   check     See what is running, and where  backmux list; backmux info <n>
-  cleanup   Stop it, then remove it         backmux end <n>; backmux purge <n>
+  cleanup   Stop it, then remove it         backmux end <n>; backmux delete <n>
 [agent outside]
 As an agent outside backmux, you can:             one page each: help <task>
   look      Read any terminal's screen      backmux peek <target>
@@ -41,7 +41,7 @@ As an agent outside backmux, you can:             one page each: help <task>
   job       Run a command, get its code     backmux server -w <cmd>; wait <n>
   delegate  Start another agent, give work  backmux detach --name <n> claude
   check     See what is running, and where  backmux list; backmux info <n>
-  cleanup   Stop it, then remove it         backmux end <n>; backmux purge <n>
+  cleanup   Stop it, then remove it         backmux end <n>; backmux delete <n>
 [person]
 An agent can:                                     one page each: help <task>
   assist    Help with a person's screen     backmux peek, send, msg
@@ -54,7 +54,7 @@ An agent can:                                     one page each: help <task>
   job       Run a command, get its code     backmux server -w <cmd>; wait <n>
   delegate  Start another agent, give work  backmux detach --name <n> claude
   check     See what is running, and where  backmux list; backmux info <n>
-  cleanup   Stop it, then remove it         backmux end <n>; backmux purge <n>
+  cleanup   Stop it, then remove it         backmux end <n>; backmux delete <n>
 [all]
 
 <target> is a name, an ID, or a place on screen (2C): backmux help targets.

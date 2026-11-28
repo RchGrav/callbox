@@ -3,7 +3,7 @@ usage: backmux rename <target> <name>
 Rename and save a process
 
 Change a running or ended process's name. rename also saves the process,
-protecting it from ordinary purge; backmux purge <name> --force still removes
+protecting it from ordinary purge; backmux delete <name> still removes
 it. The new name must be unused by another process or active inbox in the same
 store.
 [agent]

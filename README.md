@@ -66,7 +66,7 @@ When finished:
 ```sh
 backmux send demo exit --enter
 backmux wait demo                 # prints the program's exit code: 0
-backmux purge demo                # removes its record and log; frees the name
+backmux delete demo               # removes its record and log; frees the name
 ```
 
 Use the same loop for an editor, a terminal UI, a REPL, or an agent harness.
@@ -76,7 +76,7 @@ input, resizing, and verification.
 ## Choose how a program runs
 
 A **managed process** has a name, a Backmux process ID, and a log.
-A process keeps its name after the program exits, until you purge its record.
+A process keeps its name after the program exits, until you delete it or purge removes it.
 
 | You want to… | Start it with… | What you get |
 | --- | --- | --- |

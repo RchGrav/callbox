@@ -158,13 +158,15 @@ int hold_cmd_stats_action(const struct hold_invocation *inv,
                             const struct hold_store *system_store,
                             const char *id_token,
                             bool no_stream);
+/* purge: remove every ended, unsaved process in one store; no names. */
 int hold_cmd_purge_action(const struct hold_invocation *inv,
                             const struct hold_store *user_store,
                             const struct hold_store *system_store,
-                            const char *target_token,
-                            bool all,
-                            bool force,
+                            bool include_stale,
                             bool system_scope);
+/* The Docker-style rm (src/runtime/remove.c): remove each named process. */
+int hold_cmd_rm_action(const struct hold_invocation *inv, const struct hold_store *user_store,
+                       const struct hold_store *system_store, int argc, char **argv, bool force);
 /* A process's settings and the verbs around them (src/runtime/settings.c). */
 int hold_cmd_set_action(const struct hold_invocation *inv, const struct hold_store *user_store,
                         const struct hold_store *system_store, int argc, char **argv, bool unset);
@@ -175,7 +177,7 @@ int hold_cmd_recall_action(const struct hold_invocation *inv, const struct hold_
 int hold_cmd_delete_action(const struct hold_invocation *inv, const struct hold_store *user_store,
                            const struct hold_store *system_store, const char *token);
 int hold_cmd_purge_all_action(const struct hold_invocation *inv, const struct hold_store *user_store,
-                              const struct hold_store *system_store, bool force, bool system_scope);
+                              const struct hold_store *system_store, bool system_scope);
 /* Process-record operations (src/runtime/call.c): redial a retained recipe, save or
  * rename a process, and assign a generated adjective_noun name. */
 int hold_cmd_rename_action(const struct hold_invocation *inv,

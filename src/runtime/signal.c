@@ -116,7 +116,7 @@ static void not_running_here(const struct hold_run_record *r, bool can_tell) {
         fprintf(stderr,
                 "backmux: %s is not running in this environment, and this shell cannot tell whether it still runs in "
                 "the one that started it (no exit was recorded). End it from there; to drop the record, "
-                "backmux purge %s --force.\n", label, label);
+                "backmux delete %s.\n", label, label);
 }
 
 /* Whether the process has stopped running, as this shell can tell, within ms. */

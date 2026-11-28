@@ -306,13 +306,13 @@ int hold_cmd_delete_action(const struct hold_invocation *inv,
     char label[ALIAS_MAX_LEN + 1];
     snprintf(label, sizeof(label), "%s", label_of(&r, display, sizeof(display)));
     hold_free_run_record(&r);
-    /* Reject a confirmed running target before removing its retained profile. */
+    /* delete removes; it never ends a process. A running one is refused, with
+     * the command that ends it. */
     if (running) {
-        fprintf(stderr, "backmux: %s is running; run backmux end %s before deleting its profile\n", label, label);
+        fprintf(stderr, "backmux: %s is running; run backmux end %s before deleting it\n", label, label);
         return 1;
     }
-    return hold_cmd_purge_action(inv, user_store, system_store, target.id, false, true,
-                                 target.store.kind == STORE_SYSTEM_MANAGED);
+    return hold_remove_target(inv, user_store, system_store, target.id);
 }
 
 /* purge all selects unsaved records, stopping running processes first. */
@@ -356,7 +356,6 @@ static int purge_all_cb(const char *id, const char *path, struct hold_run_record
 int hold_cmd_purge_all_action(const struct hold_invocation *inv,
                               const struct hold_store *user_store,
                               const struct hold_store *system_store,
-                              bool force,
                               bool system_scope) {
     const struct hold_store *store = system_scope ? system_store : user_store;
     char boot[128];
@@ -366,14 +365,9 @@ int hold_cmd_purge_all_action(const struct hold_invocation *inv,
         return 1;
     }
     int rc = 0;
-    if (w.n == 0) {
-        hold_sig_note(inv, "backmux: nothing to purge (saved processes are kept)\n");
-        goto out;
-    }
-    /* The CLI operation does not prompt; saved records were excluded above. */
-    (void)force;
-
-    int removed = 0;
+    /* No prompt: purge all is the documented step that clears the board, and
+     * saved processes were excluded above. */
+    int removed = 0, stopped = 0;
     for (int i = 0; i < w.n; i++) {
         if (w.live[i]) {
             char *one[1] = {w.ids[i]};
@@ -385,18 +379,18 @@ int hold_cmd_purge_all_action(const struct hold_invocation *inv,
                 if (src > rc) rc = src;
                 continue;
             }
+            stopped++;
         }
         bool gone = false;
         int prc = hold_prune_one_run_ex(store, w.ids[i], w.boot_id, true, true, &gone);
         if (gone) removed++;
         if (prc > rc) rc = prc;
     }
-    if (w.running > 0)
-        hold_sig_note(inv, "Selected %d running process%s for purge; removed %d record%s.\n", w.running, w.running == 1 ? "" : "es", removed,
-                      removed == 1 ? "" : "s");
+    if (stopped > 0)
+        hold_sig_note(inv, "Stopped %d process%s. Removed %d unsaved process%s.\n", stopped, stopped == 1 ? "" : "es",
+                      removed, removed == 1 ? "" : "es");
     else
-        hold_sig_note(inv, "Removed %d record%s.\n", removed, removed == 1 ? "" : "s");
-out:
+        hold_sig_note(inv, "Removed %d unsaved process%s.\n", removed, removed == 1 ? "" : "es");
     free(w.ids);
     free(w.labels);
     free(w.live);

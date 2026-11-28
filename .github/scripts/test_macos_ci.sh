@@ -50,17 +50,14 @@ run_native_smoke() {
     fail "macOS smoke process table header is wrong"
   }
 
+  # A saved process survives the sweep; delete removes it by name.
   env HOME="$home" ./backmux save mac-smoke 2>/dev/null
-  if env HOME="$home" ./backmux purge mac-smoke >/dev/null 2>"$tmp/refusal.err"; then
-    fail "purge of a saved process unexpectedly succeeded"
-  fi
-  grep -Fq 'is saved' "$tmp/refusal.err" || {
-    cat "$tmp/refusal.err" >&2
-    fail "saved-process purge refusal message missing"
-  }
   env HOME="$home" ./backmux end mac-smoke >/dev/null 2>&1 || true
-  env HOME="$home" ./backmux purge mac-smoke --force >/dev/null 2>&1 ||
-    fail "purge --force of the saved process failed"
+  env HOME="$home" ./backmux purge >/dev/null 2>&1 || fail "purge failed"
+  env HOME="$home" ./backmux list all | grep -q ' mac-smoke$' ||
+    fail "purge removed a saved process"
+  env HOME="$home" ./backmux delete mac-smoke >/dev/null 2>&1 ||
+    fail "delete of the saved process failed"
   rm -rf "$tmp"
 }
 

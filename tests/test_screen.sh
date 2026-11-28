@@ -165,14 +165,14 @@ test_chat_agents_only_and_assist() {
   out_has '\[Assist request included\]' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
   if "$HOLD_BIN" peek term | grep -q '\[x\] Assist'; then echo "the box stayed ticked" >&2; return 1; fi
   # an agent that ends leaves chat: its conversation closes to the list, and
-  # it is not listed (nor once purged)
+  # it is not listed (nor once deleted)
   "$HOLD_BIN" end g1 >/dev/null 2>&1 || return 1
   "$HOLD_BIN" wait term --match 'Select recipient' --timeout 8000 >/dev/null || { echo "the ended agent's conversation stayed open" >&2; "$HOLD_BIN" peek term >&2; return 1; }
   wait_gone term 'g1  gemini' || { echo "an ended agent is still listed" >&2; return 1; }
   out_has 'b1  mybot' "$HOLD_BIN" peek term || { "$HOLD_BIN" peek term >&2; return 1; }
-  "$HOLD_BIN" purge g1 >/dev/null 2>&1 || return 1
+  "$HOLD_BIN" delete g1 >/dev/null 2>&1 || return 1
   sleep 1.2
-  if "$HOLD_BIN" peek term | grep -q 'g1'; then echo "a purged agent shows in chat" >&2; "$HOLD_BIN" peek term >&2; return 1; fi
+  if "$HOLD_BIN" peek term | grep -q 'g1'; then echo "a deleted agent shows in chat" >&2; "$HOLD_BIN" peek term >&2; return 1; fi
   "$HOLD_BIN" send term -k Escape || return 1
   wait_gone term 'chat ->' || return 1
   "$HOLD_BIN" end b1 plainapp term >/dev/null 2>&1 || true

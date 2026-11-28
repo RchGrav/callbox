@@ -6,7 +6,7 @@ backmux server runs a command with no terminal; its output goes to a log.
   backmux server -w --name checks make test
   code=$(backmux wait checks)            wait; prints the command's code
   backmux logs checks -n 100             what it printed
-  backmux purge checks                   remove it, freeing the name
+  backmux delete checks                  remove it, freeing the name
 
 -w keeps the exit code; without it, wait prints -1. wait itself exits 0
 once the command ends, whatever its code: use the printed value.

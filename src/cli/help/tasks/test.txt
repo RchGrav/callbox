@@ -7,7 +7,7 @@ backmux help test - start an app of your own and test it{!name}
   backmux send app -k Down --wait 300    act (backmux help drive)
   backmux send app q                     quit it the app's own way
   backmux wait app                       its exit code, once it ends
-  backmux purge app                      remove it, freeing the name
+  backmux delete app                     remove it, freeing the name
 
 detach starts it on a terminal of its own; --size keeps results the same
 from run to run. A person can watch with backmux attach app. backmux

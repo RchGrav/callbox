@@ -796,9 +796,12 @@ int hold_cli_main(int argc, char **argv) {
     } else if (!strcmp(canon, "attach")) {
         rc = hold_cmd_console_action(&inv, &user_store, &system_store, cmd_argv[0]);
     } else if (!strcmp(canon, "purge")) {
-        const char *target = cmd_argc > 0 ? cmd_argv[0] : NULL;
-        if (target && target[0] == '-') {
-            fprintf(stderr, "backmux: error: unknown flag '%s'\n", target);
+        /* The only word purge takes is all; a process name belongs to delete. */
+        const char *word = cmd_argc > 0 ? cmd_argv[0] : NULL;
+        bool all_word = word && !strcmp(word, "all");
+        if (word && !all_word) {
+            fprintf(stderr, "backmux: error: purge takes no process name; to remove one process: backmux delete %s\n",
+                    word);
             const char *usage = hold_cli_command_usage(command);
             if (usage) fprintf(stderr, "%s\n", usage);
             rc = 1;
@@ -807,9 +810,10 @@ int hold_cli_main(int argc, char **argv) {
              * sweeps the global store. -a keeps its state meaning here
              * (include stale). */
             bool purge_system = (oo.system_scope || oo.requested_system) && !oo.user_scope;
-            if (purge_system && !target && !inv.euid_root) {
-                /* Re-execute a non-root system-store sweep through sudo;
-                 * the elevated invocation performs the sweep directly. */
+            if (purge_system && !inv.euid_root) {
+                /* Re-execute a non-root system-store purge (either form) through
+                 * sudo, so sudo can ask for the password; the elevated
+                 * invocation performs it directly. */
                 char self[HOLD_PATH_MAX];
                 if (hold_resolve_self_executable_path(argv[0], self, sizeof(self)) == 0) {
                     char *sudo_argv[8];
@@ -817,21 +821,22 @@ int hold_cli_main(int argc, char **argv) {
                     sudo_argv[k++] = "sudo";
                     sudo_argv[k++] = self;
                     sudo_argv[k++] = "purge";
+                    if (all_word) sudo_argv[k++] = "all";
                     sudo_argv[k++] = "--system";
                     if (oo.all) sudo_argv[k++] = "--all";
-                    if (oo.force) sudo_argv[k++] = "--force";
                     sudo_argv[k] = NULL;
                     execvp("sudo", sudo_argv);
                 }
-                fprintf(stderr, "backmux: global purge needs root: sudo backmux purge --system\n");
+                fprintf(stderr, "backmux: global purge needs root: sudo backmux purge%s --system\n", all_word ? " all" : "");
                 rc = 3;
-            } else if (target && !strcmp(target, "all")) {
-                /* purge all stops unsaved processes and removes their records. */
-                rc = hold_cmd_purge_all_action(&inv, &user_store, &system_store, oo.force, purge_system);
+            } else if (all_word) {
+                rc = hold_cmd_purge_all_action(&inv, &user_store, &system_store, purge_system);
             } else {
-                rc = hold_cmd_purge_action(&inv, &user_store, &system_store, target, oo.all, oo.force, purge_system);
+                rc = hold_cmd_purge_action(&inv, &user_store, &system_store, oo.all, purge_system);
             }
         }
+    } else if (!strcmp(canon, "rm")) {
+        rc = hold_cmd_rm_action(&inv, &user_store, &system_store, cmd_argc, cmd_argv, oo.force);
     } else if (!strcmp(canon, "end")) {
         rc = hold_cmd_signal_action(&inv, &user_store, &system_store, "stop", cmd_argc, cmd_argv, SIGTERM, true, false, oo.print_cmd);
     } else if (!strcmp(canon, "kill")) {

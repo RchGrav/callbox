@@ -17,7 +17,7 @@ DRIVE                                       tail     Follow new output
                                             kill     End now: SIGKILL
 MESSAGE                                     purge    Remove ended records
   msg      Message a process or person      delete   Remove a record, even saved
-  inbox    Read replies sent to you
+  inbox    Read replies sent to you         rm       Docker-style removal
   monitor  Follow replies as they come    PROFILES AND SETTINGS
                                             recall   Restart an ended process
 PANES                                       save     Keep a record (a profile)

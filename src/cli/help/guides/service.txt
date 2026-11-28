@@ -16,7 +16,7 @@ RUN A JOB AND RETURN ITS RESULT
     backmux -dw --name checks -- make test
     code=$(backmux wait checks)
     backmux logs checks -n 100
-    backmux purge checks
+    backmux delete checks
     exit "$code"
 
   -dw returns immediately and records the eventual exit code. wait prints
@@ -30,7 +30,7 @@ KEEP A SERVICE UP WHILE TESTS RUN
 
     set -e
     backmux -dt --name web -- python3 -u -m http.server 8080
-    trap 'backmux end web; backmux purge web' EXIT
+    trap 'backmux end web; backmux delete web' EXIT
     backmux wait web --match 'Serving HTTP' --timeout 10s
     ./run-tests.sh || { backmux logs web -n 200; exit 1; }
     backmux logs web -n 20

@@ -2,14 +2,14 @@ usage: backmux delete <target>
 
 Remove a record, even saved
 
-Remove a process record and its log, saved screens, message history, and
-console artifacts, including a saved profile. This releases its name.
+Remove one process's record and its log, saved screens, message history and
+console artifacts, saved or not. This releases its name.
 
-The initial check rejects a target reported as running. Removal then uses
-the same path as purge TARGET --force: an Unknown record can be removed,
-and a process found running on the next check is stopped before removal.
+delete never ends a process: one reported as running is refused, with the
+command that ends it. A process found running on the next check (started
+again in between) is ended before removal. An Unknown record can be removed;
+removing it does not establish that the program has ended.
 
-Use backmux end first to request shutdown. Removing an Unknown record does
-not establish that the program has ended.
+Use backmux end first to request shutdown.
 [agent]
 Tasks: backmux help cleanup

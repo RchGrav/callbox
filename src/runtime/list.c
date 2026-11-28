@@ -752,108 +752,19 @@ static int cmd_prune_store_all(const struct hold_store *store, bool include_stal
     return 0;
 }
 
+/* purge: housekeeping for the native workflow (save what is worth reusing,
+ * purge the rest). It sweeps one store and takes no process names: removing
+ * one named process is delete's job (or the Docker-style rm). It only clears
+ * processes that have ended and are not saved; ending running ones is purge
+ * all's. The scope is explicit: -s/--system sweeps the root-managed store
+ * (root only; a normal user is re-run through sudo before reaching here),
+ * everything else the caller's own store. */
 int hold_cmd_purge_action(const struct hold_invocation *inv, const struct hold_store *user_store,
-                          const struct hold_store *system_store, const char *target_token,
-                          bool all, bool force, bool system_scope) {
-    if (!target_token || strcmp(target_token, "all") == 0) {
-        /* A no-target sweep only clears already-ended processes and skips saved
-         * ones; --force adds nothing here (it never mass-ends live processes). The
-         * scope is explicit: -s/--system sweeps the global store (root only,
-         * non-root is re-execed through sudo before reaching here), everything
-         * else sweeps the caller's personal store. */
-        const struct hold_store *store = system_scope ? system_store : user_store;
-        struct prune_sweep_stats stats;
-        bool include_stale = all || force || (target_token && strcmp(target_token, "all") == 0);
-        int rc = cmd_prune_store_all(store, include_stale, &stats);
-        /* Summarize removed records and retained active processes. */
-        if (rc == 0) {
-            char active[64] = "";
-            if (stats.kept_live > 0)
-                snprintf(active, sizeof(active), ", %d %s still active", stats.kept_live, stats.kept_live == 1 ? "is" : "are");
-            if (stats.removed > 0)
-                hold_sig_note(inv, "Cleaned up %d record%s%s.\n", stats.removed, stats.removed == 1 ? "" : "s", active);
-            else
-                hold_sig_note(inv, "Nothing to clean up%s.\n", active);
-        }
-        return rc;
-    }
-    /* Resolve the target regardless of run state (inspect intent) so protection
-     * and --force removal apply uniformly to live and ended processes. */
-    struct hold_resolved_target *targets = NULL;
-    int ntargets = 0;
-    int rc = hold_resolve_action_token(inv, user_store, system_store, "inspect", target_token, all, &targets, &ntargets);
-    if (rc != 0) {
-        free(targets);
-        return rc;
-    }
-    if (ntargets == 0) {
-        free(targets);
-        return hold_report_not_found(target_token);
-    }
-    for (int i = 0; i < ntargets; i++) {
-        if (targets[i].requires_root) {
-            rc = hold_report_requires_root(targets[i].id);
-            free(targets);
-            return rc;
-        }
-    }
-    char boot[128];
-    const char *boot_id = hold_boot_id_or_null(boot);
-    /* Saved processes are protected: a targeted purge without --force refuses and
-     * echoes the exact command the user meant, ready to copy. */
-    if (!force) {
-        for (int i = 0; i < ntargets; i++) {
-            struct hold_run_record r;
-            char rp[HOLD_PATH_MAX];
-            if (hold_load_record_by_id(targets[i].store.record_dir, targets[i].id, &r, rp, sizeof(rp)) != 0) continue;
-            char display_id[ID_DISPLAY_HEX_LEN + 1];
-            hold_run_id_display(r.id, display_id);
-            if (r.saved) {
-                fprintf(stderr,
-                        "backmux: '%s' is saved \xe2\x80\x94 purging a saved process requires --force\n"
-                        "  backmux purge %s --force\n",
-                        r.has_name ? r.name : display_id, target_token);
-                hold_free_run_record(&r);
-                free(targets);
-                return 2;
-            }
-            hold_free_run_record(&r);
-        }
-    }
-    int worst = 0;
-    int removed_count = 0;
-    for (int i = 0; i < ntargets; i++) {
-        /* --force ends a still-live process before removal; without it a live process
-         * is refused below by hold_prune_one_run. */
-        if (force) {
-            struct hold_run_record r;
-            char rp[HOLD_PATH_MAX];
-            if (hold_load_record_by_id(targets[i].store.record_dir, targets[i].id, &r, rp, sizeof(rp)) == 0) {
-                enum run_state st = hold_eval_state(&r, boot_id);
-                hold_free_run_record(&r);
-                if (st == STATE_RUNNING) {
-                    char *one[1] = { targets[i].id };
-                    int stop_rc = hold_cmd_signal_action(inv, user_store, system_store, "stop", 1, one,
-                                                         SIGTERM, true, false, false);
-                    if (stop_rc != 0) {
-                        if (stop_rc > worst) worst = stop_rc;
-                        continue;
-                    }
-                }
-            }
-        }
-        bool removed = false;
-        rc = hold_prune_one_run_ex(&targets[i].store, targets[i].id, boot_id, true, force, &removed);
-        if (removed) removed_count++;
-        if (rc > worst) worst = rc;
-    }
-    if (worst == 0) {
-        if (removed_count > 0) {
-            hold_sig_note(inv, "Cleaned up %d record%s.\n", removed_count, removed_count == 1 ? "" : "s");
-        } else {
-            hold_sig_note(inv, "Nothing to clean up.\n");
-        }
-    }
-    free(targets);
-    return worst;
+                          const struct hold_store *system_store, bool include_stale, bool system_scope) {
+    const struct hold_store *store = system_scope ? system_store : user_store;
+    struct prune_sweep_stats stats;
+    int rc = cmd_prune_store_all(store, include_stale, &stats);
+    if (rc == 0)
+        hold_sig_note(inv, "Removed %d ended, unsaved process%s.\n", stats.removed, stats.removed == 1 ? "" : "es");
+    return rc;
 }

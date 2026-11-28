@@ -16,7 +16,7 @@ It does not provide containers, images, volume mounts, or port publishing.
   logs [-f]         logs [-f]
   attach            attach
   inspect           inspect (JSON); info provides a text summary
-  rm                purge TARGET
+  rm [-f]           rm (remove the named processes)
   rename            rename TARGET NAME (also saves the profile)
 
 list provides store selection and an owner column; list all includes ended

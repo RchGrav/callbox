@@ -76,6 +76,17 @@ bool hold_auto_removed_exit(const struct hold_store *store, const char *token, i
 bool hold_record_matches_alias_intent(const char *command, const struct hold_run_record *r, enum run_state st);
 int hold_report_not_found(const char *token);
 int hold_report_requires_root(const char *token);
+int hold_resolve_action_token_quiet(const struct hold_invocation *inv,
+                                    const struct hold_store *current_user_store,
+                                    const struct hold_store *system_store,
+                                    const char *command,
+                                    const char *token,
+                                    struct hold_resolved_target **targets_out,
+                                    int *count_out);
+/* Remove one named process (delete's removal, src/runtime/remove.c): saved
+ * or not; one found running is ended first. Reports "Removed NAME." */
+int hold_remove_target(const struct hold_invocation *inv, const struct hold_store *user_store,
+                       const struct hold_store *system_store, const char *token);
 int hold_resolve_action_token(const struct hold_invocation *inv,
                                 const struct hold_store *current_user_store,
                                 const struct hold_store *system_store,

@@ -76,6 +76,6 @@ UNDERSTAND WHERE A MESSAGE GOES
   backmux wait is different: it waits for a process's screen or process exit.
 
   When the reviewer is no longer needed: backmux end reviewer, then
-  backmux purge reviewer. This removes the process, not your outside inbox.
+  backmux delete reviewer. This removes the process, not your outside inbox.
 
 Next: backmux help agents. Details: backmux help msg, inbox, monitor.

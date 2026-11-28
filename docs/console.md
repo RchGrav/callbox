@@ -228,7 +228,7 @@ uses the shared store and the process's broker instead of consulting that PID:
 - **Unknown state:** No exit recorded and nothing vouching for the process — a
   plain `-d` process whose lock is gone, a process with an unavailable lock probe,
   or a process placed without the fallback — reads `Unknown`. Purge sweeps
-  leave it alone; a targeted `backmux purge NAME --force` removes its record.
+  leave it alone; `backmux delete NAME` removes its record.
   Control goes through an available broker, never a foreign PID.
 
 Without the fallback, nothing is added: no lock is taken, and processes run

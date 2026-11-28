@@ -37,8 +37,8 @@ REBUILD AND TEST TOGETHER
     backmux recall app
 
   recall reuses the recorded command, arguments, and working directory.
-  When finished: backmux end coder, then backmux purge coder and
-  backmux purge app.
+  When finished: backmux end coder, then backmux delete coder and
+  backmux delete app.
 
 JOIN AN APP YOUR AGENT STARTED
     backmux attach app

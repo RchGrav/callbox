@@ -129,7 +129,7 @@ Check the saved file, then close the editor and remove its process record:
 cat "$demo_dir/hello.c"                  # the string now reads "agents"
 backmux send ed :q --enter
 backmux wait ed                         # prints 0
-backmux purge ed
+backmux delete ed
 ```
 
 The edited file remains in `$demo_dir` for inspection.
@@ -273,7 +273,7 @@ Process receivers accept at most 20 messages per minute. This limits delivery
 rate; it is not a completion signal or a limit on total conversation length.
 
 When the worker is done, `backmux end worker` stops it. Its record and log
-remain until `backmux purge worker` removes them.
+remain until `backmux delete worker` removes them.
 
 ### Receive replies from outside Backmux
 
@@ -370,7 +370,7 @@ failing step can leave a screenshot behind:
 #!/bin/sh
 set -e
 # however the script ends: stop the process and free its name for the next run
-trap 'backmux end ui >/dev/null 2>&1; backmux purge ui >/dev/null 2>&1' EXIT
+trap 'backmux end ui >/dev/null 2>&1; backmux delete ui >/dev/null 2>&1' EXIT
 backmux detach --name ui -- ./my-tui --demo
 backmux wait ui --match "Main menu" --timeout 10000
 backmux send ui -k Down -k Down -k Enter --wait 300
@@ -380,7 +380,7 @@ test "$(backmux wait ui)" = 0
 ```
 
 `backmux wait` prints the program's exit code. An ended process keeps its name,
-as a Docker container does, so the trap purges it: without that, the next run's
+as a Docker container does, so the trap deletes it: without that, the next run's
 `--name ui` is refused (exit 11). A program killed by Ctrl-C
 reports 130 (128 + SIGINT), so quit with the program's own key when the test
 expects 0.
@@ -434,7 +434,7 @@ CI jobs whose success you need to check:
 backmux server -w --name checks -- make test
 test "$(backmux wait checks)" = 0
 backmux logs checks
-backmux purge checks
+backmux delete checks
 ```
 
 `make test` here is your project's test command. Neither `-d` nor `-dw`

@@ -23,6 +23,6 @@ needs to poll. backmux msg --received lists what has arrived.
 The reply waits in your inbox: backmux inbox --wait (backmux help replies).
 [all]
 Delivered means typed in, not done: peek shows its progress. When done:
-backmux end reviewer, then backmux purge reviewer.
+backmux end reviewer, then backmux delete reviewer.
 
 Next: backmux help reply, check

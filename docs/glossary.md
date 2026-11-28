@@ -19,7 +19,7 @@ their exact spelling. Source references identify where to verify each concept.
 | **target** / `<target>` | Command argument identifying a managed process: its name, its ID or a unique ID prefix, the place it is on screen (2C), or its polite form ("Sleek Carbon" for sleek_carbon), or an inbox where supported. Written `<target>` in usage lines (it replaced `<name\|id>` when places became targets). Use `backmux help targets` for exact syntax. | `src/runtime/resolve.c`, `src/store/resolve.c`, `src/runtime/inbox.c` |
 | **process record** | Stored metadata for a managed process, including identity, launch recipe, and lifecycle information. Records can outlive the process. | `include/backmux/types.h`, `src/store/record.c`, `src/store/record_read.c` |
 | **launch recipe** | Stored program, arguments, environment overrides, working directory, and launch options used by recall. `recipe` remains the internal field name. | `struct hold_recipe` in `include/backmux/types.h`, `src/runtime/call.c` |
-| **profile** / **saved profile** | A process record and launch recipe marked `saved`, protecting it from ordinary purge operations. Explicit `delete` or targeted `purge --force` can remove it. It is not a separate file format or a saved multi-pane layout. | `src/runtime/call.c`, `src/runtime/list.c`, `src/runtime/settings.c` |
+| **profile** / **saved profile** | A process record and launch recipe marked `saved`, protecting it from ordinary purge operations. Explicit `delete` or `rm` can remove it. It is not a separate file format or a saved multi-pane layout. | `src/runtime/call.c`, `src/runtime/list.c`, `src/runtime/settings.c` |
 | **working directory** | Directory in which a program starts. The `working` setting changes the next launch; clearing it uses the directory of the recall invocation. | `src/runtime/settings.c`, `src/runtime/call.c` |
 | **environment override** | Assignment supplied through `-e KEY=VALUE` or `--env-file` and stored for subsequent launches. `info` reports override names; `inspect` includes stored values. | `src/cli/main.c`, `src/runtime/settings.c`, `src/runtime/observe.c` |
 
@@ -42,8 +42,8 @@ bare-target reconnect-or-restart behavior.
 | **end** | Send SIGTERM, wait up to five seconds, then send SIGKILL if the validated process group remains running. `stop` is an alias. | `src/runtime/signal.c`, `src/cli/specs.c` |
 | **kill** | Send SIGKILL to the target process group. | `src/runtime/signal.c` |
 | **save** | Mark the process record as saved. | `src/runtime/call.c` |
-| **delete** | Remove a process record and associated artifacts, including a saved profile. Its initial check refuses a target confirmed running; deletion then delegates to targeted forced purge. | `src/runtime/settings.c`, `src/runtime/list.c` |
-| **purge** | Remove eligible process records and associated artifacts. `purge all` also ends unsaved processes; explicit targets and `--force` have separate rules documented in command help. | `src/runtime/list.c`, `src/runtime/settings.c` |
+| **delete** | Remove a process record and associated artifacts, including a saved profile. Its initial check refuses a target confirmed running; a target found running on the second check is ended before removal. | `src/runtime/settings.c`, `src/runtime/list.c` |
+| **purge** | Remove every ended, unsaved process (records and associated artifacts). `purge all` also ends unsaved running processes first. It takes no process names: removing one named process is **delete**, or the Docker-style `rm`. | `src/runtime/list.c`, `src/runtime/settings.c` |
 | **running** | Liveness checks find a matching process/group, or the supported cross-namespace supervision evidence. | `src/runtime/state.c` |
 | **exited** | Liveness or recorded completion evidence shows execution ended. An exit code is available only when recorded. | `src/runtime/state.c`, `src/store/lifecycle.c` |
 | **stale** | Recorded identity no longer matches the current boot or observed process identity. | `src/runtime/state.c` |
@@ -56,8 +56,8 @@ output and continue running.
 
 The initial `recall` and `delete` checks reject the **running** state, not every
 uncertain state. An **unknown** target can reach the underlying relaunch or
-purge operation, where further identity and liveness checks apply. The forced
-purge used by `delete` can stop a target found running on that later check.
+purge operation, where further identity and liveness checks apply. `delete`'s
+removal can stop a target found running on that later check.
 
 ## Terminals, panes, and controls
 

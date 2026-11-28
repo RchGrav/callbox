@@ -11,7 +11,7 @@ TEST A TERMINAL APP
     backmux wait app --match "Saved" --timeout 5000 ||
         backmux peek app --image fail.png
     backmux end app
-    backmux purge app
+    backmux delete app
 
 RUN A DEVELOPMENT SERVER
     backmux -d --name api -- npm run dev
@@ -21,14 +21,14 @@ RUN A DEVELOPMENT SERVER
     backmux api
     # Later, stop it and release its name.
     backmux end api
-    backmux purge api
+    backmux delete api
 
 KEEP A VM RUNNING
     backmux -d --name vm -- qemu-system-x86_64 -m 4G disk.qcow2
     backmux logs vm -n 50
     backmux stats vm --no-stream
     backmux end vm
-    backmux purge vm
+    backmux delete vm
 
   stats reports process-group CPU and memory on Linux. Backmux keeps the
   process running; VM disks and the VM's own shutdown procedure remain
@@ -38,7 +38,7 @@ COLLECT A LONG JOB'S RESULT
     backmux -dw --name backup -- ./backup.sh
     code=$(backmux wait backup)
     backmux logs backup -n 50
-    backmux purge backup
+    backmux delete backup
     exit "$code"
 
 DRIVE SEVERAL SERIAL CONSOLES

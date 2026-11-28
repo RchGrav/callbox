@@ -92,10 +92,10 @@ has logs but no screen or input console.
 
 `save NAME` protects a record from ordinary cleanup. `rename NAME NEWNAME`
 also saves it. `delete NAME` removes a stopped record, including a saved
-profile; it refuses a process confirmed to be running. `purge NAME --force` can stop and
-remove a running process or remove a saved record.
+profile; it refuses a process confirmed to be running. `rm NAME...` is the
+Docker-style removal: `-f` kills a running process first.
 
-`purge` without a target removes eligible stopped, unsaved records.
+`purge` takes no process names. It removes eligible stopped, unsaved records.
 `purge all` also stops unsaved running processes before removing their
 records. Saved profiles are excluded from both sweeps. These are different
 operations: positional `all` is not the same as the `-a` scope/state option.

@@ -109,7 +109,7 @@ result. The important boundaries in these guides are:
 | Screen text, color PNGs, cursor, keys, mouse, resizing, and waits | [runtime/screen_cmds.c](../src/runtime/screen_cmds.c), [console/broker.c](../src/console/broker.c), [screen/](../src/screen/) | Screen unit tests, Vim keyboard/mouse, pipe-input, saved-screen, idle, and output-sequence tests. |
 | Shared attachment, panes, and separate chat | [console/mux.c](../src/console/mux.c), [console/attach.c](../src/console/attach.c), [console/chat.c](../src/console/chat.c), [console/compose.c](../src/console/compose.c) | Attach/detach and chat tests; the shared-screen guide also has a manual PTY walkthrough. |
 | Outside sender identity, inbox history, monitor, and reply waits | [runtime/inbox.c](../src/runtime/inbox.c), [store/inbox.c](../src/store/inbox.c), [runtime/screen_cmds.c](../src/runtime/screen_cmds.c) | `test_operator_inbox_round_trip`, `test_operator_monitor_stream_and_seen`, `test_operator_inbox_timeout_bounds`, `test_operator_inbox_names_do_not_shadow_calls`, `test_operator_inbox_parallel_registration`. |
-| Logs, stopping, saved records, and purge | [runtime/signal.c](../src/runtime/signal.c), [runtime/list.c](../src/runtime/list.c), [runtime/call.c](../src/runtime/call.c) | Log, signal escalation, save/rename, and targeted/sweeping purge tests. |
+| Logs, stopping, saved records, and purge | [runtime/signal.c](../src/runtime/signal.c), [runtime/list.c](../src/runtime/list.c), [runtime/call.c](../src/runtime/call.c) | Log, signal escalation, save/rename, delete, rm, and purge sweep tests. |
 
 The black-box tests live in [tests/test_backmux.sh](../tests/test_backmux.sh).
 The help test compares compiled output with each source page, verifies

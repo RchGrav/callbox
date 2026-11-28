@@ -18,11 +18,11 @@ enum {
     SPEC_ALL       = 1 << 0, /* --all; -a is accepted wherever --all is */
     SPEC_LIVE      = 1 << 1, /* -l/--live: running and Unknown list records */
     SPEC_SCOPE     = 1 << 2, /* -s/--system and -u/--user store scope */
-    SPEC_FORCE     = 1 << 3, /* --force (purge family) */
+    SPEC_FORCE     = 1 << 3, /* -f/--force (rm: Docker's forced removal) */
     SPEC_PRINT     = 1 << 4, /* --print (end/stop/kill) */
     SPEC_NOSTREAM  = 1 << 5, /* --no-stream (stats) */
     SPEC_STRICT    = 1 << 6, /* reject any unconsumed flag: a target or a name never starts with - */
-    SPEC_PS_DOCKER = 1 << 7, /* ps does not accept --system */
+    SPEC_PS_DOCKER = 1 << 7, /* ps and rm do not accept --system: Docker's commands have no store option */
     SPEC_OWN_HELP  = 1 << 8, /* parses its own arguments, -h among them (send --text -h is text) */
     SPEC_KEYS      = 1 << 9  /* takes --detach-keys KEYS after its target too (attach) */
 };
@@ -39,7 +39,13 @@ struct hold_cli_command_spec {
 static const char usage_end[] = "usage: backmux end [--print] <target>...";
 static const char usage_attach[] = "usage: backmux attach <target> [--detach-keys KEYS]";
 
-#define SPEC_PURGE_FLAGS (SPEC_ALL | SPEC_SCOPE | SPEC_FORCE | SPEC_STRICT)
+/* purge takes no process names and no --force: it is the native sweep (remove
+ * what has ended and is not saved; purge all also ends what runs unsaved).
+ * Removing one named process is delete, or the Docker-style rm. */
+#define SPEC_PURGE_FLAGS (SPEC_ALL | SPEC_SCOPE | SPEC_STRICT)
+static const char usage_purge[] = "usage: backmux purge [all] [-a|--all] [-s|--system] [-u|--user]";
+/* rm is Docker's: the form of its usage line is docker rm's. */
+static const char usage_rm[] = "usage: backmux rm [OPTIONS] TARGET [TARGET...]";
 
 static const struct hold_cli_command_spec command_specs[] = {
     /* cli/main.c parses launch commands and forwards arguments after PROGRAM.
@@ -100,14 +106,12 @@ static const struct hold_cli_command_spec command_specs[] = {
      "                     [<shell> [<args>...]]"},
     {"attach", NULL, 1, 1, SPEC_STRICT | SPEC_KEYS, usage_attach},
     {"console", "attach", 1, 1, SPEC_STRICT | SPEC_KEYS, "usage: backmux console <target> [--detach-keys KEYS]"},
-    {"purge", NULL, 0, 1, SPEC_PURGE_FLAGS,
-     "usage: backmux purge [<target>] [-a|--all] [--force]"},
-    {"prune", "purge", 0, 1, SPEC_PURGE_FLAGS,
-     "usage: backmux purge [<target>] [-a|--all] [--force]"},
-    {"rm", "purge", 0, 1, SPEC_PURGE_FLAGS,
-     "usage: backmux purge [<target>] [--force]"},
-    {"drop", "purge", 0, 1, SPEC_PURGE_FLAGS,
-     "usage: backmux purge [<target>] [-a|--all] [--force]"},
+    {"purge", NULL, 0, 1, SPEC_PURGE_FLAGS, usage_purge},
+    {"prune", "purge", 0, 1, SPEC_PURGE_FLAGS, usage_purge},
+    {"drop", "purge", 0, 1, SPEC_PURGE_FLAGS, usage_purge},
+    /* min 0: with no operand rm prints docker rm's own "requires at least 1
+     * argument" message (runtime/remove.c), not the generic usage line. */
+    {"rm", NULL, 0, -1, SPEC_FORCE | SPEC_STRICT | SPEC_PS_DOCKER, usage_rm},
     {"save", NULL, 1, 1, SPEC_STRICT, "usage: backmux save <target>"},
     {"rename", NULL, 2, 2, SPEC_STRICT, "usage: backmux rename <target> <name>"},
     {"help", NULL, 0, 2, 0, "usage: backmux help [--full] [topic]"},
@@ -137,7 +141,7 @@ static const struct owned_flag {
     {"-l", "--live", SPEC_LIVE, offsetof(struct hold_cli_owned_opts, live_only)},
     {"-s", "--system", SPEC_SCOPE, offsetof(struct hold_cli_owned_opts, system_scope)},
     {"-u", "--user", SPEC_SCOPE, offsetof(struct hold_cli_owned_opts, user_scope)},
-    {NULL, "--force", SPEC_FORCE, offsetof(struct hold_cli_owned_opts, force)},
+    {"-f", "--force", SPEC_FORCE, offsetof(struct hold_cli_owned_opts, force)},
     {NULL, "--print", SPEC_PRINT, offsetof(struct hold_cli_owned_opts, print_cmd)},
     {NULL, "--no-stream", SPEC_NOSTREAM, offsetof(struct hold_cli_owned_opts, no_stream)},
 };

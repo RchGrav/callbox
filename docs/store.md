@@ -177,18 +177,22 @@ A plain `-d` process's public entry keeps `state_hint: running` after it ends, b
 
 ## Purge
 
-`backmux purge` (aliases `rm`, `prune`, `drop`) is the removal verb.
+`backmux purge` (aliases `prune`, `drop`) is the native sweep, and takes no
+process names: removing one named process is `delete`, or the Docker-style
+`rm` (src/runtime/remove.c). Why: the native workflow is to save what is worth
+reusing and purge the rest, so purge is housekeeping for the whole store, not
+removal of a named object.
 
-A targeted purge (`hold_prune_one_run_ex`) works by state:
+Removing one process (`hold_prune_one_run_ex`) works by state:
 
-| State | Purged? |
-|---|---|
-| exited, failed, stale | yes |
-| unknown | only with `--force` |
-| running | only with `--force`, which ends the process first (TERM, then KILL) |
-| saved, any state | only with `--force` |
+| State | `delete NAME` | `rm NAME` | `rm -f NAME` |
+|---|---|---|---|
+| exited, failed, stale | removed | removed | removed |
+| unknown | removed | refused | removed |
+| running | refused (end it first) | refused | killed (SIGKILL), then removed |
+| saved, any state | as above | as above | as above |
 
-The no-target sweep (`cmd_prune_store_all`):
+The sweep (`cmd_prune_store_all`):
 
 - removes ended processes; stale processes too with `-a`
 - keeps saved, running, and unknown-state processes
@@ -200,7 +204,8 @@ The no-target sweep (`cmd_prune_store_all`):
 stops running processes, and removes eligible records. Saved profiles are
 excluded. `delete NAME` removes a stopped record, including a saved profile,
 and refuses a process confirmed to be running. Unknown-state records pass
-that initial check and are subject to the forced-purge identity checks.
+that initial check; a process found running on the second check is ended
+before removal (`hold_remove_target`, src/runtime/remove.c).
 Neither operation saves or restores pane layouts.
 
 Purge deletes only paths it derives from the store layout and the process ID, never a path read from a record. Each removal holds the store lock, so a racing exit stamp cannot recreate the record. When an `--rm` process is purged after its exit was recorded, purge writes the `.<id>.exit.tmp` note (exit code and name) that `backmux wait` reads.
@@ -208,7 +213,7 @@ Purge deletes only paths it derives from the store layout and the process ID, ne
 ## Implementation map
 
 `struct hold_store`, `struct hold_run_record`, `struct hold_public_index` (include/backmux/types.h); `hold_init_user_store_from_home`, `hold_ensure_user_store_for_current_user`, `hold_ensure_invoking_user_store`, `hold_init_system_store`, `hold_ensure_system_store` (src/store/layout.c); `hold_reserve_run_id`, `hold_mark_run_finished` (src/store/lifecycle.c); `hold_record_fields`, `hold_write_record_atomic` (src/store/record.c); `hold_load_record` (src/store/record_read.c); `hold_write_public_index_atomic`, `hold_load_public_index` (src/store/public_index.c); `hold_atomic_write_json`, `hold_store_lock` (src/store/atomic.c); `hold_resolve_record_id` (src/store/resolve.c); `hold_prune_one_run_ex`, `cmd_prune_store_all` (src/runtime/list.c); `hold_cmd_set_action`,
-`hold_cmd_delete_action`, `hold_cmd_purge_all_action` (src/runtime/settings.c).
+`hold_cmd_delete_action`, `hold_cmd_purge_all_action` (src/runtime/settings.c); `hold_remove_target`, `hold_cmd_rm_action` (src/runtime/remove.c).
 
 ## Continue
 

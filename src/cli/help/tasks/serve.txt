@@ -17,6 +17,6 @@ processes cannot restart) and check it another way, such as curl:
   backmux server --name api --restart on-failure ./server --port 8080
 
 backmux end web stops it (backmux wait web then prints 143, SIGTERM's
-code); backmux purge web removes it and frees the name.
+code); backmux delete web removes it and frees the name.
 
 Next: backmux help check, cleanup
