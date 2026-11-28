@@ -5,9 +5,10 @@ It does not provide containers, images, volume mounts, or port publishing.
 
   Accepted form     Native Backmux command
   run -it           call
-  run -d            server
-  run -dw           server -w (Backmux extension: record the exit code)
+  run -d            server -w (the exit code is kept, as Docker keeps it)
   run -dt           detach
+  run -w <dir>      start in <dir> (Docker's working directory; natively
+                    -w keeps a waiter)
   start             recall
   stop              end
   kill              kill

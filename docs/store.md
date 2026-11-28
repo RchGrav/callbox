@@ -94,7 +94,7 @@ flowchart LR
 `mode.chat` and its key fields support the retained broker-chat path. Current
 launch commands use the attach-client compositor and do not enable that mode.
 
-The recorded `argv` supplies the executable and arguments used by recall ([Launcher](launcher.md)). `argv[0]` is the program's absolute path as named, with symlinks not resolved, because a venv's python or a multi-process binary finds its environment through that name. Later arguments that name existing paths are made absolute. `observed.argv` keeps the argv as typed, and `observed.exe` the resolved real executable.
+The recorded `argv` supplies the executable and arguments used by recall ([Launcher](launcher.md)). `argv[0]` is the program's absolute path as named, with symlinks not resolved, because a venv's python or a multi-process binary finds its environment through that name. Later arguments are kept as typed, except under sudo, where the program starts in `/` and arguments that name existing paths are made absolute. `observed.argv` keeps the argv as typed, and `observed.exe` the resolved real executable.
 
 ### Terminal state
 

@@ -6,12 +6,13 @@ Relaunch the recorded command with its stored arguments, working directory,
 and launch mode. The process retains its name and Backmux process ID.
 Existing log output is retained.
 
-A terminal comes back as it was last observed (list, info and save observe
-it): it starts in that directory, and a shell then gets its environment
-source (set NAME source=FILE) and the program it was running, with the same
-arguments, in that program's own directory; the shell stays after it ends.
-A pipeline is not started again (one command line cannot rebuild it), and
-recall says so.
+A shell comes back as it was last observed (list, info and save observe
+it): in the directory it was in, then with its environment source (set NAME
+source=FILE) and the program it was running, with the same arguments, in
+that program's own directory; the shell stays after it ends. A pipeline is
+not started again (one command line cannot rebuild it), and recall says so.
+Arguments are passed exactly as typed, so a program launched directly comes
+back where it was launched.
 
 Targets reported as running are refused. Unknown targets can proceed to
 relaunch; that state does not confirm that the previous execution ended.

@@ -40,7 +40,7 @@ detaches the active pane. In a standalone log-follow command (`tail` or
 
 Backmux looks the program up on `PATH` and runs it with `execv`. It never wraps the command in a shell, so a missing command fails before anything is created. Shell snippets go through `backmux -- sh -c '…'`.
 
-The path is made absolute, but symlinks are not resolved, because a venv's python or a multi-process binary finds its environment through the name it was run under. Arguments that name existing paths are also made absolute. The record keeps the argv as typed in `observed.argv` ([Store](store.md)).
+The path is made absolute, but symlinks are not resolved, because a venv's python or a multi-process binary finds its environment through the name it was run under. The arguments are passed exactly as typed: a word that happens to name a file stays that word. The exception is a launch under sudo, where the program starts in `/`: there, arguments that name existing paths are made absolute, so `./script` still names the caller's file. The record keeps the argv as typed in `observed.argv` ([Store](store.md)).
 
 The environment:
 
@@ -188,8 +188,8 @@ working directory, launch mode, terminal size, restart policy, and name.
 
 A terminal is rebuilt from its last observed state (`terminal` in the
 record, [Store](store.md)), because a saved terminal is the person's work,
-not its launch line: it starts in the directory last observed, and a hosting
-shell gets typed at its prompt its environment source (`set NAME
+not its launch line: a hosting shell starts in the directory last observed
+(its cds are the person's navigation) and gets typed at its prompt its environment source (`set NAME
 source=FILE`, sourced with `.`, or `source` in fish) and the workload it was
 running, with its exact argv (single-quoted for the shell), through `sh -c
 'cd "$1" && shift && exec "$@"'` when the workload's directory differs, so
@@ -199,7 +199,8 @@ shell that never does: input typed ahead in canonical mode is cut at the line
 discipline's limit. Each typed line starts with a space, which bash, zsh and
 fish keep out of the history. Not rebuilt, and said on stderr: a pipeline,
 an argument holding a control character, and anything for csh. A program
-launched directly is relaunched as launched, in its observed directory. The
+launched directly is relaunched as launched, where it was launched (its
+arguments, passed as typed, are relative to that directory). The
 last observation stays in the record until the new run is observed.
 It retains the Backmux process ID and appends to the same log. Explicit
 mode flags on the bare target shorthand can override the stored launch

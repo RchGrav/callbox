@@ -31,6 +31,17 @@ runs host processes, not containers, and has no central daemon.
 Value flags also take `--flag=value`. Flags come before the command; every
 word after the command is the command's own.
 
+`backmux run` reads docker run's own grammar (`src/cli/docker_run.c`), so a
+script written for docker run means the same thing: the first operand is
+always the program, never a backmux verb (`run list` runs a program named
+list); `-w`/`--workdir DIR` is the working directory (on the bare form `-w`
+is wait); short flags combine (`-dit`, `-dw /tmp`); `-e KEY` without a value
+passes KEY through from the environment; without `-t` there is no terminal;
+a detached run keeps its exit status for `wait`; `run -d` prints only the ID;
+and run's own errors (an unknown flag, a missing program, a flag that needs
+a container) exit 125, as Docker's do. It then hands the native launcher the
+same launch in native words, so nothing about launching is duplicated.
+
 The command is resolved against the invoking environment's `PATH`.
 `-e`/`--env-file` set the managed process's environment only, never Backmux's
 own. A process launched into the system store starts from an empty environment with a fixed

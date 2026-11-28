@@ -288,15 +288,15 @@ int hold_cli_main(int argc, char **argv) {
         hold_usage();
         return 0;
     }
-    /* backmux run ...: Docker's spelling of the bare form (backmux help
-     * aliases), read exactly as if "run" were not there. */
+    /* backmux run ...: Docker's run grammar (cli/docker_run.c), translated
+     * into the native launch words read below. */
     if (!strcmp(argv[1], "run")) {
-        argv[1] = argv[0];
-        argv++;
-        argc--;
-        if (argc < 2) {
-            fprintf(stderr, "usage: backmux run [-d|-it|-dt|-dw] [--name NAME] [options] <program> [<args>...]\n");
-            return HOLD_EXIT_USAGE;
+        const char *workdir = NULL;
+        int run_rc = hold_cli_docker_run_words(argc, argv, &argc, &argv, &workdir);
+        if (run_rc) return run_rc;
+        if (workdir && chdir(workdir) != 0) {
+            fprintf(stderr, "backmux: cannot use working directory %s: %s\n", workdir, strerror(errno));
+            return 125;
         }
     }
 

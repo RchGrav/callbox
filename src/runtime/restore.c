@@ -4,9 +4,9 @@
  * launched in ~ that was running claude in ~/callbox comes back as bash in
  * ~/callbox running claude, not as an empty bash in ~ (directive 01 §3).
  *
- * From the record's terminal state (store/term_state.c): the program starts
- * in the directory it was last observed in. A hosting shell then gets,
- * typed at its prompt by the broker, its environment source (set NAME
+ * From the record's terminal state (store/term_state.c): a hosting shell
+ * starts in the directory it was last observed in, and then gets, typed at
+ * its prompt by the broker, its environment source (set NAME
  * source=FILE) and the workload it was running, with the workload's exact
  * argv, in the workload's own directory when that differs from the shell's
  * (through sh, so the shell's directory stays put); the shell stays after
@@ -78,12 +78,16 @@ int hold_restore_plan(const struct hold_run_record *r, struct hold_restore *p) {
     memset(p, 0, sizeof(*p));
     if (!r->recipe.mode_tty || !r->has_term) return 0;
     const struct hold_term_state *t = &r->term;
+    /* Only a hosting shell comes back in its observed directory: its cds are
+     * the person's navigation. A program launched directly comes back where
+     * it was launched, because its arguments (passed exactly as typed) are
+     * relative to that directory. */
+    if (!t->hosting_shell || r->recipe.argc < 1 || !r->recipe.argv) return 0;
     struct stat st;
     if (t->cwd[0] && stat(t->cwd, &st) == 0 && S_ISDIR(st.st_mode))
         snprintf(p->dir, sizeof(p->dir), "%s", t->cwd);
     else if (t->cwd[0])
         snprintf(p->note, sizeof(p->note), "its directory %s is gone; it starts where it was launched", t->cwd);
-    if (!t->hosting_shell || r->recipe.argc < 1 || !r->recipe.argv) return 0;
     const char *shell = program_name(r->recipe.argv[0]);
     bool fish = !strcmp(shell, "fish");
     bool csh = !strcmp(shell, "csh") || !strcmp(shell, "tcsh");

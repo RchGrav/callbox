@@ -6881,6 +6881,8 @@ test_attach_repaints_live_screen() {
 . "$(dirname "${BASH_SOURCE[0]}")/test_help.sh"
 # shellcheck source=tests/test_terminal.sh
 . "$(dirname "${BASH_SOURCE[0]}")/test_terminal.sh"
+# shellcheck source=tests/test_docker.sh
+. "$(dirname "${BASH_SOURCE[0]}")/test_docker.sh"
 
 run_test "--print spans --all and multiple explicit targets" test_print_over_all_and_multiple
 run_test "stop refuses a record with a tampered pgid<=1 (exit 5)" test_signal_refuses_tampered_pgid
@@ -6970,6 +6972,7 @@ run_test "sweeping purge skips saved processes" test_purge_sweep_skips_saved
 run_test "purge takes no process name" test_purge_takes_no_process_name
 run_test "delete removes a saved ended process" test_delete_removes_saved_ended
 run_test "rm -f kills and removes a live saved process" test_rm_force_removes_live_saved
+run_test "run reads docker run's grammar: program operand, -w, exact argv, no tty, exit codes" test_docker_run_grammar
 run_test "rm follows docker rm's contract" test_rm_docker_contract
 run_test "rm resolves as docker rm: exact ID, exact name, unique ID prefix" test_rm_docker_resolution
 run_test "a refused record unlink is no removal: rm, delete, purge" test_failed_record_unlink_is_no_removal

@@ -724,7 +724,13 @@ int hold_perform_start_options(const struct hold_invocation *inv,
     if (!launch_argv[0]) {
         launch_die(&u, "backmux: failed to prepare argv");
     }
-    if (hold_normalize_existing_argv_paths_from_cwd(launch_argv, argc, 1, observed_cwd[0] ? observed_cwd : NULL) != 0) {
+    /* Arguments pass exactly as typed (a word that names a file stays that
+     * word: directive 01 §3), except where the program will not start in the
+     * caller's directory: under sudo it starts in / (enter_privileged_exec_cwd),
+     * where ./script would name another file, so there existing paths are made
+     * absolute. */
+    if (inv && inv->euid_root && inv->have_sudo_user &&
+        hold_normalize_existing_argv_paths_from_cwd(launch_argv, argc, 1, observed_cwd[0] ? observed_cwd : NULL) != 0) {
         launch_die(&u, "backmux: failed to normalize argv paths");
     }
 

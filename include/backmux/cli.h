@@ -36,4 +36,9 @@ int hold_cli_collect_owned_args(const char *command, int argc, char **argv,
                                 char **cmd_argv, int *cmd_argc,
                                 struct hold_cli_owned_opts *opts);
 
+/* backmux run (src/cli/docker_run.c): Docker's run grammar read into native
+ * launch words (the program after "--"), and the -w working directory to
+ * change to (NULL: none). 0, or 125 after an error was printed. */
+int hold_cli_docker_run_words(int argc, char **argv, int *argc_out, char ***argv_out, const char **workdir_out);
+
 #endif /* HOLD_CLI_H */
